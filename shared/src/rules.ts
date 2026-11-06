@@ -24,9 +24,11 @@ export const RULES = {
   finalRushMs: 10_000,
   comboBonusEvery: 10,
   comboBonus: 5,
-  points: { own: 3, yellow: 2, rainbow: 5, stealCalm: 1, counter: 4 },
+  points: { own: 3, yellow: 2, rainbow: 5, stealCalm: 1, counter: 6 },
   fever: { own: 12, yellow: 6, rainbow: 25, stealCalm: -20, miss: -10 },
   yellowChance: 0.33,
+  /** 원의 기본 발사 속도 배율 (방 규칙의 게임 속도와 따로) */
+  launchSpeed: 1.15,
   /** 꼴찌 보정이 켜졌을 때 꼴찌의 피버 충전 배율 */
   comebackGain: 1.25,
   /** 클릭 판정 여유(필드 단위) */
@@ -572,7 +574,7 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
     id,
     kind,
     angle: rand() * Math.PI * 2,
-    speed: (130 + prog * 180 + rand() * 60) * rush * G.speed,
+    speed: (130 + prog * 180 + rand() * 60) * rush * G.speed * RULES.launchSpeed,
     r: 40 * (0.85 + rand() * 0.3),
     born: now,
   };

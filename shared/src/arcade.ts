@@ -15,7 +15,7 @@ export const TIERS = [
 
 export const ARCADE = {
   rounds: 5,
-  pickSec: 15,
+  pickSec: 30,
   optionCount: 3,
   rerollsPerPick: 1,
   /** 선택지 하나가 저주 카드로 바뀔 확률 (꼴찌는 lastPlace) */
@@ -102,7 +102,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'shield', name: '방패', cat: '유지', values: [1, 2, 3, 5], desc: (v) => `견제당해도 콤보 유지, 라운드당 ${v}번` },
   // 견제
   { id: 'thickSkin', name: '철면피', cat: '견제', values: [1, 2, 3, 99], provisional: true, desc: (v) => (v >= 99 ? '견제해도 표적이 되지 않음' : `표적 시간 −${v}초`) },
-  { id: 'plunder', name: '강탈', cat: '견제', values: [1, 2, 3, 5], provisional: true, desc: (v) => `견제하면 상대 점수 ${v}점을 빼앗음` },
+  { id: 'plunder', name: '강탈', cat: '견제', values: [1, 1, 2, 3], provisional: true, desc: (v) => `견제하면 상대 점수 ${v}점을 빼앗음` },
   { id: 'counterPro', name: '반격 전문가', cat: '견제', values: [2, 4, 6, 10], provisional: true, desc: (v) => `반격 +${v}점` },
   { id: 'jammer', name: '방해 전파', cat: '견제', values: [500, 1000, 1500, 2500], provisional: true, desc: (v) => `내 피버가 터지면 상대 원이 ${sec(v)} 동안 흐려짐` },
   // 보조
