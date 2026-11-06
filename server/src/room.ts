@@ -372,6 +372,7 @@ export class Room {
     this.players = this.players.filter((x) => x.id !== playerId);
     for (const [k, id] of this.keyToId) if (id === playerId) this.keyToId.delete(k);
     this.socketOf.delete(playerId);
+    this.cursors.delete(playerId);
     this.passHostIfNeeded();
     if (!this.humans.length) { this.destroy(); this.onEmpty(); return; }
     this.checkEmpty();
@@ -495,6 +496,7 @@ export class Room {
     this.nextLaserAt = nextLaserIn();
     this.pulls.clear();
     this.pullLog.clear();
+    this.cursors.clear();
     this.spawnQueue = [];
     this.pausedAt = 0;
     this.pausedBy = null;
@@ -512,6 +514,8 @@ export class Room {
    * 라운드 끝에 원을 누르던 클릭이 막 깔린 카드를 골라 버리지 않게 하려는 틈이다
    */
   private endRound() {
+    // 끌려오던 원은 끄는 사람이 잡은 것으로 마무리한 뒤 판을 비운다
+    this.resolvePulls(Date.now(), true);
     this.roundPhase = 'pick';
     this.circles.clear();
     this.bossHits.clear();
@@ -677,7 +681,7 @@ export class Room {
     for (const p of this.players) {
       const bot = this.bots.get(p.id);
       if (!bot) continue;
-      const target = bot.think(p, [...this.circles.values()], this.players, now);
+      const target = bot.think(p, this.botCandidates(), this.players, now);
       if (!target) continue;
       if (target.kind === 'boss') this.hitBoss(p, target, now);
       else if (target.kind === 'item') this.claimItem(p, target, now);
@@ -768,15 +772,14 @@ export class Room {
   /** 커서 자석: 끝난 끌기는 잡고, 커서 근처 내 원을 새로 끈다 (플레이어마다 1초에 perSec개) */
   private updatePulls(now: number) {
     const M = RULES.magnet;
-    let claimed = false;
-    for (const [id, pl] of [...this.pulls]) {
-      if (pl.at + pl.ms > now) continue;
-      this.pulls.delete(id);
-      const c = this.circles.get(id), p = this.players.find((x) => x.id === pl.by);
-      if (c && p) { this.claim(p, c, now, 'magnet', true); claimed = true; }
+    this.resolvePulls(now);
+    // 같은 틱에 여러 사람 자석이 같은 원을 노릴 때 순번이 늘 같은 사람에게 유리하지 않게 섞는다
+    const order = [...this.players];
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
     }
-    if (claimed) this.emitPlayers();
-    for (const p of this.players) {
+    for (const p of order) {
       const cur = this.freshCursor(p.id, now);
       const radius = magnetOf(p, now);
       if (p.bot || !cur || radius <= 0 || isStunned(p, now)) continue;
@@ -790,6 +793,23 @@ export class Room {
         this.io.to(this.code).emit('circle:pull', pl);
       }
     }
+  }
+
+  /** 다 끌려온 원을 끄는 사람이 잡은 것으로 처리. all이면 시간과 상관없이 모두 (라운드가 끝날 때) */
+  private resolvePulls(now: number, all = false) {
+    let claimed = false;
+    for (const [id, pl] of [...this.pulls]) {
+      if (!all && pl.at + pl.ms > now) continue;
+      this.pulls.delete(id);
+      const c = this.circles.get(id), p = this.players.find((x) => x.id === pl.by);
+      if (c && p) { this.claim(p, c, now, 'magnet', true); claimed = true; }
+    }
+    if (claimed) this.emitPlayers();
+  }
+
+  /** 봇이 고를 수 있는 원: 남의 자석에 끌려가는 원은 뺀다 */
+  private botCandidates() {
+    return [...this.circles.values()].filter((c) => !this.pulls.has(c.id));
   }
 
   /** 새 원 생성 옵션: 아이템 원 확률, 라운드 테마, 내 색 비 */
@@ -846,6 +866,8 @@ export class Room {
       case 'timeStop': {
         const ids = holdCircles(this.circles.values(), now, I.freezeMs);
         this.freezeUntil = now + I.freezeMs;
+        // 예고 중인 레이저도 멈춘 시간만큼 늦게 쏜다 (시간 정지 중에는 쏘지 않음)
+        if (this.laser && this.laser.at > now) this.laser.at += I.freezeMs;
         // 예약된 웨이브 원도 정지가 끝난 뒤로 미룬다 (나선 간격은 유지)
         for (const q of this.spawnQueue) q.born += I.freezeMs;
         this.io.to(this.code).emit('circles:hold', { ids, at: now, ms: I.freezeMs });
@@ -863,6 +885,7 @@ export class Room {
   }
 
   private end() {
+    this.resolvePulls(Date.now(), true);
     this.stop();
     this.clearPickTimers();
     this.applyRoundCurses();

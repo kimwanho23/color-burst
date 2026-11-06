@@ -73,3 +73,9 @@ test('cursorActive: 탭이 숨겨졌거나 창이 포커스를 잃으면 커서�
   assert.equal(cursorActive({ ...on, roundOver: true }), false);
   assert.equal(cursorActive({ ...on, playing: false }), false);
 });
+
+test('pickMagnetTargets: 이미 화면 밖으로 나간 원은 끌지 않는다', () => {
+  // 오른쪽 끝(1600)을 넘어 중심이 1650에 있는 원, 커서는 가장자리
+  const gone = at(7, 0, 1650, 450);
+  assert.deepEqual(pickMagnetTargets([gone], 0, { x: 1600, y: 450 }, 1000, 200, 5), []);
+});

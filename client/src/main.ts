@@ -300,6 +300,8 @@ socket.on('game:pause', ({ by }) => setPaused(by));
 
 function setPaused(by: string | null) {
   if (by) {
+    // 멈춰 있는 동안 레이저 발사음이 나지 않게 (다시 시작하면 game:sync로 다시 예약)
+    clearTimeout(laserFireTimer);
     if (!pausedView) pausedView = serverNow();
     stopMusic();
     const who = players.find((p) => p.id === by);
@@ -584,6 +586,7 @@ function updateHud(now: number) {
     const p = players.find((x) => x.id === el.dataset.id);
     const live = playing && !picking() && !!p;
     el.classList.toggle('marked', live && isMarked(p!, now));
+    el.classList.toggle('stunned', live && isStunned(p!, now));
     el.classList.toggle('fever', live && isFever(p!, now));
   });
 
@@ -607,7 +610,8 @@ function frame() {
   $('pauseBtn').hidden = !(playing && canPause() && !picking());
   // 게임 중에는 진짜 마우스 커서를 숨기고 게임 커서를 그린다
   $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView);
-  for (const [id, c] of circles) if (isOut(c, now)) { circles.delete(id); pending.delete(id); }
+  // 자석에 끌려오는 원은 화면 밖으로 나가도 잡힐 때까지 그린다
+  for (const [id, c] of circles) if (isOut(c, now) && !pulls.has(id)) { circles.delete(id); pending.delete(id); }
   const m = me();
   updateHud(now);
   renderer.draw({
@@ -620,7 +624,7 @@ function frame() {
     blurred: !!m && now < m.blurUntil,
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
-    cursor: gameCursor.pos && playing && !picking() && !roundOver
+    cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView
       ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now) : 0 }
       : null,
     laser,

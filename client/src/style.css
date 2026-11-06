@@ -331,3 +331,6 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 
 /* 게임 커서: 게임 중에는 진짜 마우스 커서를 숨기고 게임이 그린다 */
 #stage.gamecursor canvas { cursor: none; }
+/* 스턴 중인 사람의 점수판 칸: 회색 테두리와 별 */
+.chip.stunned { border-color: #8a8fb8; box-shadow: 0 0 0 2px rgba(138, 143, 184, .4); }
+.chip.stunned::before { content: '★ 스턴'; position: absolute; right: 8px; top: -8px; background: #8a8fb8; color: #fff; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 6px; }

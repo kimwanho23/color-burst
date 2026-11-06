@@ -263,3 +263,72 @@ test('일시정지가 풀리면 레이저 발사 시각도 그만큼 밀린다',
   assert.equal(priv(room).laser!.at, at + 2000);
   room.destroy();
 });
+
+test('라운드가 끝날 때 끌려오던 원은 끄는 사람이 잡은 것으로 처리', (t) => {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.fillBots = false;
+  room.setRules(a.id, { rules: { mode: 'arcade' } });
+  assert.equal(room.start(a.id), null);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const me = room.players.find((p) => p.id === a.id)!;
+  const r = room as unknown as { circles: Map<number, Circle>; pulls: Map<number, unknown>; endRound(): void; startAt: number };
+  r.startAt = 0;
+  const now = Date.now();
+  r.circles.set(95, slowAt(95, me.color, 1200, 450, now));
+  r.pulls.set(95, { circleId: 95, by: me.id, from: { x: 1200, y: 450 }, at: now, ms: 250 });
+  r.endRound();
+  assert.equal(me.score, 3);
+  assert.equal(r.pulls.size, 0);
+});
+
+test('시간 정지를 잡으면 예고 중인 레이저도 정지 시간만큼 늦게 발사', (t) => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
+  const at = now + 600;
+  priv(room).laser = { a: { x: 0, y: 0 }, b: { x: 1, y: 1 }, at, hit: new Set() };
+  t.mock.method(Math, 'random', () => 0); // 전설 [시간 정지, 필드 클리어] 중 시간 정지
+  room.click(me.id, { circleId: 1, x: 1100, y: 450 });
+  assert.equal(priv(room).laser!.at, at + RULES.items.freezeMs);
+  room.destroy();
+});
+
+test('봇은 남의 자석에 끌려가는 원을 후보에서 뺀다', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(96, slowAt(96, 'y', 1200, 450, now));
+  circles.set(97, slowAt(97, 'y', 400, 450, now));
+  (room as unknown as { pulls: Map<number, unknown> }).pulls.set(96, { circleId: 96, by: me.id, from: { x: 1200, y: 450 }, at: now, ms: 250 });
+  const ids = (room as unknown as { botCandidates(): Circle[] }).botCandidates().map((c) => c.id);
+  assert.ok(ids.includes(97) && !ids.includes(96));
+  room.destroy();
+});
+
+test('같은 틱에 두 사람 자석이 같은 원을 노리면 순번이 고정되지 않는다', (t) => {
+  const winner = (rand: number) => {
+    const { room, me, circles } = playingRoom();
+    const other = room.players.find((p) => p.id !== me.id)!;
+    me.picks = [{ id: 'magnet', tier: 0 }]; other.picks = [{ id: 'magnet', tier: 0 }];
+    const now = Date.now();
+    circles.set(98, slowAt(98, 'y', 1200, 450, now));
+    room.cursor(me.id, { x: 1210, y: 450 }); room.cursor(other.id, { x: 1190, y: 450 });
+    const m = t.mock.method(Math, 'random', () => rand);
+    priv(room).updatePulls(now);
+    m.mock.restore();
+    const by = ((room as unknown as { pulls: Map<number, { by: string }> }).pulls.get(98))!.by;
+    room.destroy();
+    return by === me.id ? 'me' : 'other';
+  };
+  assert.notEqual(winner(0), winner(0.99));
+});
+
+test('라운드가 시작되면 커서 기록을 지운다', () => {
+  const { room, me } = playingRoom();
+  room.cursor(me.id, { x: 100, y: 100 });
+  (room as unknown as { beginRound(): void }).beginRound();
+  assert.equal((room as unknown as { cursors: Map<string, unknown> }).cursors.size, 0);
+  room.destroy();
+});

@@ -2,7 +2,7 @@
  * 게임 커서: 화면이 그리는 내 커서의 위치 계산, 레이저 기하, 커서 자석 대상 고르기.
  * 수치는 rules.ts의 RULES.cursor / RULES.laser / RULES.magnet에 있다.
  */
-import { FIELD, RULES, circlePos, isGuarded, isMine, type Circle, type ColorIndex } from './rules.ts';
+import { FIELD, RULES, circlePos, isGuarded, isMine, isOut, type Circle, type ColorIndex } from './rules.ts';
 
 export type Point = { x: number; y: number };
 /** 커서 효과: slow(움직임 배율), invert(반대로) */
@@ -39,13 +39,14 @@ export const laserHits = (cursor: Point, a: Point, b: Point) => distToSegment(cu
 
 export const nextLaserIn = (rand = Math.random) => RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin);
 
-/** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원 (보호 구역·skip 제외), 가까운 순 최대 max개 */
+/** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원 (보호 구역·화면 밖·skip 제외), 가까운 순 최대 max개 */
 export function pickMagnetTargets(
   circles: Iterable<Circle>, color: ColorIndex, cursor: Point, t: number, radius: number, max: number, skip?: ReadonlySet<number>,
 ): Circle[] {
   const found: { c: Circle; d: number }[] = [];
   for (const c of circles) {
-    if (!isMine(c.kind, color) || skip?.has(c.id) || isGuarded(c, t)) continue;
+    // 이미 화면 밖으로 나간 원(서버는 지연 보정 때문에 잠깐 더 들고 있음)은 끌지 않는다
+    if (!isMine(c.kind, color) || skip?.has(c.id) || isGuarded(c, t) || isOut(c, t)) continue;
     const p = circlePos(c, t);
     const d = Math.hypot(p.x - cursor.x, p.y - cursor.y);
     if (d <= radius) found.push({ c, d });
