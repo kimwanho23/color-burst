@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULES, cursorActive, distToSegment, laserHits, modsOf, nextCursor, nextLaserIn, pickMagnetTargets, rollLaser, type Circle,
+  RULES, auraAt, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, nextCursor, nextLaserIn,
+  pickMagnetTargets, rollLaser, slideBack, type Circle,
 } from '../src/index.ts';
 
 test('nextCursor: 효과가 없으면 진짜 마우스 위치 그대로', () => {
@@ -78,4 +79,41 @@ test('pickMagnetTargets: 이미 화면 밖으로 나간 원은 끌지 않는다'
   // 오른쪽 끝(1600)을 넘어 중심이 1650에 있는 원, 커서는 가장자리
   const gone = at(7, 0, 1650, 450);
   assert.deepEqual(pickMagnetTargets([gone], 0, { x: 1600, y: 450 }, 1000, 200, 5), []);
+});
+
+test('cursorModeOf: 방해 없으면 null, 감도·반대는 합쳐짐, 끝난 방해는 무시', () => {
+  const p = newPlayer('a', 'A', 0);
+  assert.equal(cursorModeOf(p, 0), null);
+  p.debuffs.slow = 1000;
+  assert.deepEqual(cursorModeOf(p, 0), { slow: 0.3 });
+  p.debuffs.invert = 1000;
+  assert.deepEqual(cursorModeOf(p, 0), { slow: 0.3, invert: true });
+  assert.equal(cursorModeOf(p, 1000), null);
+});
+
+test('slideBack: 0.15초 동안 진짜 마우스 위치로 돌아온다', () => {
+  assert.deepEqual(slideBack({ x: 0, y: 0 }, { x: 100, y: 40 }, 75), { x: 50, y: 20 });
+  assert.deepEqual(slideBack({ x: 0, y: 0 }, { x: 100, y: 40 }, 150), { x: 100, y: 40 });
+  assert.deepEqual(slideBack({ x: 0, y: 0 }, { x: 100, y: 40 }, 999), { x: 100, y: 40 });
+});
+
+test('auraAt·inAura: 이동형 보스만, 몸통 밖 +80 고리 안', () => {
+  const runner: Circle = { id: 1, kind: 'boss', boss: 'runner', angle: 0, speed: 0, r: 60, born: 0, hp: 5, maxHp: 5 };
+  const normal: Circle = { ...runner, boss: 'normal', r: 90 };
+  assert.equal(auraAt(normal, 0), null);
+  assert.equal(auraAt(at(2, 0, 900, 450), 1000), null);
+  const a = auraAt(runner, 0)!;
+  assert.deepEqual([a.x, a.y, a.r, a.inner], [800, 450, 140, 60]);
+  assert.equal(inAura({ x: 830, y: 450 }, a), false); // 몸통 안
+  assert.equal(inAura({ x: 900, y: 450 }, a), true); // 고리 안
+  assert.equal(inAura({ x: 941, y: 450 }, a), false); // 밖
+});
+
+test('lensWarp: 렌즈 밖·가운데는 그대로, 볼록은 바깥으로 크게, 오목은 안쪽으로 작게', () => {
+  assert.deepEqual(lensWarp({ x: 800 + 400, y: 450 }, 40, true), { x: 1200, y: 450, size: 40 });
+  const c = lensWarp({ x: 800, y: 450 }, 40, true);
+  assert.deepEqual([c.x, c.y], [800, 450]);
+  const vex = lensWarp({ x: 900, y: 450 }, 40, true), cave = lensWarp({ x: 900, y: 450 }, 40, false);
+  assert.ok(vex.x > 900 && vex.size > 40, JSON.stringify(vex));
+  assert.ok(cave.x < 900 && cave.size < 40, JSON.stringify(cave));
 });

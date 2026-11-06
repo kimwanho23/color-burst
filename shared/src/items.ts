@@ -3,7 +3,7 @@
  * 수치는 rules.ts의 RULES.items에 있다.
  */
 import {
-  RULES, addBuff, addFever, isFever, isLast, startFever,
+  RULES, BLIND_KINDS, addBuff, addDebuff, addFever, isFever, isLast, startFever,
   type BuffId, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 import { modsOf } from './arcade.ts';
@@ -11,7 +11,8 @@ import { modsOf } from './arcade.ts';
 export type ItemId =
   | 'wideHand' | 'magnet' | 'missGuard' | 'comboLock' | 'guard' | 'markClear' | 'feverCharge'
   | 'instantFever' | 'goldHand' | 'double' | 'paint' | 'rain' | 'zone' | 'bomb'
-  | 'timeStop' | 'fieldClear';
+  | 'timeStop' | 'fieldClear'
+  | 'slowCursor' | 'invertCursor' | 'blind' | 'snipe';
 
 export type ItemTier = 0 | 1 | 2;
 export const ITEM_TIERS = [
@@ -26,6 +27,8 @@ export interface ItemDef {
   tier: ItemTier;
   /** 시간 제한 효과면 그 버프 */
   buff?: BuffId;
+  /** 방해 아이템 (방 규칙 '방해 아이템'이 꺼지면 안 나옴) */
+  sabotage?: boolean;
 }
 
 const S = (ms: number) => `${ms / 1000}초`;
@@ -47,21 +50,32 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   bomb: { name: '폭죽', tier: 1, desc: '주변 원을 남의 색까지 전부 터뜨림' },
   timeStop: { name: '시간 정지', tier: 2, desc: `모든 원이 ${S(RULES.items.freezeMs)} 멈춤` },
   fieldClear: { name: '필드 클리어', tier: 2, desc: '화면의 원을 남의 색까지 전부 터뜨림' },
+  slowCursor: { name: '감도 감소', tier: 0, sabotage: true, desc: `잡은 사람 뺀 모두의 커서가 ${S(RULES.sabotage.ms)}간 느려짐` },
+  invertCursor: { name: '마우스 반대', tier: 0, sabotage: true, desc: `잡은 사람 뺀 모두의 커서가 ${S(RULES.sabotage.ms)}간 반대로 움직임` },
+  blind: { name: '시야 방해', tier: 1, sabotage: true, desc: `잡은 사람 뺀 모두의 화면을 ${S(RULES.sabotage.ms)}간 가림 (잉크·반코트·낙서·렌즈)` },
+  snipe: { name: '1등 저격', tier: 2, sabotage: true, desc: `1등(내가 1등이면 2등)을 ${S(RULES.sabotage.snipeStunMs)} 스턴, 콤보 끊김` },
 };
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[];
 
 /** 잡은 아이템 원의 등급 안에서 무작위로 고른다. 빈 곳 페널티가 꺼진 방에서는 헛클릭 무효 제외 */
 export function rollItem(tier: ItemTier, G: GameRules, rand = Math.random): ItemId {
-  const pool = ITEM_IDS.filter((id) => ITEMS[id].tier === tier && !(id === 'missGuard' && !G.missPenalty));
+  const pool = ITEM_IDS.filter((id) => ITEMS[id].tier === tier && !(id === 'missGuard' && !G.missPenalty) && !(ITEMS[id].sabotage && !G.sabotage));
   return pool[Math.floor(rand() * pool.length)];
 }
 
 /** 플레이어 혼자로 끝나지 않는 효과. 서버가 방 단위로 처리한다 */
 export type RoomActionKind = 'zone' | 'bomb' | 'fieldClear' | 'timeStop' | 'rain';
-export type RoomAction = null | { kind: RoomActionKind };
+/** snipe: 저격 대상(없으면 null)을 서버가 알린다 */
+export type RoomAction = null | { kind: RoomActionKind } | { kind: 'snipe'; target: string | null };
+
+/** 1등 저격 대상: 점수 1등(동점은 앞 순번), 잡은 사람이 1등이면 2등, 없으면 null */
+export function snipeTarget(p: PlayerState, players: PlayerState[]): PlayerState | null {
+  const order = [...players].sort((a, b) => b.score - a.score);
+  return order.find((x) => x !== p) ?? null;
+}
 
 /** 아이템 발동: 플레이어 효과를 적용하고, 방 단위 효과면 그 종류를 돌려준다 */
-export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules, players: PlayerState[]): RoomAction {
+export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules, players: PlayerState[], rand = Math.random): RoomAction {
   const def = ITEMS[id];
   if (def.buff) {
     const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1);
@@ -84,6 +98,23 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
     case 'goldHand':
       p.goldLeft += RULES.items.goldCount;
       return null;
+    // 방해: 잡은 사람을 뺀 모두에게
+    case 'slowCursor':
+    case 'invertCursor':
+    case 'blind': {
+      const debuff = id === 'slowCursor' ? 'slow' : id === 'invertCursor' ? 'invert' : 'blind';
+      for (const o of players) {
+        if (o === p) continue;
+        addDebuff(o, debuff, RULES.sabotage.ms, now);
+        if (debuff === 'blind') o.blind = { kind: BLIND_KINDS[Math.floor(rand() * BLIND_KINDS.length)], seed: Math.floor(rand() * 1e9) };
+      }
+      return null;
+    }
+    case 'snipe': {
+      const t = snipeTarget(p, players);
+      if (t) { t.stunUntil = Math.max(t.stunUntil, now + RULES.sabotage.snipeStunMs); t.combo = 0; }
+      return { kind: 'snipe', target: t?.id ?? null };
+    }
     default:
       return { kind: id as RoomActionKind };
   }

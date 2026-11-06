@@ -7,7 +7,7 @@ import {
   Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
-  Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette,
+  Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId } from '@color-burst/shared';
 
@@ -30,6 +30,7 @@ export const ITEM_ICON: Record<ItemId, IconNode> = {
   wideHand: Hand, magnet: Magnet, missGuard: Wind, comboLock: Lock, guard: ShieldCheck, markClear: CircleOff,
   feverCharge: BatteryCharging, instantFever: Flame, goldHand: HandCoins, double: ChevronsUp, paint: Paintbrush,
   rain: CloudRain, zone: CircleDot, bomb: Bomb, timeStop: Timer, fieldClear: Sparkles,
+  slowCursor: Snail, invertCursor: ArrowLeftRight, blind: EyeOff, snipe: Crosshair,
 };
 
 export const EVENT_ICON: Record<EventId, IconNode> = {
@@ -39,7 +40,7 @@ export const EVENT_ICON: Record<EventId, IconNode> = {
 
 export const UI = {
   pause: Pause, settings: Settings, reroll: RefreshCw, classic: Gamepad2, arcade: Layers,
-  basic: Gauge, party: PartyPopper, hardcore: Zap, chill: Coffee, ping: Wifi, bot: Bot,
+  basic: Gauge, party: PartyPopper, hardcore: Zap, chill: Coffee, chaos: Tornado, ping: Wifi, bot: Bot,
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,
 } as const;
 

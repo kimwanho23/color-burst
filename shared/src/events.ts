@@ -79,8 +79,9 @@ function available(players: PlayerState[]): EventId[] {
 }
 
 /** 라운드 사이: 이벤트가 일어날지, 일어나면 어떤 이벤트인지. used: 이번 게임에 이미 나온 횟수 */
-export function rollEvent(players: PlayerState[], used: number, rand = Math.random): EventId | null {
-  if (used >= RANDOM_EVENT.maxPerGame || !(rand() < RANDOM_EVENT.chance)) return null;
+/** chance: 등장 확률 (카오스는 RULES.chaos.eventChance) */
+export function rollEvent(players: PlayerState[], used: number, rand = Math.random, chance: number = RANDOM_EVENT.chance): EventId | null {
+  if (used >= RANDOM_EVENT.maxPerGame || !(rand() < chance)) return null;
   const ids = available(players);
   const w = ids.map((id) => (id === 'swap' ? RANDOM_EVENT.swapWeight : 1));
   let r = rand() * w.reduce((a, b) => a + b, 0);

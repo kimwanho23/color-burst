@@ -44,6 +44,12 @@ export const RULES = {
   laser: { everyMin: 10_000, everyMax: 15_000, warnMs: 1_000, fireMs: 300, width: 18, stunMs: 1_500, startQuietMs: 3_000, endQuietMs: 1_000 },
   /** 커서 자석: 끌려오는 시간, 플레이어마다 1초에 끌 수 있는 원 수 */
   magnet: { pullMs: 250, perSec: 2 },
+  /** 방해 아이템: 효과 시간, 감도 감소 배율, 1등 저격 스턴, 효과가 끝난 뒤 커서가 마우스로 돌아오는 시간 */
+  sabotage: { ms: 5_000, slow: 0.3, snipeStunMs: 3_000, slideMs: 150 },
+  /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
+  aura: { extra: 80, pullSpeed: 120, tickMs: 500, touchPenalty: 1, clickPenalty: 2 },
+  /** 카오스 모드 배율 */
+  chaos: { itemMult: 3, waveIntervalMult: 0.5, laserIntervalMult: 0.5, bossCountOdds: [20, 40, 40], eventChance: 0.3 },
   /** 아케이드: 라운드가 끝나고 능력 선택 화면이 열리기까지 ("라운드 종료!" 표시) */
   roundEndMs: 1_500,
   /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 (서버 판정과 화면 예측 공통) */
@@ -182,6 +188,10 @@ export interface RoomRules {
   waves: boolean;
   /** 레이저 발사기 (커서가 맞으면 스턴) */
   laser: boolean;
+  /** 방해 아이템 (감도 감소·마우스 반대·시야 방해·1등 저격) */
+  sabotage: boolean;
+  /** 카오스 모드: 아이템·웨이브·레이저·보스·랜덤 이벤트가 더 자주 (카오스 프리셋이 켬) */
+  chaos: boolean;
   /** 아케이드: 라운드 사이 랜덤 이벤트 */
   randomEvents: boolean;
 }
@@ -207,7 +217,7 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
-  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, randomEvents: true,
+  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, sabotage: true, chaos: false, randomEvents: true,
 };
 
 export const PRESETS = {
@@ -222,7 +232,11 @@ export const PRESETS = {
   },
   chill: {
     name: '느긋하게', desc: '천천히, 처음 하는 친구와 함께',
-    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false, laser: false },
+    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false, laser: false, sabotage: false },
+  },
+  chaos: {
+    name: '카오스', desc: '모든 게 켜진 진정한 난장판',
+    rules: { ...DEFAULT_RULES, speed: 1.25, density: 1.3, feverMult: 5, rainbowPct: 10, comeback: true, chaos: true },
   },
 } as const satisfies Record<string, { name: string; desc: string; rules: RoomRules }>;
 export type PresetId = keyof typeof PRESETS;
@@ -243,7 +257,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'randomEvents'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos', 'randomEvents'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
@@ -268,6 +282,8 @@ export interface GameRules {
   items: boolean;
   waves: boolean;
   laser: boolean;
+  sabotage: boolean;
+  chaos: boolean;
   randomEvents: boolean;
 }
 
@@ -289,6 +305,8 @@ export function toGameRules(r: RoomRules): GameRules {
     items: r.items,
     waves: r.waves,
     laser: r.laser,
+    sabotage: r.sabotage,
+    chaos: r.chaos,
     randomEvents: r.randomEvents,
   };
 }
@@ -379,6 +397,22 @@ export interface PlayerState {
   reflectLeft: number;
   /** 스턴이 끝나는 서버 시각 (그때까지 클릭이 무시된다) */
   stunUntil: number;
+  /** 방해 효과가 끝나는 서버 시각 */
+  debuffs: Partial<Record<DebuffId, number>>;
+  /** 시야 방해 모양 (서버가 정해서 재접속해도 같음) */
+  blind: { kind: BlindKind; seed: number } | null;
+}
+
+/** 방해 효과: 감도 감소, 마우스 반대, 시야 방해 */
+export type DebuffId = 'slow' | 'invert' | 'blind';
+export type BlindKind = 'ink' | 'half' | 'doodle' | 'lens';
+export const BLIND_KINDS: readonly BlindKind[] = ['ink', 'half', 'doodle', 'lens'];
+
+export const debuffOn = (p: PlayerState, id: DebuffId, now: number) => now < (p.debuffs[id] ?? 0);
+
+/** 방해 걸기: 이미 걸려 있으면 남은 시간에 더하되 원래 시간의 2배까지 (버프와 같은 규칙) */
+export function addDebuff(p: PlayerState, id: DebuffId, ms: number, now: number) {
+  p.debuffs[id] = Math.min(Math.max(p.debuffs[id] ?? 0, now) + ms, now + ms * 2);
 }
 
 /** 시간 제한이 있는 아이템 효과 */
@@ -395,6 +429,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
   for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil'] as const) if (p[k] > since) p[k] += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
+  for (const k of Object.keys(p.debuffs) as DebuffId[]) if (p.debuffs[k]! > since) p.debuffs[k]! += delta;
 }
 
 /** 넓은 손 범위: 능력 + 아이템, 능력 상한 */
@@ -447,7 +482,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
-    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0,
+    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
   };
 }
 
@@ -467,6 +502,7 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   const m = modsOf(p.picks);
   p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
   p.calmLeft = m.calm; p.shieldLeft = m.shield; p.reflectLeft = m.reflect; p.stunUntil = 0;
+  p.debuffs = {}; p.blind = null;
   p.buffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.score += m.headStart;
@@ -681,7 +717,7 @@ export function rollBossType(rand = Math.random): BossType {
 }
 
 /** 이번에 나올 보스 수. alive: 이미 화면에 있는 보스 수 (합쳐서 maxAlive를 넘지 않음) */
-export function rollBossCount(alive: number, theme: ThemeId | null | undefined, rand = Math.random) {
+export function rollBossCount(alive: number, theme: ThemeId | null | undefined, rand = Math.random, chaos = false) {
   const room = RULES.boss.maxAlive - alive;
   if (room <= 0) return 0;
   let n: number;
@@ -689,7 +725,8 @@ export function rollBossCount(alive: number, theme: ThemeId | null | undefined, 
   else {
     let r = rand() * 100;
     n = 1;
-    for (let i = 0; i < RULES.boss.countOdds.length; i++) { r -= RULES.boss.countOdds[i]; if (r < 0) { n = i + 1; break; } }
+    const odds = chaos ? RULES.chaos.bossCountOdds : RULES.boss.countOdds;
+    for (let i = 0; i < odds.length; i++) { r -= odds[i]; if (r < 0) { n = i + 1; break; } }
   }
   return Math.min(n, room);
 }

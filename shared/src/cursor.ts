@@ -2,7 +2,7 @@
  * 게임 커서: 화면이 그리는 내 커서의 위치 계산, 레이저 기하, 커서 자석 대상 고르기.
  * 수치는 rules.ts의 RULES.cursor / RULES.laser / RULES.magnet에 있다.
  */
-import { FIELD, RULES, circlePos, isGuarded, isMine, isOut, type Circle, type ColorIndex } from './rules.ts';
+import { FIELD, RULES, circlePos, debuffOn, isGuarded, isMine, isOut, type Circle, type ColorIndex, type PlayerState } from './rules.ts';
 
 export type Point = { x: number; y: number };
 /** 커서 효과: slow(움직임 배율), invert(반대로) */
@@ -37,7 +37,9 @@ export function rollLaser(rand = Math.random): { a: Point; b: Point } {
 
 export const laserHits = (cursor: Point, a: Point, b: Point) => distToSegment(cursor, a, b) <= RULES.laser.width;
 
-export const nextLaserIn = (rand = Math.random) => RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin);
+/** 다음 레이저까지 걸리는 시간(ms). 카오스면 절반 */
+export const nextLaserIn = (rand = Math.random, chaos = false) =>
+  (RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin)) * (chaos ? RULES.chaos.laserIntervalMult : 1);
 
 /** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원 (보호 구역·화면 밖·skip 제외), 가까운 순 최대 max개 */
 export function pickMagnetTargets(
@@ -60,4 +62,41 @@ export function pickMagnetTargets(
  */
 export function cursorActive(s: { playing: boolean; picking: boolean; roundOver: boolean; paused: boolean; hidden: boolean; focused: boolean }) {
   return s.playing && !s.picking && !s.roundOver && !s.paused && !s.hidden && s.focused;
+}
+
+/** 방해 디버프로 정해지는 커서 효과 (감도 감소·마우스 반대, 둘 다면 합침). 없으면 null */
+export function cursorModeOf(p: PlayerState, now: number): CursorMode | null {
+  const slow = debuffOn(p, 'slow', now), invert = debuffOn(p, 'invert', now);
+  if (!slow && !invert) return null;
+  return { ...(slow ? { slow: RULES.sabotage.slow } : {}), ...(invert ? { invert: true } : {}) };
+}
+
+/** 효과가 끝난 뒤 게임 커서가 진짜 마우스 위치로 미끄러져 돌아온다 (slideMs 동안) */
+export function slideBack(from: Point, real: Point, elapsedMs: number): Point {
+  const k = Math.min(1, Math.max(0, elapsedMs / RULES.sabotage.slideMs));
+  return { x: from.x + (real.x - from.x) * k, y: from.y + (real.y - from.y) * k };
+}
+
+/** 이동형 보스의 오오라: 몸통(inner) 밖, 반지름 r까지의 고리. 다른 원은 null */
+export function auraAt(c: Circle, t: number): { x: number; y: number; r: number; inner: number } | null {
+  if (c.kind !== 'boss' || c.boss !== 'runner') return null;
+  const p = circlePos(c, t);
+  return { x: p.x, y: p.y, r: c.r + RULES.aura.extra, inner: c.r };
+}
+
+export function inAura(p: Point, a: { x: number; y: number; r: number; inner: number }) {
+  const d = Math.hypot(p.x - a.x, p.y - a.y);
+  return d > a.inner && d <= a.r;
+}
+
+/** 렌즈 시야 방해: 그리는 물체의 위치·크기만 휜다 (중심 가운데, 반경 LENS_R). 볼록은 바깥으로 크게, 오목은 안쪽으로 작게 */
+const LENS_R = 380;
+export function lensWarp(p: Point, size: number, convex: boolean): { x: number; y: number; size: number } {
+  const cx = FIELD.w / 2, cy = FIELD.h / 2;
+  const dx = p.x - cx, dy = p.y - cy, d = Math.hypot(dx, dy);
+  if (d === 0 || d >= LENS_R) return { x: p.x, y: p.y, size };
+  const u = d / LENS_R;
+  const d2 = LENS_R * Math.pow(u, convex ? 0.6 : 1.6);
+  const scale = convex ? 1 + 0.6 * (1 - u) : 1 - 0.4 * (1 - u);
+  return { x: cx + (dx / d) * d2, y: cy + (dy / d) * d2, size: size * scale };
 }

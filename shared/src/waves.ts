@@ -10,8 +10,9 @@ export const WAVE_NAMES: Record<WavePattern, string> = {
   fan: '부채꼴', burst: '동시 다발', spiral: '나선', ring2: '이중 링', twin: '쌍나선', stream: '연속 사출', sweep: '쓸기',
 };
 
-/** 다음 웨이브까지 걸리는 시간(ms) */
-export const nextWaveIn = (rand = Math.random) => RULES.waves.everyMin + rand() * (RULES.waves.everyMax - RULES.waves.everyMin);
+/** 다음 웨이브까지 걸리는 시간(ms). 카오스면 절반 */
+export const nextWaveIn = (rand = Math.random, chaos = false) =>
+  (RULES.waves.everyMin + rand() * (RULES.waves.everyMax - RULES.waves.everyMin)) * (chaos ? RULES.chaos.waveIntervalMult : 1);
 
 const deg = (d: number) => (d * Math.PI) / 180;
 

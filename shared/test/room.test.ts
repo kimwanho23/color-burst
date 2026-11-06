@@ -32,7 +32,7 @@ test('필드 클리어: 원이 많아도 플레이어 상태는 한 번만 보�
   // 가운데 발사 보호 구역 밖: 1초 전에 초당 300으로 출발한 원들
   for (let i = 0; i < 20; i++) circles.set(100 + i, { id: 100 + i, kind: (i % 4) as 0, angle: i, speed: 300, r: 40, born: now - 1000 });
   circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
-  t.mock.method(Math, 'random', () => 0.99); // 전설 [시간 정지, 필드 클리어] 중 필드 클리어
+  t.mock.method(Math, 'random', () => 0.5); // 전설 [시간 정지, 필드 클리어, 1등 저격] 중 필드 클리어
   sent.length = 0;
   room.click(me.id, { circleId: 1, x: 1100, y: 450 });
   assert.equal(sent.filter((e) => e === 'circle:claimed').length, 20);
@@ -65,7 +65,7 @@ test('발사 보호 구역: 필드 클리어·장판도 가운데 원은 못 잡
   circles.set(200, { id: 200, kind: 0, angle: 0, speed: 0, r: 40, born: now }); // 가운데
   circles.set(201, { id: 201, kind: 0, angle: 0, speed: 300, r: 40, born: now - 1000 }); // 바깥
   circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 2, speed: 300, r: 34, born: now - 1000 });
-  t.mock.method(Math, 'random', () => 0.99); // 필드 클리어
+  t.mock.method(Math, 'random', () => 0.5); // 전설 [시간 정지, 필드 클리어, 1등 저격] 중 필드 클리어
   const q = { x: 800 + Math.cos(2) * 300, y: 450 + Math.sin(2) * 300 };
   room.click(me.id, { circleId: 1, x: q.x, y: q.y });
   assert.equal(circles.has(200), true);

@@ -44,9 +44,10 @@ test('isMine: 아이템 원은 내 원이 아니다', () => {
   assert.equal(isMine('item', 0), false);
 });
 
-test('아이템 16종, 등급별 7 / 7 / 2', () => {
-  const tiers = Object.values(ITEMS).map((i) => i.tier);
-  assert.deepEqual([0, 1, 2].map((t) => tiers.filter((x) => x === t).length), [7, 7, 2]);
+test('아이템 20종: 일반 16종 7 / 7 / 2 + 방해 4종 2 / 1 / 1', () => {
+  const count = (sab: boolean) => [0, 1, 2].map((t) => Object.values(ITEMS).filter((i) => i.tier === t && !!i.sabotage === sab).length);
+  assert.deepEqual(count(false), [7, 7, 2]);
+  assert.deepEqual(count(true), [2, 1, 1]);
 });
 
 test('rollItem: 빈 곳 페널티가 꺼진 방에서는 헛클릭 무효가 안 나온다', () => {
