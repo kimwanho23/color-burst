@@ -89,9 +89,17 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
   }
 }
 
-/** 시간 정지: 지금 있는 모든 원(보스 포함)에 정지 구간을 붙이고 id 목록을 돌려준다 */
+/**
+ * 시간 정지: 지금 있는 모든 원(보스 포함)에 정지 구간을 붙이고 id 목록을 돌려준다.
+ * 이미 멈춰 있으면 겹치지 않게 앞 구간이 끝나는 시각부터 이어 붙인다 (겹치면 원이 뒤로 간다)
+ */
 export function holdCircles(circles: Iterable<Circle>, now: number, ms: number): number[] {
   const ids: number[] = [];
-  for (const c of circles) { (c.holds ??= []).push([now, ms]); ids.push(c.id); }
+  for (const c of circles) {
+    const holds = (c.holds ??= []);
+    const from = Math.max(now, ...holds.map(([a, l]) => a + l));
+    if (now + ms > from) holds.push([from, now + ms - from]);
+    ids.push(c.id);
+  }
   return ids;
 }

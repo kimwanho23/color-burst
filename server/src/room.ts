@@ -284,7 +284,7 @@ export class Room {
       return;
     }
 
-    // 판정 순서: ① 직접 맞은 원 ② 넓은 손 범위 안의 내 원 전부 ③ (아무것도 없으면) 자석 ④ 빈 곳
+    // 판정 순서: ① 직접 맞은 원 ② 넓은 손 범위 안의 내 원 전부 ③ (아무것도 없으면) 자석 ④ 빈 곳 (원을 노린 클릭이 아닐 때만)
     let got = false;
     if (d.circleId !== null) {
       const c = this.circles.get(d.circleId);
@@ -317,7 +317,8 @@ export class Room {
       }
       if (best) { this.claim(p, best, now, 'magnet'); got = true; }
     }
-    if (!got) {
+    // 원을 노리고 눌렀는데 거절된 경우(남이 먼저 가져감 등)는 빈 곳이 아니므로 페널티 없음
+    if (!got && d.circleId === null) {
       resolveMiss(p, now, this.G, this.players);
       this.emitPlayers();
     }

@@ -22,6 +22,17 @@ test('holdCircles: 모든 원에 같은 정지 구간을 붙이고 id를 돌려�
   assert.deepEqual(cs[1].holds, [[2000, 1500]]);
 });
 
+test('holdCircles: 정지 중에 또 정지하면 이어 붙여 뒤로 가지 않는다', () => {
+  const c: Circle = { id: 1, kind: 0, angle: 0, speed: 1000, r: 40, born: -1000 };
+  holdCircles([c], 0, 1500);
+  holdCircles([c], 500, 1500);
+  const xs = [0, 500, 1000, 1500, 2000].map((t) => circlePos(c, t).x);
+  for (let i = 1; i < xs.length; i++) assert.ok(xs[i] >= xs[i - 1], `t=${i * 500} 뒤로 감: ${xs}`);
+  // 두 번째 정지가 끝나는 2000부터 다시 움직인다
+  assert.equal(circlePos(c, 2000).x, circlePos(c, 0).x);
+  assert.ok(circlePos(c, 2100).x > circlePos(c, 2000).x);
+});
+
 test('makeCircle: 아이템 확률 1이면 아이템 원', () => {
   const c = makeCircle(1, 0, 0, [0, 1], G, Math.random, { itemChance: 1 });
   assert.equal(c.kind, 'item');

@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, holdCircles, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
   type Zone, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
@@ -378,7 +378,8 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
 });
 socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); });
 socket.on('circles:hold', ({ ids, at, ms }) => {
-  for (const id of ids) { const c = circles.get(id); if (c) (c.holds ??= []).push([at, ms]); }
+  // 서버와 같은 방식으로 붙인다 (정지 중 또 정지하면 이어 붙임)
+  holdCircles(ids.map((id) => circles.get(id)).filter((c): c is Circle => !!c), at, ms);
   frozenUntil = Math.max(frozenUntil, at + ms);
   sfx.freeze();
 });
