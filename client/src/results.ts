@@ -1,6 +1,7 @@
 /** 결과 화면: 순위, 칭호, 점수 그래프 */
 import { COLORS, type GameOver, type PlayerState } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
+import { pickChips } from './arcadeUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -13,7 +14,7 @@ export function renderResult(d: GameOver, myId: string) {
     const tags = titlesOf(p.id).map((t) => `<span class="title" title="${esc(t.desc)}">${t.name}</span>`).join('');
     return `<div class="${p.id === myId ? 'me' : ''}">
       <span class="pos">${i + 1}</span>${shapeSVG(p.color, 24)}
-      <span class="who"><span>${esc(p.name)}${p.id === myId ? ' (나)' : ''}${w ? ` <em>${w}승</em>` : ''}</span>${tags ? `<span class="tags">${tags}</span>` : ''}</span>
+      <span class="who"><span>${esc(p.name)}${p.id === myId ? ' (나)' : ''}${w ? ` <em>${w}승</em>` : ''}</span>${tags ? `<span class="tags">${tags}</span>` : ''}${pickChips(p.picks ?? [], true)}</span>
       <span class="v">${p.score}</span></div>`;
   }).join('');
 

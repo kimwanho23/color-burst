@@ -130,6 +130,51 @@ kbd { font: 700 11px var(--body); border: 1px solid var(--line); border-radius: 
 .btn.small { font-size: 15px; padding: 9px 12px; }
 .ping { font: 700 12px var(--body); color: var(--muted); font-variant-numeric: tabular-nums; }
 .ping.bad { color: var(--red); }
+/* ---------- 아케이드 ---------- */
+.roundtag { font: 800 12px var(--body); letter-spacing: .06em; color: var(--bg); background: var(--fg); border-radius: 999px; padding: 5px 10px; }
+.modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mode { background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 10px; color: var(--fg); text-align: left; display: flex; flex-direction: column; gap: 3px; cursor: pointer; font: 400 12px var(--body); }
+.mode b { font: 400 18px var(--display); }
+.mode span { color: var(--muted); }
+.mode[aria-pressed="true"] { border-color: var(--yellow); background: #2a2f62; }
+.mode:disabled { cursor: default; }
+
+/* 등급 색: 노말 흰색, 레어 파랑, 에픽 보라, 레전드 프리즘 */
+:root { --t0: #ffffff; --t1: #4d9bff; --t2: #b26cff; --prism: linear-gradient(120deg, #ff5d73, #ffb347, #ffd43b, #51cf66, #4dabf7, #b26cff, #ff5d73); }
+.pickcard { gap: 12px; }
+.pick-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.pick-head h2 { font: 400 32px var(--display); margin: 2px 0 0; }
+.pick-timer { font: 400 30px var(--display); color: var(--yellow); font-variant-numeric: tabular-nums; }
+.boost { margin: 0; color: var(--yellow) !important; font-weight: 800; }
+.acards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.acard { position: relative; background: var(--panel); color: var(--fg); border: 3px solid var(--tc, var(--t0)); border-radius: 16px; padding: 14px 12px 30px; text-align: left; display: flex; flex-direction: column; gap: 6px; cursor: pointer; font: 400 13px var(--body); min-width: 0; transition: transform .12s; }
+.acard:hover, .acard:focus-visible { transform: translateY(-4px); }
+.acard.t0 { --tc: var(--t0); }
+.acard.t1 { --tc: var(--t1); box-shadow: 0 0 18px rgba(77, 155, 255, .35); }
+.acard.t2 { --tc: var(--t2); box-shadow: 0 0 22px rgba(178, 108, 255, .45); }
+.acard.t3 { border-color: transparent; background: linear-gradient(var(--panel), var(--panel)) padding-box, var(--prism) border-box; background-size: 100% 100%, 300% 300%; animation: prism 3s linear infinite; box-shadow: 0 0 28px rgba(255, 212, 59, .45); }
+@keyframes prism { to { background-position: 0 0, 300% 0; } }
+.acard .tier { font: 800 11px var(--body); letter-spacing: .12em; color: var(--tc, var(--t0)); }
+.acard.t3 .tier { background: var(--prism); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: prism 3s linear infinite; }
+.acard .cat { position: absolute; top: 12px; right: 12px; font-size: 11px; color: var(--muted); }
+.acard .aname { font: 400 22px var(--display); }
+.acard .adesc { color: var(--fg); line-height: 1.45; }
+.acard .stack { color: var(--yellow); font-size: 12px; font-weight: 700; }
+.acard kbd { position: absolute; bottom: 10px; right: 10px; }
+.build { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+.build li { border-left: 4px solid var(--t0); background: var(--panel); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.build li.t1 { border-left-color: var(--t1); } .build li.t2 { border-left-color: var(--t2); }
+.build li.t3 { border-image: var(--prism) 1; }
+.build b { font-size: 13px; } .build span { color: var(--muted); }
+.picks-mini { display: inline-flex; flex-wrap: wrap; gap: 3px; }
+.chip .picks-mini { position: absolute; right: 8px; bottom: 6px; }
+.pk { display: inline-block; min-width: 8px; height: 8px; border-radius: 999px; background: var(--t0); }
+.pk.t1 { background: var(--t1); } .pk.t2 { background: var(--t2); } .pk.t3 { background: var(--prism); }
+.rank .pk:not(:empty) { height: auto; min-width: 0; padding: 1px 7px; font: 800 10px/1.5 var(--body); color: var(--bg); }
+.rank .pk.t3:not(:empty) { color: #2a1a00; }
+@media (max-width: 560px) { .acards { grid-template-columns: 1fr; } .modes { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .acard.t3, .acard.t3 .tier { animation: none; } }
+
 .countdown { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 120px; color: var(--yellow); pointer-events: none; text-shadow: 0 6px 30px rgba(0, 0, 0, .5); }
 
 .netbanner { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: var(--red); color: #fff; font-weight: 800; font-size: 13px; padding: 8px 14px; border-radius: 999px; white-space: nowrap; z-index: 5; }

@@ -1,11 +1,12 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, RULES, circlePos, isFever, isHit, isMarked, isOut,
-  type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  COLORS, DEFAULT_RULES, RULES, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut,
+  type ArcadeOffer, type ArcadeState, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
+import { pickChips, renderPick } from './arcadeUI.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
@@ -64,6 +65,38 @@ let pausedView = 0;
 const viewNow = () => (pausedView || serverNow());
 /** 혼자 하기는 본인, 멀티는 방장만 일시정지 가능 */
 const canPause = () => !!room && (room.solo || room.hostId === myId());
+
+// ---------- 아케이드 ----------
+let arcade: ArcadeState | null = null;
+let offer: ArcadeOffer | null = null;
+let picked = false;
+const picking = () => arcade?.phase === 'pick';
+
+function showPick() {
+  if (!arcade || arcade.phase !== 'pick') { $('pickOv').hidden = true; return; }
+  picked = !arcade.waiting.includes(myId());
+  renderPick($('pickOv'), { state: arcade, offer, me: me(), players, chosen: picked }, {
+    choose: (i) => { sfx.pickChoose(); socket.emit('arcade:choose', i); },
+    reroll: () => socket.emit('arcade:reroll'),
+  });
+  $('pickOv').hidden = false;
+}
+socket.on('arcade:pick', (st) => {
+  const opening = !picking();
+  arcade = st;
+  if (opening) { offer = null; stopMusic(); sfx.pickOpen(); circles.clear(); pending.clear(); }
+  showPick();
+});
+socket.on('arcade:offer', (o) => {
+  offer = o;
+  if (o.options.some((x) => x.tier === 3)) sfx.legend();
+  showPick();
+});
+document.addEventListener('keydown', (e) => {
+  if (!picking() || picked || !offer || isTyping(e)) return;
+  if (['1', '2', '3'].includes(e.key)) { sfx.pickChoose(); socket.emit('arcade:choose', Number(e.key) - 1); }
+  if (e.key === 'r' || e.key === 'R') socket.emit('arcade:reroll');
+});
 const myId = () => myPlayerId;
 const me = () => players.find((p) => p.id === myId());
 
@@ -169,6 +202,8 @@ $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 // ---------- 게임 ----------
 function applyPlay(d: PlayPayload, fresh: boolean) {
   startAt = d.startAt; endAt = d.endAt; players = d.players; rules = d.rules;
+  arcade = d.arcade;
+  if (!picking()) offer = null;
   circles.clear(); pending.clear();
   if (fresh) lastCount = -1;
   for (const c of d.circles) circles.set(c.id, c);
@@ -176,6 +211,8 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   show(null);
   renderScores();
   initAudio();
+  if (picking()) { stopMusic(); showPick(); return; }
+  $('pickOv').hidden = true;
   setPaused(d.pausedBy);
 }
 socket.on('game:start', (d) => applyPlay(d, true));
@@ -197,7 +234,7 @@ function setPaused(by: string | null) {
   }
 }
 function togglePause() {
-  if (!playing || !canPause()) return;
+  if (!playing || !canPause() || picking()) return;
   socket.emit(pausedView ? 'game:resume' : 'game:pause');
 }
 $('pauseBtn').onclick = togglePause;
@@ -234,15 +271,16 @@ socket.on('boss:escaped', ({ circleId }) => {
   renderer.text(800, 300, '보스가 도망갔어요', '#9ca2d6', 1.1);
 });
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
-socket.on('players', (p) => { players = p; renderScores(); });
+socket.on('players', (p) => { players = p; renderScores(); if (picking()) showPick(); });
 socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
+  const claimedKind = circles.get(circleId)?.kind;
   circles.delete(circleId); pending.delete(circleId);
   const who = players.find((p) => p.id === by);
   if (!who) return;
   const mine = by === myId();
   renderer.burst(x, y, COLORS[who.color].hex, mine);
   if (mine) {
-    const label = result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '';
+    const label = (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
     renderer.text(x, y, `+${result.gained}${label}${result.comboBonus ? ' 콤보!' : ''}`, isFever(who, serverNow()) ? '#ff9f1c' : '#fff');
     ({ own: sfx.own, yellow: sfx.yellow, rainbow: sfx.rainbow, steal: sfx.steal, feverSteal: sfx.steal, counter: sfx.rainbow })[result.type]();
     if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
@@ -251,10 +289,13 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     renderer.text(x, y, who.name, COLORS[who.color].hex, 0.75);
   }
   if (result.brokeComboOf === myId()) { sfx.comboBroken(); renderer.text(x, y - 45, '콤보 끊김!', '#ff5d73', 1.1); }
+  if (result.shielded && claimedKind === me()?.color) renderer.text(x, y - 45, '방패!', '#4d9bff', 1.1);
 });
 socket.on('game:over', (d) => {
   const { ranking } = d;
   playing = false;
+  arcade = null; offer = null;
+  $('pickOv').hidden = true;
   pausedView = 0;
   $('pauseOv').hidden = true;
   stopMusic();
@@ -275,7 +316,7 @@ socket.on('game:over', (d) => {
 });
 
 $('cv').addEventListener('pointerdown', (e) => {
-  if (!playing || pausedView) return;
+  if (!playing || pausedView || picking()) return;
   ensureMusic();
   const now = serverNow();
   if (now < startAt) return;
@@ -324,36 +365,44 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
-  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span></div>`).join('');
+  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [])}</div>`).join('');
 }
 
 function updateHud(now: number) {
   const m = me();
   const fever = !!m && isFever(m, now);
-  const fill = !m ? 0 : fever ? ((m.feverUntil - now) / (rules.feverSec * 1000)) * 100 : m.fever;
+  const G = toGameRules(rules);
+  const fill = !m ? 0 : fever ? ((m.feverUntil - now) / feverMsOf(m, G)) * 100 : m.fever;
   $('meterFill').style.width = `${Math.max(0, fill)}%`;
-  $('flabel').textContent = fever ? `×${rules.feverMult}` : '피버';
+  const after = !!m && !fever && now < m.afterUntil;
+  $('flabel').textContent = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   $('combo').textContent = `${m?.combo ?? 0} 콤보`;
-  $('stage').classList.toggle('feverOn', playing && fever);
+  $('stage').classList.toggle('feverOn', playing && !picking() && fever);
   document.querySelectorAll<HTMLElement>('.chip').forEach((el) => {
     const p = players.find((x) => x.id === el.dataset.id);
-    el.classList.toggle('marked', playing && !!p && isMarked(p, now));
-    el.classList.toggle('fever', playing && !!p && isFever(p, now));
+    const live = playing && !picking() && !!p;
+    el.classList.toggle('marked', live && isMarked(p!, now));
+    el.classList.toggle('fever', live && isFever(p!, now));
   });
 
-  const left = playing ? Math.max(0, endAt - Math.max(now, startAt)) : rules.roundSec * 1000;
+  $('roundTag').hidden = !arcade;
+  if (arcade) $('roundTag').textContent = `라운드 ${arcade.round}/${arcade.rounds}`;
+  const pickLeft = picking() ? Math.max(0, arcade!.pickEndsAt - serverNow()) : 0;
+  const pt = document.getElementById('pickTimer');
+  if (pt) pt.textContent = `${Math.ceil(pickLeft / 1000)}초`;
+  const left = picking() ? 0 : playing ? Math.max(0, endAt - Math.max(now, startAt)) : toGameRules(rules).roundMs;
   $('timer').textContent = String(Math.ceil(left / 1000));
   $('timer').classList.toggle('hot', playing && left <= RULES.finalRushMs);
 
   const cd = Math.ceil((startAt - now) / 1000);
-  const showCd = playing && cd > 0;
+  const showCd = playing && !picking() && cd > 0;
   $('countdown').hidden = !showCd;
   if (showCd && cd !== lastCount) { $('countdown').textContent = String(cd); sfx.tick(); lastCount = cd; }
 }
 
 function frame() {
   const now = viewNow();
-  $('pauseBtn').hidden = !(playing && canPause());
+  $('pauseBtn').hidden = !(playing && canPause() && !picking());
   for (const [id, c] of circles) if (isOut(c, now)) { circles.delete(id); pending.delete(id); }
   const m = me();
   updateHud(now);
@@ -364,6 +413,7 @@ function frame() {
     myFever: !!m && isFever(m, now),
     markedColors: new Set(players.filter((p) => isMarked(p, now)).map((p) => p.color)),
     now,
+    blurred: !!m && now < m.blurUntil,
   });
   requestAnimationFrame(frame);
 }

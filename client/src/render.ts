@@ -25,6 +25,8 @@ export interface DrawState {
   /** 색 → 표적 여부 */
   markedColors: Set<number>;
   now: number;
+  /** 방해 전파를 맞아 원이 흐려 보이는 중 */
+  blurred?: boolean;
 }
 
 export class Renderer {
@@ -97,6 +99,8 @@ export class Renderer {
     ctx.strokeStyle = s.myFever ? 'rgba(255,159,28,.8)' : 'rgba(255,255,255,.18)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
 
+    // 방해 전파: 원을 흐리고 옅게
+    if (s.blurred) { ctx.filter = 'blur(7px)'; ctx.globalAlpha = 0.55; }
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
     for (const c of list) if (c.kind === 'boss') this.drawBoss(c, s.now, now);
@@ -105,6 +109,7 @@ export class Renderer {
       const p = circlePos(c, s.now);
       this.drawCircle(c.kind, p.x, p.y, c.r, (s.now - c.born) / 700 + c.id, s);
     }
+    ctx.filter = 'none'; ctx.globalAlpha = 1;
 
     for (const f of this.fx) {
       const k = f.t / f.life;

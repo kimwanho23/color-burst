@@ -1,5 +1,5 @@
 /** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 + 점수표 */
-import { PRESETS, RULES, RULE_CHOICES, matchPreset, type PresetId, type RoomRules } from '@color-burst/shared';
+import { ARCADE, PRESETS, RULES, RULE_CHOICES, matchPreset, type PresetId, type RoomRules } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
@@ -31,7 +31,17 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   const advOpen = el.querySelector<HTMLDetailsElement>('details.adv')?.open ?? false;
   const tblOpen = el.querySelector<HTMLDetailsElement>('details.rules')?.open ?? false;
   const dis = editable ? '' : 'disabled';
+  const arcade = rules.mode === 'arcade';
   el.innerHTML = `
+    <div class="lbl">모드${editable ? '' : ' (방장이 정해요)'}</div>
+    <div class="modes">
+      <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade}" ${dis}><b>클래식</b><span>${rules.roundSec}초 한 판 승부</span></button>
+      <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade}" ${dis}><b>아케이드</b><span>${ARCADE.rounds}라운드, 라운드마다 능력 선택</span></button>
+    </div>
+    ${arcade ? `<label class="adv-row" for="rule-arcadeRoundSec"><span>라운드 시간</span>
+      <select id="rule-arcadeRoundSec" data-k="arcadeRoundSec" ${dis}>
+        ${RULE_CHOICES.arcadeRoundSec.map((v) => `<option value="${v}" ${rules.arcadeRoundSec === v ? 'selected' : ''}>${v}초</option>`).join('')}
+      </select></label>` : ''}
     <div class="lbl">방 규칙${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="presets">
       ${(Object.entries(PRESETS) as [PresetId, (typeof PRESETS)[PresetId]][]).map(([id, p]) =>
@@ -41,7 +51,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <details class="adv">
       <summary>고급 설정</summary>
       <div class="adv-grid">
-        ${NUM_FIELDS.map((f) => `
+        ${NUM_FIELDS.filter((f) => !(arcade && f.key === 'roundSec')).map((f) => `
           <label class="adv-row" for="rule-${f.key}"><span>${f.label}</span>
             <select id="rule-${f.key}" data-k="${f.key}" ${dis}>
               ${RULE_CHOICES[f.key].map((v) => `<option value="${v}" ${rules[f.key] === v ? 'selected' : ''}>${f.fmt(v)}</option>`).join('')}
@@ -61,6 +71,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   // 다시 그려도 열려 있던 상태 유지
   el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen;
   el.querySelector<HTMLDetailsElement>('details.rules')!.open = tblOpen;
+  el.querySelectorAll<HTMLButtonElement>('.mode').forEach((b) => { b.onclick = () => on.change({ mode: b.dataset.m as RoomRules['mode'] }); });
   el.querySelectorAll<HTMLButtonElement>('.preset').forEach((b) => { b.onclick = () => on.preset(b.dataset.p as PresetId); });
   el.querySelectorAll<HTMLSelectElement>('select[data-k]').forEach((s) => { s.onchange = () => on.change({ [s.dataset.k!]: Number(s.value) }); });
   el.querySelectorAll<HTMLInputElement>('input[data-b]').forEach((c) => { c.onchange = () => on.change({ [c.dataset.b!]: c.checked }); });
