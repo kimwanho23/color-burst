@@ -4,6 +4,7 @@ import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
+  HOST, applyHost, rollHost, type ThemeId,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
@@ -60,7 +61,15 @@ export class Room {
   private round = 0;
   private roundPhase: 'play' | 'pick' = 'play';
   private pickEndsAt = 0;
-  private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean; allLegend: boolean }>();
+  private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean; allLegend: boolean; extra: RollExtra }>();
+  // ---------- 진행자 이벤트 ----------
+  /** 이번 게임에 진행자가 나온 횟수 */
+  private hostUsed = 0;
+  /** 이번 라운드 테마 / 다음 라운드 테마 (능력 선택 중에 공개) */
+  private theme: ThemeId | null = null;
+  private nextTheme: ThemeId | null = null;
+  /** 세금: 다음 라운드에 가장 많이 번 사람이 받는다 */
+  private taxPot = 0;
   private pickTimer: NodeJS.Timeout | null = null;
   private botPickTimers: NodeJS.Timeout[] = [];
   // ---------- 아이템 ----------
@@ -197,6 +206,10 @@ export class Room {
     this.G = toGameRules(this.rules);
     this.history = Object.fromEntries(this.players.map((p) => [p.id, [0]]));
     this.round = 1;
+    this.hostUsed = 0;
+    this.theme = null;
+    this.nextTheme = null;
+    this.taxPot = 0;
     this.roundPhase = 'play';
     this.phase = 'play';
     this.beginRound();
@@ -257,7 +270,7 @@ export class Room {
     const o = this.offers.get(id);
     if (!o || o.chosen || o.rerolls <= 0) return;
     o.rerolls--;
-    o.options = this.roll(p0(this.players, id), o.last, o.allLegend);
+    o.options = this.roll(p0(this.players, id), o.last, o.allLegend, o.extra);
     this.sendOffer(id);
   }
 
@@ -418,7 +431,7 @@ export class Room {
   private playPayload() {
     return {
       startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
-      rules: this.rules, pausedBy: this.pausedBy, arcade: this.arcadeState(), zones: this.zones,
+      rules: this.rules, pausedBy: this.pausedBy, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
     };
   }
 
@@ -426,6 +439,7 @@ export class Room {
     if (!this.G.arcade) return null;
     return {
       round: this.round, rounds: ARCADE.rounds, phase: this.roundPhase, pickEndsAt: this.pickEndsAt,
+      theme: this.roundPhase === 'pick' ? this.nextTheme : this.theme,
       waiting: this.roundPhase === 'pick' ? [...this.offers].filter(([, o]) => !o.chosen).map(([id]) => id) : [],
     };
   }
@@ -435,7 +449,9 @@ export class Room {
     this.circles.clear();
     this.bossHits.clear();
     this.clickLog.clear();
-    this.bossQueue = bossTimes(this.G);
+    this.theme = this.nextTheme;
+    this.nextTheme = null;
+    this.bossQueue = bossTimes(this.G, this.theme);
     this.zones = [];
     this.rain = null;
     this.freezeUntil = 0;
@@ -459,6 +475,18 @@ export class Room {
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
+    // 진행자 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
+    const hostId = this.G.hostEvents ? rollHost(this.players, this.hostUsed) : null;
+    const host = hostId ? applyHost(hostId, this.players, this.G) : null;
+    let delay = 0;
+    if (host) {
+      this.hostUsed++;
+      this.nextTheme = host.theme ?? null;
+      this.taxPot += host.pot ?? 0;
+      delay = HOST.pickBonusMs;
+      this.pickEndsAt += delay;
+    }
+
     const scores = this.players.map((p) => p.score);
     const min = Math.min(...scores);
     const tied = scores.every((v) => v === min);
@@ -467,9 +495,11 @@ export class Room {
       const last = !tied && p.score === min;
       const allLegend = p.legendNext;
       p.legendNext = false;
-      this.offers.set(p.id, { options: this.roll(p, last, allLegend), rerolls: ARCADE.rerollsPerPick, chosen: false, last, allLegend });
+      const extra: RollExtra = { gift: host?.giftTo === p.id, curse: host?.curseTo === p.id };
+      this.offers.set(p.id, { options: this.roll(p, last, allLegend, extra), rerolls: ARCADE.rerollsPerPick, chosen: false, last, allLegend, extra });
     }
     this.emitArcade();
+    if (host) { this.io.to(this.code).emit('arcade:host', host); this.emitPlayers(); }
     for (const p of this.players) {
       if (!p.bot) { this.sendOffer(p.id); continue; }
       // 봇은 1~3초 고민하다가 가장 높은 등급을 고른다. 저주는 꼴찌일 때만 반반 확률로 고른다
@@ -483,9 +513,9 @@ export class Room {
         if (best < 0 || o.tier > opts[best].tier || (o.tier === opts[best].tier && Math.random() < 0.5)) best = i;
       });
       if (curseAt >= 0 && (best < 0 || (last && Math.random() < 0.5))) best = curseAt;
-      this.botPickTimers.push(setTimeout(() => this.choose(p.id, best), 1000 + Math.random() * 2000));
+      this.botPickTimers.push(setTimeout(() => this.choose(p.id, best), delay + 1000 + Math.random() * 2000));
     }
-    this.pickTimer = setTimeout(() => this.finishPick(), ARCADE.pickSec * 1000);
+    this.pickTimer = setTimeout(() => this.finishPick(), ARCADE.pickSec * 1000 + delay);
   }
 
   /** 선택 마감: 안 고른 사람은 무작위로 정하고 다음 라운드 */
@@ -505,15 +535,24 @@ export class Room {
     this.beginRound();
   }
 
-  private roll(p: PlayerState | undefined, last: boolean, allLegend: boolean) {
+  /** extra: 진행자 이벤트 선물(선택지 +1)·저주 배달 */
+  private roll(p: PlayerState | undefined, last: boolean, allLegend: boolean, extra: RollExtra) {
     const curses = p ? p.picks.filter((x) => isCurse(x.id)).length : 0;
-    return rollOptions(this.round - 1, last, Math.random, { curses, allLegend, exclude: this.G.missPenalty ? [] : ['calm'] });
+    const opts = { curses, allLegend, forceCurse: extra.curse, exclude: this.G.missPenalty ? [] : ['calm' as const] };
+    return rollOptions(this.round - 1, last, Math.random, opts, ARCADE.optionCount + (extra.gift ? 1 : 0));
   }
 
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
   private applyRoundCurses() {
     if (!this.G.arcade) return;
     const effects = this.players.flatMap((p) => endRoundCurses(p));
+    // 세금: 이번 라운드에 가장 많이 번 사람이 받는다
+    if (this.taxPot > 0) {
+      const best = [...this.players].sort((a, b) => (b.score - b.roundStart) - (a.score - a.roundStart))[0];
+      best.score += this.taxPot;
+      effects.push({ playerId: best.id, id: 'tax', delta: this.taxPot });
+      this.taxPot = 0;
+    }
     if (effects.length) this.io.to(this.code).emit('arcade:effects', effects);
   }
 
@@ -552,6 +591,7 @@ export class Room {
     while (now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt, this.G)) {
       this.lastSpawn += spawnInterval(this.lastSpawn - this.startAt, this.G);
       const c = makeCircle(this.nextCircleId++, this.lastSpawn, this.lastSpawn - this.startAt, kinds, this.G, Math.random, this.spawnOpts(now));
+      if (this.theme === 'reverse') c.rev = true;
       this.circles.set(c.id, c);
       this.io.to(this.code).emit('circle:spawn', c);
     }
@@ -591,8 +631,13 @@ export class Room {
   }
 
   /** 새 원 생성 옵션: 아이템 원 확률, 내 색 비 */
+  /** 새 원 생성 옵션: 아이템 원 확률, 라운드 테마, 내 색 비 */
   private spawnOpts(now: number): SpawnOpts {
-    const o: SpawnOpts = { itemChance: this.G.items ? RULES.items.chance : 0 };
+    const T = RULES.themes;
+    const o: SpawnOpts = { itemChance: this.G.items ? RULES.items.chance * (this.theme === 'itemRush' ? T.itemRushMult : 1) : 0 };
+    if (this.theme === 'goldRush') o.yellowChance = T.goldRushYellow;
+    if (this.theme === 'rainbowRain') o.rainbowChance = T.rainbowRain;
+    if (this.theme === 'allYellow') o.forceKind = 'y';
     if (this.rain && now < this.rain.until) o.forceKind = this.rain.color;
     return o;
   }
@@ -699,3 +744,5 @@ export class Room {
 }
 
 const p0 = (players: PlayerState[], id: string) => players.find((p) => p.id === id);
+/** 진행자 이벤트로 이번 선택지에 붙는 것 */
+interface RollExtra { gift: boolean; curse: boolean }

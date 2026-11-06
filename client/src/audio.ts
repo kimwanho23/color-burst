@@ -81,6 +81,8 @@ export const sfx = {
   clear: () => [262, 392, 523, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.06, i * 0.04)),
   freeze: () => tone(1800, 0.4, 'sine', 0.08, 0, 0.3),
   zone: () => tone(440, 0.25, 'triangle', 0.1, 0, 1.5),
+  /** 진행자 등장 팡파르 */
+  host: () => [392, 523, 392, 659, 784].forEach((f, i) => tone(f, 0.12, 'square', 0.07, i * 0.09)),
   win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
   lose: () => [392, 349, 330].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
 };

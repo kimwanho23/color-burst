@@ -7,8 +7,9 @@ import {
   Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer,
+  Megaphone, Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette,
 } from 'lucide';
-import type { AbilityCategory, AbilityId, ItemId } from '@color-burst/shared';
+import type { AbilityCategory, AbilityId, HostEventId, ItemId } from '@color-burst/shared';
 
 const ABILITY_ICON: Record<AbilityId, IconNode> = {
   picky: UtensilsCrossed, yellowTaste: Citrus, rainbowHunt: Rainbow, comboArtist: Link2, headStart: Flag,
@@ -31,10 +32,15 @@ export const ITEM_ICON: Record<ItemId, IconNode> = {
   rain: CloudRain, zone: CircleDot, bomb: Bomb, timeStop: Timer, fieldClear: Sparkles,
 };
 
+export const HOST_ICON: Record<HostEventId, IconNode> = {
+  robinHood: HandCoins, tax: Landmark, lottery: Ticket, swap: ArrowLeftRight, abilitySwap: Repeat,
+  demote: TrendingDown, gift: Gift, curseDelivery: Skull, theme: Palette,
+};
+
 export const UI = {
   pause: Pause, settings: Settings, reroll: RefreshCw, classic: Gamepad2, arcade: Layers,
   basic: Gauge, party: PartyPopper, hardcore: Zap, chill: Coffee, ping: Wifi, bot: Bot,
-  up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame,
+  up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, host: Megaphone, tax: Landmark,
 } as const;
 
 /** 아이콘 SVG 문자열 */
@@ -50,3 +56,4 @@ export function icon(node: IconNode, size = 18, cls = '') {
 export const abilityIcon = (id: AbilityId, size = 18, cls = '') => icon(ABILITY_ICON[id], size, cls);
 export const categoryIcon = (c: AbilityCategory, size = 14) => icon(CATEGORY_ICON[c], size);
 export const itemIcon = (id: ItemId, size = 18, cls = '') => icon(ITEM_ICON[id], size, cls);
+export const hostIcon = (id: HostEventId, size = 18, cls = '') => icon(HOST_ICON[id], size, cls);

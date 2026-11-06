@@ -48,6 +48,14 @@ export const RULES = {
     /** 화면 밖으로 나가기까지 걸리는 시간(초, 속도 ×1 기준) */
     lifeSec: 8,
   },
+  /** 아케이드 라운드 테마 (진행자 이벤트) */
+  themes: {
+    goldRushYellow: 0.6,
+    /** 보스 러시: 라운드 진행률 지점마다 보스 */
+    bossRushAt: [0.25, 0.55, 0.85],
+    rainbowRain: 0.15,
+    itemRushMult: 4,
+  },
   /** 아이템 원 */
   items: {
     /** 일반 원이 생길 때 대신 아이템 원이 나올 확률 */
@@ -212,6 +220,8 @@ export function toGameRules(r: RoomRules): GameRules {
 }
 
 export type ColorIndex = 0 | 1 | 2 | 3;
+/** 아케이드 라운드 테마 */
+export type ThemeId = 'goldRush' | 'bossRush' | 'reverse' | 'rainbowRain' | 'itemRush' | 'allYellow';
 export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item';
 
 export interface Circle {
@@ -429,14 +439,28 @@ export const isMarked = (p: PlayerState, now: number) => now < p.markedUntil;
 
 /** 원의 위치는 발사 정보와 시각만으로 결정된다. 그래서 서버는 생성 정보만 보내면 된다. */
 export function circlePos(c: Circle, t: number) {
-  let el = Math.max(0, t - c.born);
-  // 시간 정지: 멈춘 구간과 겹친 시간만큼 덜 움직인다
-  for (const [from, ms] of c.holds ?? []) el -= Math.max(0, Math.min(t, from + ms) - Math.max(c.born, from));
-  const d = (c.speed * Math.max(0, el)) / 1000;
+  // 역발사: 같은 방향의 화면 가장자리에서 출발해 중앙으로
+  const d = c.rev ? edgeDist(c) - traveled(c, t) : traveled(c, t);
   return { x: FIELD.w / 2 + Math.cos(c.angle) * d, y: FIELD.h / 2 + Math.sin(c.angle) * d };
 }
 
+/** 출발 후 움직인 거리 */
+function traveled(c: Circle, t: number) {
+  let el = Math.max(0, t - c.born);
+  // 시간 정지: 멈춘 구간과 겹친 시간만큼 덜 움직인다
+  for (const [from, ms] of c.holds ?? []) el -= Math.max(0, Math.min(t, from + ms) - Math.max(c.born, from));
+  return (c.speed * Math.max(0, el)) / 1000;
+}
+
+/** 중앙에서 그 방향으로 원이 화면 밖에 완전히 나가는 거리 */
+function edgeDist(c: Circle) {
+  const cx = Math.abs(Math.cos(c.angle)), sy = Math.abs(Math.sin(c.angle));
+  return Math.min(cx ? (FIELD.w / 2 + c.r) / cx : Infinity, sy ? (FIELD.h / 2 + c.r) / sy : Infinity);
+}
+
 export function isOut(c: Circle, t: number) {
+  // 역발사 원은 중앙에 닿으면 사라진다
+  if (c.rev) return traveled(c, t) >= edgeDist(c);
   const p = circlePos(c, t);
   return p.x < -c.r || p.x > FIELD.w + c.r || p.y < -c.r || p.y > FIELD.h + c.r;
 }
@@ -523,9 +547,10 @@ function rollItemTier(rand: () => number): 0 | 1 | 2 {
 }
 
 /** 보스가 나오는 시점(판 시작 후 ms). 마지막 10초에 한 번은 꼭 나온다 */
-export function bossTimes(G: GameRules): number[] {
+export function bossTimes(G: GameRules, theme?: ThemeId | null): number[] {
   if (!G.boss) return [];
   const L = G.roundMs, last = L - 9_000;
+  if (theme === 'bossRush') return RULES.themes.bossRushAt.map((f) => L * f);
   return L >= 60_000 ? [L * 0.3, L * 0.62, last] : [last];
 }
 

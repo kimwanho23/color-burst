@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
   type Zone, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
@@ -8,7 +8,7 @@ import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { pickChips, renderPick } from './arcadeUI.ts';
 import { UI, icon } from './icons.ts';
-import { buffChips, renderBuffBar, showItemPop } from './effectsUI.ts';
+import { buffChips, renderBuffBar, showHost, showItemPop } from './effectsUI.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
@@ -92,8 +92,10 @@ function holdRender(ms: number) {
   animUntil = performance.now() + ms;
   setTimeout(() => { if (renderQueued) { renderQueued = false; showPick(); } }, ms + 20);
 }
+/** 진행자 룰렛이 도는 동안은 카드를 고를 수 없다 */
+let hostShowing = false;
 function chooseCard(i: number) {
-  if (picked || !offer?.options[i] || performance.now() < animUntil) return;
+  if (hostShowing || picked || !offer?.options[i] || performance.now() < animUntil) return;
   const cards = $('pickOv').querySelector('.acards');
   cards?.classList.add('choosing');
   cards?.querySelectorAll('.acard')[i]?.classList.add('picked');
@@ -102,7 +104,7 @@ function chooseCard(i: number) {
   socket.emit('arcade:choose', i);
 }
 function rerollCards() {
-  if (picked || !offer?.rerollLeft || performance.now() < animUntil) return;
+  if (hostShowing || picked || !offer?.rerollLeft || performance.now() < animUntil) return;
   $('pickOv').querySelector('.acards')?.classList.add('out');
   holdRender(280);
   socket.emit('arcade:reroll');
@@ -132,6 +134,11 @@ socket.on('arcade:pick', (st) => {
   showPick();
 });
 socket.on('arcade:effects', (e) => { effects = e; if (picking()) showPick(); });
+socket.on('arcade:host', (r) => {
+  hostShowing = true;
+  sfx.host();
+  showHost($('stage'), r, players, myId(), !fxOn()).then(() => { hostShowing = false; });
+});
 socket.on('arcade:offer', (o) => {
   offer = o;
   if (o.options.some((x) => x.tier === 3)) sfx.legend();
@@ -139,7 +146,7 @@ socket.on('arcade:offer', (o) => {
 });
 document.addEventListener('keydown', (e) => {
   if (!picking() || picked || !offer || isTyping(e)) return;
-  if (['1', '2', '3'].includes(e.key)) chooseCard(Number(e.key) - 1);
+  if (['1', '2', '3', '4'].includes(e.key)) chooseCard(Number(e.key) - 1);
   if (e.key === 'r' || e.key === 'R') rerollCards();
 });
 const myId = () => myPlayerId;
@@ -251,6 +258,8 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   if (!picking()) { offer = null; effects = []; }
   circles.clear(); pending.clear();
   if (fresh) lastCount = -1;
+  // 테마 라운드: 카운트다운 동안 테마 이름을 크게
+  if (fresh && d.theme) renderer.text(800, 330, THEMES[d.theme].name, '#ffd43b', 1.8);
   for (const c of d.circles) circles.set(c.id, c);
   zones = d.zones ?? [];
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원

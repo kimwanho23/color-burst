@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, TIERS, abilityText, modsOf,
+  ABILITY, THEMES, TIERS, abilityText, modsOf,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, icon } from './icons.ts';
@@ -85,7 +85,8 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
     .filter((p): p is PlayerState => !!p && p.id !== me?.id);
   const effects = v.effects.map((e) => {
     const who = v.players.find((p) => p.id === e.playerId);
-    return `<li class="${e.delta >= 0 ? 'plus' : 'minus'}">${abilityIcon(e.id, 15)}<span>${esc(who?.id === me?.id ? '나' : who?.name ?? '')} · ${ABILITY[e.id].name}</span><b>${e.delta >= 0 ? '+' : ''}${e.delta}</b></li>`;
+    const [ic, name] = e.id === 'tax' ? [icon(UI.tax, 15), '세금 수령'] : [abilityIcon(e.id, 15), ABILITY[e.id].name];
+    return `<li class="${e.delta >= 0 ? 'plus' : 'minus'}">${ic}<span>${esc(who?.id === me?.id ? '나' : who?.name ?? '')} · ${name}</span><b>${e.delta >= 0 ? '+' : ''}${e.delta}</b></li>`;
   }).join('');
 
   el.innerHTML = `
@@ -94,13 +95,14 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
         <div class="pick-title">${roundPips(state)}<h2>능력 선택</h2></div>
         <div class="pick-timer" id="pickTimer"></div>
       </div>
+      ${state.theme ? `<p class="theme-next">${icon(UI.host, 15)} 다음 라운드: <b>${THEMES[state.theme].name}</b> · ${THEMES[state.theme].desc}</p>` : ''}
       ${effects ? `<ul class="effects">${effects}</ul>` : ''}
       ${offer?.lastPlace && !chosen ? `<p class="boost">${icon(UI.up, 15)} 꼴찌 보너스: 높은 등급·저주 카드가 더 잘 나와요</p>` : ''}
       ${chosen || !offer
         ? `<div class="waiting">${waiting.length
             ? waiting.map((p) => `<span class="who-wait">${icon(p.bot ? UI.bot : UI.classic, 14)}${esc(p.name)}</span>`).join('') + '<span class="hint">고르는 중…</span>'
             : '<span class="hint">곧 다음 라운드가 시작돼요</span>'}</div>`
-        : `<div class="acards${v.deal ? ' deal' : ''}">${offer.options.map((o, i) => card(o, i, me)).join('')}</div>
+        : `<div class="acards${v.deal ? ' deal' : ''}${offer.options.length > 3 ? ' four' : ''}">${offer.options.map((o, i) => card(o, i, me)).join('')}</div>
            <button type="button" class="btn ghost small reroll" id="rerollBtn" ${offer.rerollLeft ? '' : 'disabled'}>
              ${icon(UI.reroll, 16)} 다시 뽑기 ${offer.rerollLeft ? `<em>${offer.rerollLeft}</em>` : ''} <kbd>R</kbd></button>`}
       <div class="lbl">내 능력</div>

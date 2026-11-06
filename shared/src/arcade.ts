@@ -195,6 +195,8 @@ export interface RollOpts {
   curses?: number;
   /** 악마의 계약: 이번 선택은 전부 레전드 */
   allLegend?: boolean;
+  /** 진행자 이벤트 '저주 배달': 선택지 하나를 반드시 저주로 (저주 상한이면 무시) */
+  forceCurse?: boolean;
   /** 이 방 규칙에서 의미 없는 능력 (예: 빈 곳 페널티가 꺼져 있으면 침착) */
   exclude?: readonly AbilityId[];
 }
@@ -209,7 +211,7 @@ export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.r
     out.push({ id: a.id, tier: opts.allLegend ? 3 : rollTier(odds, rand) });
   }
   // 저주 카드: 선택지 하나를 바꿔 끼운다
-  const chance = lastPlace ? ARCADE.curseChanceLastPlace : ARCADE.curseChance;
+  const chance = opts.forceCurse ? 1 : lastPlace ? ARCADE.curseChanceLastPlace : ARCADE.curseChance;
   if (!opts.allLegend && (opts.curses ?? 0) < ARCADE.maxCurses && rand() < chance) {
     // 악마의 계약은 마지막 선택에서는 대가만 남아서 제외
     const curses = CURSES.filter((c) => !(c.id === 'devilPact' && pickIndex >= ARCADE.rounds - 2));
@@ -220,4 +222,5 @@ export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.r
 }
 
 /** 라운드가 끝날 때 적용되는 저주 결과 */
-export interface RoundEffect { playerId: string; id: CurseId; delta: number }
+/** 'tax': 진행자 이벤트 세금을 받은 사람 */
+export interface RoundEffect { playerId: string; id: CurseId | 'tax'; delta: number }
