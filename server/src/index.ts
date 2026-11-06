@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
@@ -8,6 +8,7 @@ import type { ClientToServer, ColorIndex, ServerToClient } from '@color-burst/sh
 import { Room } from './room.ts';
 
 const PORT = Number(process.env.PORT ?? 3001);
+const VERSION: string = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')).version;
 const DIST = fileURLToPath(new URL('../../client/dist', import.meta.url));
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
@@ -16,6 +17,12 @@ const MIME: Record<string, string> = {
 
 // 배포 시: client를 빌드하면(client/dist) 이 서버가 화면까지 같이 제공한다.
 const http = createServer(async (req, res) => {
+  // 배포 서비스가 서버 상태를 확인하는 주소
+  if (req.url === '/healthz') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, version: VERSION, rooms: rooms.size }));
+    return;
+  }
   if (!existsSync(DIST)) { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end('Color Burst 서버 실행 중. 개발 중에는 http://localhost:5173 으로 접속하세요.'); return; }
   const url = decodeURIComponent((req.url ?? '/').split('?')[0]);
   let file = normalize(join(DIST, url === '/' ? 'index.html' : url));
@@ -104,4 +111,4 @@ io.on('connection', (socket) => {
   });
 });
 
-http.listen(PORT, () => console.log(`[color-burst] server on http://localhost:${PORT}`));
+http.listen(PORT, () => console.log(`[color-burst] v${VERSION} server on http://localhost:${PORT}`));

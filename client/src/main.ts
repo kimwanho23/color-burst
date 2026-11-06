@@ -134,6 +134,7 @@ function resetToHome(err = '') {
   $('homeErr').textContent = err;
   renderScores();
   show('home');
+$('ver').textContent = `v${__APP_VERSION__}`;
 }
 $('leaveBtn').onclick = () => { socket.emit('room:leave'); store('cb-room', null); resetToHome(); };
 $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
@@ -256,3 +257,4 @@ function frame() {
 }
 requestAnimationFrame(frame);
 show('home');
+$('ver').textContent = `v${__APP_VERSION__}`;

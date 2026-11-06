@@ -1,5 +1,7 @@
 # 컬러 버스트
 
+현재 버전: **v1.0.0** · [변경 기록](CHANGELOG.md)
+
 최대 4인이 각자 컴퓨터에서 접속해, 중앙에서 터져 나오는 색상 원을 동시에 노리는 웹 클릭 게임.
 
 ## 실행 방법
@@ -17,12 +19,30 @@ npm run dev     # 서버(3001) + 화면(5173) 동시 실행
 - 혼자 테스트: 대기실에서 "빈 자리는 봇으로 채우기"를 켜고 시작
 - 주소 뒤에 `#방코드`를 붙여 보내면 코드가 미리 입력돼요 (예: `http://.../#43CB`)
 
-배포용 실행:
+배포용 실행 (내 컴퓨터에서 확인할 때):
 
 ```bash
 npm run build   # client/dist 생성
 npm start       # 3001 포트 하나로 화면과 서버를 같이 제공
 ```
+
+## 배포 (Render)
+
+`render.yaml`에 설정이 들어 있어서 Render가 그대로 읽어 간다.
+
+1. https://dashboard.render.com 에서 GitHub로 로그인
+2. **New → Blueprint** → `color-burst` 저장소 선택 → **Apply**
+3. 빌드가 끝나면 `https://color-burst-xxxx.onrender.com` 같은 주소가 생긴다. 이 주소를 친구에게 공유
+
+- `main`에 푸시하면 자동으로 다시 배포된다
+- 무료 플랜은 15분 동안 접속이 없으면 서버가 잠들고, 다음 접속 때 깨어나는 데 1분 정도 걸린다. 게임 중(WebSocket 통신 중)에는 잠들지 않는다
+- 서버가 잠들거나 다시 배포되면 진행 중이던 방은 사라진다
+- 상태 확인: `주소/healthz` → `{"ok":true,"version":"1.0.0",...}`
+
+## 버전 올리는 법
+
+1. `package.json`의 `version`을 올리고 `CHANGELOG.md`에 변경 내용 추가
+2. 커밋 후 태그: `git tag v1.1.0 && git push origin main --tags`
 
 ## 구조
 

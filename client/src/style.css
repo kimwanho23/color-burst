@@ -65,6 +65,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .link { background: none; border: 0; color: var(--muted); font: 600 13px var(--body); cursor: pointer; text-decoration: underline; align-self: center; }
 .err { color: var(--red) !important; min-height: 1em; }
 .hint { text-align: center; }
+.ver { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
 .bigcode { font-family: var(--display); font-size: 48px; letter-spacing: .25em; color: var(--yellow); }
 
 .picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
