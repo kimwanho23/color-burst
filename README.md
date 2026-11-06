@@ -29,7 +29,7 @@ npm start       # 3001 포트 하나로 화면과 서버를 같이 제공
 
 ## 배포 (Render)
 
-`render.yaml`에 설정이 들어 있어서 Render가 그대로 읽어 간다.
+`render.yaml`에 설정이 들어 있어서 Render가 그대로 읽어 간다. 서버 지역은 한국에서 가장 가까운 **싱가포르**(Render에는 한국 지역이 없다). 지역은 서비스를 만든 뒤에는 바꿀 수 없어서, 바꾸려면 서비스를 지우고 Blueprint로 다시 만들어야 한다.
 
 1. https://dashboard.render.com 에서 GitHub로 로그인
 2. **New → Blueprint** → `color-burst` 저장소 선택 → **Apply**
