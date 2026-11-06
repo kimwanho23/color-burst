@@ -1,4 +1,4 @@
-import { isFever, isMarked, isOut, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
+import { isFever, isGuarded, isMarked, isOut, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
 
 /** gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms) */
 const LEVELS = [
@@ -23,7 +23,7 @@ export class Bot {
     this.next = now + (L.gap * (0.7 + Math.random() * 0.7)) / this.skill;
 
     const fever = isFever(me, now);
-    const cands = circles.filter((c) => now - c.born > L.react / this.skill && !isOut(c, now));
+    const cands = circles.filter((c) => now - c.born > L.react / this.skill && !isOut(c, now) && !isGuarded(c, now));
     if (!cands.length) return null;
 
     const weights = cands.map((c) => {

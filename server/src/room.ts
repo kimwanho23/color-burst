@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
@@ -629,7 +629,7 @@ export class Room {
       const owner = this.players.find((p) => p.id === z.by);
       if (!owner) continue;
       for (const c of [...this.circles.values()]) {
-        if (!isMine(c.kind, owner.color)) continue;
+        if (!isMine(c.kind, owner.color) || isGuarded(c, now)) continue;
         const q = circlePos(c, now);
         if (Math.hypot(q.x - z.x, q.y - z.y) <= c.r + z.r) { this.claim(owner, c, now, 'zone', true); zoned = true; }
       }
@@ -714,7 +714,7 @@ export class Room {
       case 'bomb':
       case 'fieldClear':
         for (const o of [...this.circles.values()]) {
-          if (o.kind === 'boss' || o.kind === 'item') continue;
+          if (o.kind === 'boss' || o.kind === 'item' || isGuarded(o, now)) continue;
           const q = circlePos(o, now);
           if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast', true);
         }

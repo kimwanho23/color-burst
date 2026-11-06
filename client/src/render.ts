@@ -2,7 +2,7 @@
  * Canvas 그리기. 필드 좌표(1600x900)를 화면 크기에 맞춰 확대해서 그린다.
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
-import { COLORS, FIELD, RULES, YELLOW, circlePos, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
+import { COLORS, FIELD, RULES, YELLOW, circlePos, isGuarded, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
 
 type BasicKind = Exclude<CircleKind, 'boss' | 'item'>;
 
@@ -171,6 +171,9 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(cx, cy, 70 * pulse * (1 + warn * 0.3), 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = s.myFever ? 'rgba(255,159,28,.8)' : 'rgba(255,255,255,.18)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
+    // 발사 보호 구역: 이 안의 원은 아직 잡을 수 없다
+    ctx.setLineDash([6, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.12)';
+    ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
 
     for (const z of s.zones ?? []) this.drawZone(z, s.now);
     if (s.reachRing) {
@@ -184,13 +187,18 @@ export class Renderer {
     if (s.blurred) ctx.globalAlpha = 0.55;
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
-    for (const c of list) if (c.kind === 'boss') this.drawBoss(c, s.now, now);
+    const base = ctx.globalAlpha;
+    // 발사 보호 구역 안의 원은 반투명 (아직 잡을 수 없음)
+    const fade = (c: Circle) => { ctx.globalAlpha = isGuarded(c, s.now) ? base * 0.4 : base; };
+    for (const c of list) if (c.kind === 'boss') { fade(c); this.drawBoss(c, s.now, now); }
     for (const c of list) {
       if (c.kind === 'boss') continue;
       const p = circlePos(c, s.now);
+      fade(c);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now);
       else this.drawCircle(c.kind, p.x, p.y, c.r, (s.now - c.born) / 700 + c.id, s);
     }
+    ctx.globalAlpha = base;
     ctx.filter = 'none'; ctx.globalAlpha = 1;
     if (s.frozen) for (const c of list) if (c.holds?.some(([a, ms]) => s.now >= a && s.now < a + ms)) this.drawClock(circlePos(c, s.now), c.r, now);
 

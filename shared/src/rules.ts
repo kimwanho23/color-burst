@@ -33,6 +33,11 @@ export const RULES = {
   hitPad: 12,
   /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 (서버 판정과 화면 예측 공통) */
   lagWindowMs: 250,
+  /**
+   * 발사 보호 구역: 원 중심이 필드 가운데에서 이 거리 안에 있으면 어떤 방법으로도 잡을 수 없다.
+   * 모든 원이 가운데에서 태어나므로, 가운데만 눌러 태어나는 원을 다 가져가는 것을 막는다
+   */
+  spawnGuardR: 90,
   /** 매크로 방지: 1인 초당 최대 클릭 */
   maxClicksPerSec: 15,
   boss: {
@@ -488,8 +493,15 @@ export function isOut(c: Circle, t: number) {
   return p.x < -c.r || p.x > FIELD.w + c.r || p.y < -c.r || p.y > FIELD.h + c.r;
 }
 
-/** pad: 원 둘레 바깥으로 인정하는 여유(필드 단위). 넓은 손·자석은 이 값을 늘려서 판정한다 */
+/** 발사 보호 구역 안에 있는지 (잡을 수 없는 상태) */
+export function isGuarded(c: Circle, t: number) {
+  const p = circlePos(c, t);
+  return Math.hypot(p.x - FIELD.w / 2, p.y - FIELD.h / 2) < RULES.spawnGuardR;
+}
+
+/** pad: 원 둘레 바깥으로 인정하는 여유(필드 단위). 넓은 손·자석은 이 값을 늘려서 판정한다. 발사 보호 구역 안의 원은 안 맞는다 */
 export function isHit(c: Circle, t: number, x: number, y: number, pad: number = RULES.hitPad) {
+  if (isGuarded(c, t)) return false;
   const p = circlePos(c, t);
   const rr = c.r + pad;
   return (p.x - x) ** 2 + (p.y - y) ** 2 <= rr * rr;
