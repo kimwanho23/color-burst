@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, holdCircles, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, holdCircles, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
@@ -482,8 +482,8 @@ $('cv').addEventListener('pointerdown', (e) => {
     socket.emit('game:click', { circleId: hit.id, x, y });
   } else {
     // 넓은 손·자석으로 잡힐 원이 있으면 빗나간 표시를 하지 않는다 (서버가 잡아서 알려 준다)
-    const assist = m ? assistTargets(circles.values(), m.color, x, y, now, reach, magnetOf(m, now), pending, RULES.lagWindowMs) : null;
-    const saved = !!assist && (assist.range.length > 0 || !!assist.magnet);
+    // 넓은 손 범위로 같이 잡힐 원이 있으면 빗나간 게 아니다
+    const saved = !!m && rangeTargets(circles.values(), m.color, x, y, now, reach, pending, RULES.lagWindowMs).length > 0;
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
     // 보스가 막 터진 직후의 빈 곳 클릭은 서버도 페널티를 주지 않으므로 가볍게만 표시
     const grace = now - bossKilledAt < RULES.boss.killGraceMs;

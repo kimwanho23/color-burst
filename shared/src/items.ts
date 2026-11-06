@@ -32,7 +32,7 @@ const S = (ms: number) => `${ms / 1000}초`;
 const M = RULES.items.ms;
 export const ITEMS: Record<ItemId, ItemDef> = {
   wideHand: { name: '넓은 손', tier: 0, buff: 'wideHand', desc: `${S(M.wideHand)}간 범위 클릭` },
-  magnet: { name: '자석', tier: 0, buff: 'magnet', desc: `${S(M.magnet)}간 빗나간 클릭이 가까운 내 원을 잡음` },
+  magnet: { name: '자석', tier: 0, buff: 'magnet', desc: `${S(M.magnet)}간 커서 근처 내 원을 끌어당겨 잡음` },
   missGuard: { name: '헛클릭 무효', tier: 0, buff: 'missGuard', desc: `${S(M.missGuard)}간 빈 곳 클릭 페널티 없음` },
   comboLock: { name: '콤보 고정', tier: 0, buff: 'comboLock', desc: `${S(M.comboLock)}간 콤보가 끊기지 않음` },
   guard: { name: '보호막', tier: 0, buff: 'guard', desc: `${S(M.guard)}간 견제당해도 페널티 없음` },

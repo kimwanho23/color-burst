@@ -38,6 +38,12 @@ export const RULES = {
   comebackGain: 1.25,
   /** 클릭 판정 여유(필드 단위) */
   hitPad: 12,
+  /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */
+  cursor: { sendHz: 15, staleMs: 500 },
+  /** 레이저 발사기: 간격, 경고, 발사 시간, 맞는 거리, 스턴, 판 시작·끝 조용한 시간 */
+  laser: { everyMin: 10_000, everyMax: 15_000, warnMs: 1_000, fireMs: 300, width: 18, stunMs: 1_500, startQuietMs: 3_000, endQuietMs: 1_000 },
+  /** 커서 자석: 끌려오는 시간, 플레이어마다 1초에 끌 수 있는 원 수 */
+  magnet: { pullMs: 250, perSec: 2 },
   /** 아케이드: 라운드가 끝나고 능력 선택 화면이 열리기까지 ("라운드 종료!" 표시) */
   roundEndMs: 1_500,
   /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 (서버 판정과 화면 예측 공통) */
@@ -98,9 +104,9 @@ export const RULES = {
     /** 등급 확률(%) [흔함, 희귀, 전설] */
     tierOdds: [70, 25, 5],
     r: 34,
-    /** 넓은 손 아이템의 범위, 자석 아이템의 거리 (능력과 더하고 능력 상한 적용) */
+    /** 넓은 손 아이템의 범위, 자석 아이템의 커서 자석 반경 (능력과 더하고 능력 상한 적용) */
     wideHand: 35,
-    magnet: 70,
+    magnet: 90,
     /** 효과 시간(ms) */
     ms: { wideHand: 5000, magnet: 5000, missGuard: 8000, comboLock: 5000, guard: 5000, double: 5000, paint: 5000, rain: 3000 },
     goldCount: 5,
@@ -174,6 +180,8 @@ export interface RoomRules {
   items: boolean;
   /** 발사 패턴(부채꼴·동시 다발·나선 웨이브) */
   waves: boolean;
+  /** 레이저 발사기 (커서가 맞으면 스턴) */
+  laser: boolean;
   /** 아케이드: 라운드 사이 랜덤 이벤트 */
   randomEvents: boolean;
 }
@@ -199,7 +207,7 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
-  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, randomEvents: true,
+  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, randomEvents: true,
 };
 
 export const PRESETS = {
@@ -214,7 +222,7 @@ export const PRESETS = {
   },
   chill: {
     name: '느긋하게', desc: '천천히, 처음 하는 친구와 함께',
-    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false },
+    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false, laser: false },
   },
 } as const satisfies Record<string, { name: string; desc: string; rules: RoomRules }>;
 export type PresetId = keyof typeof PRESETS;
@@ -235,7 +243,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'randomEvents'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'randomEvents'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
@@ -259,6 +267,7 @@ export interface GameRules {
   arcade: boolean;
   items: boolean;
   waves: boolean;
+  laser: boolean;
   randomEvents: boolean;
 }
 
@@ -279,6 +288,7 @@ export function toGameRules(r: RoomRules): GameRules {
     arcade: r.mode === 'arcade',
     items: r.items,
     waves: r.waves,
+    laser: r.laser,
     randomEvents: r.randomEvents,
   };
 }
@@ -367,6 +377,8 @@ export interface PlayerState {
   rageHits: number;
   /** 이번 라운드에 남은 견제 반사 횟수 */
   reflectLeft: number;
+  /** 스턴이 끝나는 서버 시각 (그때까지 클릭이 무시된다) */
+  stunUntil: number;
 }
 
 /** 시간 제한이 있는 아이템 효과 */
@@ -381,7 +393,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil'] as const) if (p[k] > since) p[k] += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
 }
 
@@ -435,7 +447,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
-    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0,
+    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0,
   };
 }
 
@@ -454,7 +466,7 @@ export function applyPick(p: PlayerState, pick: Pick) {
 export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt = 0) {
   const m = modsOf(p.picks);
   p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
-  p.calmLeft = m.calm; p.shieldLeft = m.shield; p.reflectLeft = m.reflect;
+  p.calmLeft = m.calm; p.shieldLeft = m.shield; p.reflectLeft = m.reflect; p.stunUntil = 0;
   p.buffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.score += m.headStart;
@@ -513,6 +525,7 @@ function breakCombo(p: PlayerState, m: Mods, now: number) {
 }
 
 export const isFever = (p: PlayerState, now: number) => now < p.feverUntil;
+export const isStunned = (p: PlayerState, now: number) => now < p.stunUntil;
 export const isMarked = (p: PlayerState, now: number) => now < p.markedUntil;
 
 /** 원의 위치는 발사 정보와 시각만으로 결정된다. 그래서 서버는 생성 정보만 보내면 된다. */
@@ -580,25 +593,13 @@ export function isMine(kind: CircleKind, color: ColorIndex) {
   return typeof kind === 'number' ? kind === color : kind === 'y' || kind === 'rainbow';
 }
 
-/**
- * 직접 맞은 원이 없을 때(또는 그 밖에) 넓은 손·자석으로 같이 잡히는 원. lagMs: 지연 보정 (서버와 같게 하려면 RULES.lagWindowMs)
- * range: 클릭 둘레 reach 안의 내 원 전부 / magnet: range가 비었을 때 magnet 거리 안에서 가장 가까운 내 원
- */
-export function assistTargets(
+/** 넓은 손 범위 클릭으로 같이 잡히는 내 원 전부. lagMs: 지연 보정 (서버와 같게 하려면 RULES.lagWindowMs) */
+export function rangeTargets(
   circles: Iterable<Circle>, color: ColorIndex, x: number, y: number, t: number,
-  reach: number, magnet: number, skip?: ReadonlySet<number>, lagMs = 0,
-): { range: Circle[]; magnet: Circle | null } {
-  const mine = [...circles].filter((c) => isMine(c.kind, color) && !skip?.has(c.id));
-  const range = reach > 0 ? mine.filter((c) => hitWithin(c, t, x, y, RULES.hitPad + reach, lagMs)) : [];
-  if (range.length || magnet <= 0) return { range, magnet: null };
-  let best: Circle | null = null, bd = Infinity;
-  for (const c of mine) {
-    if (!hitWithin(c, t, x, y, RULES.hitPad + magnet, lagMs)) continue;
-    const p = circlePos(c, t);
-    const d = Math.hypot(p.x - x, p.y - y) - c.r;
-    if (d < bd) { bd = d; best = c; }
-  }
-  return { range, magnet: best };
+  reach: number, skip?: ReadonlySet<number>, lagMs = 0,
+): Circle[] {
+  if (reach <= 0) return [];
+  return [...circles].filter((c) => isMine(c.kind, color) && !skip?.has(c.id) && hitWithin(c, t, x, y, RULES.hitPad + reach, lagMs));
 }
 
 /** 경과 시간에 따른 원 생성 간격(ms) */

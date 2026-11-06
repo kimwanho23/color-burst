@@ -108,7 +108,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'jammer', name: '방해 전파', cat: '견제', values: [500, 1000, 1500, 2500], provisional: true, desc: (v) => `내 피버가 터지면 상대 원이 ${sec(v)} 동안 흐려짐` },
   // 보조
   { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 55], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
-  { id: 'magnet', name: '자석', cat: '보조', values: [30, 50, 70, 110], cap: 150, desc: (v) => `빗나가면 ${v} 안의 가장 가까운 내 원을 잡음` },
+  { id: 'magnet', name: '자석', cat: '보조', values: [60, 90, 120, 160], cap: 200, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (1초에 2개)` },
 ];
 
 /** 봇은 고르지 않는 능력 (봇은 원을 정확히 눌러서 효과가 없음) */

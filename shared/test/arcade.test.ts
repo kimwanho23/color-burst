@@ -62,5 +62,7 @@ test('reachOf·magnetOf: 능력 + 아이템, 능력 상한', () => {
   addBuff(c, 'wideHand', 5000, 0);
   assert.equal(reachOf(c, 0), 80);
   addBuff(c, 'magnet', 5000, 0);
-  assert.equal(magnetOf(c, 0), 70);
+  assert.equal(magnetOf(c, 0), 90);
+  c.picks = [{ id: 'magnet', tier: 3 }];
+  assert.equal(magnetOf(c, 0), 200);
 });
