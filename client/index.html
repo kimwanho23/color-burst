@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>컬러 버스트</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;600;800&display=swap">
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div id="app">
+  <div class="top">
+    <div class="brand">컬러 <b>버스트</b></div>
+    <span class="roomtag" id="roomTag" hidden></span>
+    <button class="iconbtn" id="musicBtn" type="button">음악 켜짐</button>
+    <div class="timer" id="timer">60</div>
+  </div>
+  <div class="scores" id="scores"></div>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+
+    <!-- 1. 처음 화면 -->
+    <div class="overlay" id="home">
+      <div class="card">
+        <h1>컬러 <span>버스트</span></h1>
+        <p>중앙에서 터져 나오는 원을 친구들과 동시에 노리는 4인 클릭 게임이에요. 방을 만들어 코드를 공유하거나, 받은 코드로 들어가세요.</p>
+        <label class="lbl" for="nameInput">닉네임</label>
+        <input class="field" id="nameInput" maxlength="12" placeholder="예: 반가워" autocomplete="nickname">
+        <button class="btn" id="createBtn" type="button">방 만들기</button>
+        <div class="row">
+          <input class="field code" id="codeInput" maxlength="4" placeholder="방 코드" autocomplete="off">
+          <button class="btn ghost" id="joinBtn" type="button">입장</button>
+        </div>
+        <p class="err" id="homeErr" role="alert"></p>
+      </div>
+    </div>
+
+    <!-- 2. 대기실 -->
+    <div class="overlay" id="lobby" hidden>
+      <div class="card">
+        <div class="lbl">방 코드 (친구에게 알려 주세요)</div>
+        <div class="bigcode" id="lobbyCode">----</div>
+        <div class="lbl">내 색상</div>
+        <div class="picks" id="picks"></div>
+        <div id="hostOpts" class="opts">
+          <label class="check"><input type="checkbox" id="fillBots" checked> 빈 자리는 봇으로 채우기</label>
+          <div class="seg" id="botLevel"></div>
+        </div>
+        <details class="rules">
+          <summary>규칙 보기</summary>
+          <table id="ruleTable"></table>
+        </details>
+        <button class="btn" id="startBtn" type="button">게임 시작</button>
+        <p class="hint" id="lobbyHint"></p>
+        <p class="err" id="lobbyErr" role="alert"></p>
+        <button class="link" id="leaveBtn" type="button">방 나가기</button>
+      </div>
+    </div>
+
+    <!-- 3. 결과 -->
+    <div class="overlay" id="result" hidden>
+      <div class="card">
+        <h1 id="resTitle">결과</h1>
+        <div class="rank" id="rank"></div>
+        <button class="btn" id="toLobbyBtn" type="button">대기실로</button>
+      </div>
+    </div>
+
+    <div class="countdown" id="countdown" hidden></div>
+    <div class="netbanner" id="netBanner" role="status" hidden>연결이 끊겼어요. 다시 연결하는 중…</div>
+  </div>
+
+  <div class="bottom">
+    <div class="flabel" id="flabel">피버</div>
+    <div class="meter"><i id="meterFill"></i></div>
+    <div class="combo" id="combo">0 콤보</div>
+  </div>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

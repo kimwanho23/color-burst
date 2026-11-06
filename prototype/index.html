@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}</style>
+<title>컬러 버스트</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;600;800&display=swap">
+<style>
+/* Layout: one-screen arcade cabinet — score rail on top, launch field in the middle, fever meter at the bottom */
+:root{
+  --bg:#10122a; --field:#171a3a; --panel:#1e2247; --line:#30366b;
+  --fg:#f1f2ff; --muted:#9ca2d6;
+  --yellow:#ffd43b; --c0:#ff5d73; --c1:#4dabf7; --c2:#51cf66; --c3:#c39bff;
+  --fever:#ff9f1c;
+  --display:'Black Han Sans','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  --body:'Gothic A1','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden}
+#app{height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px;
+  max-width:1100px;margin:0 auto}
+.top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.brand{font-family:var(--display);font-size:22px;letter-spacing:.5px;margin-right:auto;display:flex;align-items:center;gap:8px}
+.brand b{color:var(--yellow);font-weight:400}
+.timer{font-family:var(--display);font-size:22px;font-variant-numeric:tabular-nums;min-width:56px;text-align:right}
+.timer.hot{color:var(--c0)}
+.iconbtn{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font:600 13px var(--body);cursor:pointer}
+.iconbtn:focus-visible,.btn:focus-visible,.pick:focus-visible{outline:2px solid var(--yellow);outline-offset:2px}
+.scores{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.chip{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:7px 10px;min-width:0;position:relative}
+.chip.me{border-color:var(--fg)}
+.chip .nm{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip .sc{font-family:var(--display);font-size:20px;font-variant-numeric:tabular-nums;line-height:1}
+.chip .meta{display:flex;flex-direction:column;gap:3px;min-width:0}
+.chip.marked{border-color:var(--c0);box-shadow:0 0 0 2px rgba(255,93,115,.35)}
+.chip.marked::after{content:'표적';position:absolute;left:8px;top:-8px;background:var(--c0);color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px}
+.chip .cb{position:absolute;right:8px;top:6px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+#stage{flex:1;min-height:0;position:relative;border-radius:18px;overflow:hidden;
+  background:radial-gradient(circle at 50% 50%,#262b5c 0%,var(--field) 45%,#121430 100%);border:1px solid var(--line)}
+#stage.feverOn{box-shadow:inset 0 0 0 3px var(--fever),inset 0 0 60px rgba(255,159,28,.35)}
+canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.bottom{display:flex;align-items:center;gap:12px}
+.flabel{font-family:var(--display);font-size:15px;color:var(--fever);min-width:44px}
+.meter{flex:1;height:14px;border-radius:999px;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffcc4d,var(--fever),#ff5d73);transition:width .12s}
+.combo{font-family:var(--display);font-size:15px;min-width:76px;text-align:right;font-variant-numeric:tabular-nums}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(12,13,32,.82);overflow:auto}
+.card{width:min(520px,100%);display:flex;flex-direction:column;gap:16px}
+.card h1{font-family:var(--display);font-weight:400;font-size:clamp(34px,8vw,54px);margin:0;line-height:1;text-wrap:balance}
+.card h1 span{color:var(--yellow)}
+.card p{margin:0;color:var(--muted);line-height:1.55}
+.lbl{font-size:12px;letter-spacing:.12em;color:var(--muted);font-weight:800}
+.picks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pick{background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--fg);font:600 13px var(--body);cursor:pointer}
+.pick[aria-pressed="true"]{border-color:var(--fg);background:#2a2f62}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td{padding:6px 4px;border-top:1px solid var(--line)}
+td:last-child,td:nth-child(3){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td:first-child{width:24px}
+.btn{background:var(--yellow);color:#1b1500;border:0;border-radius:14px;padding:14px;font:400 20px var(--display);cursor:pointer}
+.rank{display:flex;flex-direction:column;gap:6px}
+.rank div{display:flex;align-items:center;gap:10px;background:var(--panel);border-radius:12px;padding:10px 12px}
+.rank .pos{font-family:var(--display);width:22px;color:var(--muted)}
+.rank .v{margin-left:auto;font-family:var(--display);font-size:20px;font-variant-numeric:tabular-nums}
+@media (max-width:560px){
+  .scores{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .brand{font-size:18px}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="top">
+    <div class="brand">컬러 <b>버스트</b></div>
+    <button class="iconbtn" id="musicBtn" type="button">음악 켜짐</button>
+    <div class="timer" id="timer">60</div>
+  </div>
+  <div class="scores" id="scores"></div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div class="overlay" id="menu">
+      <div class="card">
+        <h1>컬러 <span>버스트</span></h1>
+        <p>중앙에서 터져 나오는 원을 클릭하세요. 내 색은 많이, 남의 색은 조심, 노란색은 누구나 가져갈 수 있어요. 봇 3명이 같은 원을 노립니다.</p>
+        <div class="lbl">내 색상 고르기</div>
+        <div class="picks" id="picks"></div>
+        <div class="lbl">봇 난이도</div>
+        <div class="picks" id="diffs" style="grid-template-columns:repeat(3,minmax(0,1fr))"></div>
+        <table>
+          <tr><td id="lgOwn"></td><td>내 색</td><td>+3점</td><td>피버 ▲▲</td></tr>
+          <tr><td id="lgY"></td><td>노란색 (공통)</td><td>+2점</td><td>피버 ▲</td></tr>
+          <tr><td id="lgOther"></td><td>남의 색 (평상시): 상대 콤보를 끊지만 내 콤보도 끊기고 4초간 표적이 됨</td><td>+1점</td><td>피버 ▼▼</td></tr>
+          <tr><td id="lgMark"></td><td>표적이 된 사람의 색 (반격)</td><td>+4점</td><td>감소 없음</td></tr>
+          <tr><td id="lgR"></td><td>무지개 (가끔 등장)</td><td>+5점</td><td>피버 ▲▲▲</td></tr>
+          <tr><td></td><td>빈 공간</td><td>0점</td><td>피버 ▼▼</td></tr>
+        </table>
+        <p>피버 게이지가 가득 차면 7초 동안 점수 3배, 노란 원도 내 색으로 쳐요. 피버 중에는 남의 색을 가져가도 페널티 없이 3점, 표적도 안 돼요. 콤보 10마다 보너스 +5.</p>
+        <button class="btn" id="startBtn" type="button">게임 시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="result" hidden>
+      <div class="card">
+        <h1 id="resTitle">결과</h1>
+        <div class="rank" id="rank"></div>
+        <button class="btn" id="againBtn" type="button">다시 하기</button>
+      </div>
+    </div>
+  </div>
+  <div class="bottom">
+    <div class="flabel" id="flabel">피버</div>
+    <div class="meter"><i id="meterFill"></i></div>
+    <div class="combo" id="combo">0 콤보</div>
+  </div>
+</div>
+
+<script>
+(()=>{
+const COLORS=[
+  {name:'코랄',hex:'#ff5d73',shape:'tri'},
+  {name:'블루',hex:'#4dabf7',shape:'square'},
+  {name:'그린',hex:'#51cf66',shape:'diamond'},
+  {name:'퍼플',hex:'#c39bff',shape:'plus'}
+];
+const YELLOW={hex:'#ffd43b',shape:'dot'};
+const ROUND=60, FEVER_MS=7000, FEVER_MULT=3, MARK_MS=4000;
+const DIFFS=[{name:'쉬움',gap:1400,react:600},{name:'보통',gap:1000,react:450},{name:'어려움',gap:650,react:300}];
+let diff=0;
+try{const d=+localStorage.getItem('cb-diff');if(d>=0&&d<3)diff=d}catch(e){}
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const $=id=>document.getElementById(id);
+const cv=$('cv'), ctx=cv.getContext('2d'), stage=$('stage');
+let W=0,H=0,dpr=1;
+function resize(){
+  const r=stage.getBoundingClientRect(); dpr=Math.min(window.devicePixelRatio||1,2);
+  W=r.width; H=r.height; cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+new ResizeObserver(resize).observe(stage); resize();
+
+function shapeSVG(shape,color,size=22){
+  const s=size, h=s/2;
+  let inner='';
+  if(shape==='tri') inner=`<polygon points="${h},${s*.28} ${s*.74},${s*.7} ${s*.26},${s*.7}" fill="#fff" fill-opacity=".85"/>`;
+  if(shape==='square') inner=`<rect x="${s*.32}" y="${s*.32}" width="${s*.36}" height="${s*.36}" fill="#fff" fill-opacity=".85"/>`;
+  if(shape==='diamond') inner=`<polygon points="${h},${s*.26} ${s*.74},${h} ${h},${s*.74} ${s*.26},${h}" fill="#fff" fill-opacity=".85"/>`;
+  if(shape==='plus') inner=`<rect x="${s*.43}" y="${s*.27}" width="${s*.14}" height="${s*.46}" fill="#fff" fill-opacity=".85"/><rect x="${s*.27}" y="${s*.43}" width="${s*.46}" height="${s*.14}" fill="#fff" fill-opacity=".85"/>`;
+  if(shape==='dot') inner=`<circle cx="${h}" cy="${h}" r="${s*.14}" fill="#5c4400" fill-opacity=".7"/>`;
+  let fill=color;
+  if(shape==='rainbow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#ff5d73"/><stop offset=".33" stop-color="#ffd43b"/><stop offset=".66" stop-color="#51cf66"/><stop offset="1" stop-color="#4dabf7"/></linearGradient></defs><circle cx="${h}" cy="${h}" r="${h-1}" fill="url(#rg)"/></svg>`;
+  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h-1}" fill="${fill}"/>${inner}</svg>`;
+}
+
+/* ---------- audio: everything synthesized, so no licensing concerns ---------- */
+let ac=null, master=null, musicOn=true, musicTimer=null, nextNote=0, step=0;
+function initAudio(){
+  if(ac) return;
+  try{ ac=new (window.AudioContext||window.webkitAudioContext)(); master=ac.createGain(); master.gain.value=.5; master.connect(ac.destination);}catch(e){ac=null}
+}
+function tone(freq,dur,type='square',vol=.12,when=0,slide=0){
+  if(!ac) return;
+  const t=ac.currentTime+when, o=ac.createOscillator(), g=ac.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(40,freq*slide),t+dur);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+.02);
+}
+const sfx={
+  own:()=>{tone(880,.08,'square',.09);tone(1320,.1,'square',.07,.05)},
+  yellow:()=>tone(660,.09,'triangle',.14),
+  other:()=>tone(300,.12,'sawtooth',.06,0,.7),
+  miss:()=>tone(160,.12,'sine',.12,0,.6),
+  rainbow:()=>[523,659,784,1047].forEach((f,i)=>tone(f,.12,'square',.07,i*.05)),
+  fever:()=>[392,523,659,784,1047].forEach((f,i)=>tone(f,.14,'square',.08,i*.06)),
+  steal:()=>tone(220,.2,'triangle',.1,0,.5)
+};
+// A-minor loop: bass on beats, arpeggio on eighths
+const BASS=[110,110,87.31,87.31,130.81,130.81,98,98];
+const ARP=[[440,523.25,659.25,523.25],[349.23,440,523.25,440],[523.25,659.25,783.99,659.25],[392,493.88,587.33,493.88]];
+function scheduler(){
+  if(!ac||!musicOn) return;
+  const bpm=feverActive()?156:128, eighth=60/bpm/2;
+  while(nextNote<ac.currentTime+.12){
+    const when=nextNote-ac.currentTime;
+    const bar=Math.floor(step/8)%4, i=step%8;
+    if(i%2===0) tone(BASS[(bar*2+(i>>2))%8],eighth*1.8,'triangle',.16,when);
+    tone(ARP[bar][i%4]*(feverActive()?2:1),eighth*.8,'square',.035,when);
+    if(i%4===2) tone(2400,.03,'sawtooth',.015,when);
+    nextNote+=eighth; step++;
+  }
+}
+function startMusic(){ if(!ac||!musicOn) return; nextNote=ac.currentTime+.05; clearInterval(musicTimer); musicTimer=setInterval(scheduler,25);}
+function stopMusic(){ clearInterval(musicTimer); musicTimer=null;}
+$('musicBtn').onclick=()=>{
+  musicOn=!musicOn; $('musicBtn').textContent=musicOn?'음악 켜짐':'음악 꺼짐';
+  if(musicOn && state==='play'){initAudio();startMusic()} else stopMusic();
+};
+
+/* ---------- game state ---------- */
+let state='menu', myColor=0, players=[], circles=[], fx=[], t0=0, last=0, spawnAcc=0, me=null, shake=0;
+function feverActive(){return me && performance.now()<me.feverUntil}
+
+function setupPlayers(){
+  const botNames=['봇 A','봇 B','봇 C']; let b=0;
+  players=COLORS.map((c,i)=>({
+    color:i, name:i===myColor?'나':botNames[b++], bot:i!==myColor, score:0, combo:0,
+    fever:0, feverUntil:0, markedUntil:0, next:0, skill:.8+Math.random()*.3
+  }));
+  me=players[myColor];
+}
+function renderScores(){
+  $('scores').innerHTML=players.map(p=>`<div class="chip${p.bot?'':' me'}" id="chip${p.color}">${shapeSVG(COLORS[p.color].shape,COLORS[p.color].hex,26)}<div class="meta"><span class="nm">${p.name} · ${COLORS[p.color].name}</span><span class="sc" id="sc${p.color}">${p.score}</span></div><span class="cb" id="cb${p.color}">${p.combo?p.combo+'콤보':''}</span></div>`).join('');
+}
+function updateChip(p){
+  const s=$('sc'+p.color), c=$('cb'+p.color);
+  if(s) s.textContent=p.score; if(c) c.textContent=p.combo?p.combo+'콤보':'';
+}
+
+function spawn(elapsed){
+  const prog=Math.min(1,elapsed/ROUND);
+  const scale=Math.min(W,H)/600;
+  const ang=Math.random()*Math.PI*2;
+  const speed=(85+prog*120+Math.random()*40)*Math.max(.7,scale)*(elapsed>ROUND-10?1.25:1);
+  const r=Math.max(18,Math.min(30,26*scale))*(.85+Math.random()*.3);
+  const roll=Math.random();
+  let kind;
+  if(roll<.03) kind='rainbow';
+  else if(roll<.36) kind='y';
+  else kind=Math.floor(Math.random()*4);
+  circles.push({x:W/2,y:H/2,vx:Math.cos(ang)*speed,vy:Math.sin(ang)*speed,r,kind,born:performance.now(),spin:Math.random()*6});
+}
+
+function addFever(p,amt){
+  if(performance.now()<p.feverUntil) return;
+  if(p.feverUntil && p.fever>=100) p.fever=0;
+  p.fever=Math.max(0,Math.min(100,p.fever+amt));
+  if(p.fever>=100){ p.feverUntil=performance.now()+FEVER_MS; p.fever=100; if(p===me){sfx.fever();popText(W/2,H/2-40,'FEVER!','#ff9f1c',1.6)} }
+}
+
+function claim(p,c){
+  const now=performance.now(); let fever=now<p.feverUntil;
+  let pts=0, col, steal=false, tag='';
+  if(c.kind==='rainbow'){pts=5;p.combo++;addFever(p,25);col='#fff';if(p===me)sfx.rainbow()}
+  else if(c.kind==='y' && fever){pts=3;p.combo++;col=COLORS[p.color].hex;if(p===me)sfx.own()}
+  else if(c.kind==='y'){pts=2;p.combo++;addFever(p,6);col=YELLOW.hex;if(p===me)sfx.yellow()}
+  else if(c.kind===p.color){pts=3;p.combo++;addFever(p,12);col=COLORS[c.kind].hex;if(p===me)sfx.own()}
+  else{
+    steal=true; col=COLORS[c.kind].hex;
+    const victim=players[c.kind];
+    if(now<victim.markedUntil){
+      pts=4*(fever?FEVER_MULT:1); tag=' 반격';
+      if(p===me)sfx.rainbow();
+    } else if(fever){
+      pts=FEVER_MULT; tag=' 견제';
+      if(p===me)sfx.other();
+    } else {
+      pts=1; p.combo=0; addFever(p,-20);
+      p.markedUntil=now+MARK_MS;
+      if(p===me){sfx.other();popText(c.x,c.y+30,'4초간 표적!','#ff5d73',.9)}
+    }
+    if(victim.combo>0){
+      victim.combo=0; updateChip(victim);
+      if(victim===me){sfx.steal();popText(c.x,c.y-28,'콤보 끊김!','#ff5d73',1.1)}
+    }
+  }
+  let bonus=0;
+  if(!steal && p.combo>0 && p.combo%10===0) bonus=5;
+  const gained=steal?pts:(pts+bonus)*(fever?FEVER_MULT:1);
+  p.score+=gained; updateChip(p);
+  burst(c.x,c.y,col,p);
+  if(p===me) popText(c.x,c.y,`+${gained}${tag}${bonus?' 콤보!':''}`,fever?'#ff9f1c':'#ffffff',1);
+  else popText(c.x,c.y,p.name,COLORS[p.color].hex,.75);
+}
+
+function burst(x,y,col,p){
+  fx.push({type:'ring',x,y,col:p===me?col:COLORS[p.color].hex,t:0,life:.35});
+  if(reduceMotion) return;
+  for(let i=0;i<(p===me?10:5);i++){
+    const a=Math.random()*Math.PI*2, s=80+Math.random()*160;
+    fx.push({type:'spark',x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,col,t:0,life:.4+Math.random()*.2});
+  }
+}
+function popText(x,y,txt,col,size){fx.push({type:'text',x,y,txt,col,size,t:0,life:.8})}
+
+/* ---------- input ---------- */
+cv.addEventListener('pointerdown',e=>{
+  if(state!=='play') return;
+  const r=cv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+  for(let i=circles.length-1;i>=0;i--){
+    const c=circles[i], pad=6;
+    if((x-c.x)**2+(y-c.y)**2<=(c.r+pad)**2){ circles.splice(i,1); claim(me,c); return; }
+  }
+  me.combo=0; updateChip(me); addFever(me,-10); sfx.miss();
+  fx.push({type:'miss',x,y,t:0,life:.35});
+  if(!reduceMotion) shake=.15;
+});
+
+/* ---------- bots ---------- */
+function botThink(p,now){
+  if(now<p.next) return;
+  const D=DIFFS[diff];
+  const cands=circles.filter(c=>now-c.born>D.react/p.skill);
+  if(cands.length){
+    let total=0;
+    const inF=now<p.feverUntil;
+    const w=cands.map(c=>{let v;
+      if(c.kind==='rainbow')v=6; else if(c.kind===p.color)v=5; else if(c.kind==='y')v=inF?5:3;
+      else v=now<players[c.kind].markedUntil?4:(inF?2.5:.5);
+      total+=v;return v});
+    let r=Math.random()*total, pick=0;
+    for(;pick<w.length-1;pick++){r-=w[pick];if(r<=0)break}
+    const c=cands[pick]; circles.splice(circles.indexOf(c),1); claim(p,c);
+  }
+  p.next=now+D.gap*(.7+Math.random()*.7)/p.skill;
+}
+
+/* ---------- draw ---------- */
+function drawShape(kind,x,y,r,rot){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot);
+  if(kind==='rainbow'){
+    const g=ctx.createLinearGradient(-r,0,r,0);
+    ['#ff5d73','#ffd43b','#51cf66','#4dabf7','#c39bff'].forEach((c,i)=>g.addColorStop(i/4,c));
+    ctx.fillStyle=g;
+  } else ctx.fillStyle=kind==='y'?YELLOW.hex:COLORS[kind].hex;
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
+  if(kind===myColor){ctx.lineWidth=3;ctx.strokeStyle='#ffffff';ctx.stroke()}
+  else if(kind==='y'&&state==='play'&&feverActive()){ctx.lineWidth=4;ctx.strokeStyle=COLORS[myColor].hex;ctx.stroke()}
+  else if(kind!=='y'&&kind!=='rainbow'&&state==='play'&&performance.now()<players[kind].markedUntil){ctx.setLineDash([5,4]);ctx.lineWidth=2.5;ctx.strokeStyle='#ffffff';ctx.stroke();ctx.setLineDash([])}
+  const shape=kind==='y'?'dot':kind==='rainbow'?null:COLORS[kind].shape;
+  ctx.fillStyle='rgba(255,255,255,.85)'; const s=r*.42;
+  ctx.beginPath();
+  if(shape==='tri'){ctx.moveTo(0,-s);ctx.lineTo(s*.95,s*.7);ctx.lineTo(-s*.95,s*.7);ctx.closePath();ctx.fill()}
+  if(shape==='square'){ctx.fillRect(-s*.75,-s*.75,s*1.5,s*1.5)}
+  if(shape==='diamond'){ctx.moveTo(0,-s);ctx.lineTo(s,0);ctx.lineTo(0,s);ctx.lineTo(-s,0);ctx.closePath();ctx.fill()}
+  if(shape==='plus'){ctx.fillRect(-s*.25,-s,s*.5,s*2);ctx.fillRect(-s,-s*.25,s*2,s*.5)}
+  if(shape==='dot'){ctx.fillStyle='rgba(92,68,0,.6)';ctx.arc(0,0,r*.28,0,Math.PI*2);ctx.fill()}
+  ctx.restore();
+}
+function draw(now){
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  if(shake>0){ctx.translate((Math.random()-.5)*8,(Math.random()-.5)*8)}
+  // launcher at center
+  const pulse=1+Math.sin(now/180)*.08;
+  ctx.fillStyle='rgba(255,255,255,.06)'; ctx.beginPath(); ctx.arc(W/2,H/2,46*pulse,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=feverActive()?'rgba(255,159,28,.8)':'rgba(255,255,255,.18)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(W/2,H/2,26,0,Math.PI*2); ctx.stroke();
+  for(const c of circles) drawShape(c.kind,c.x,c.y,c.r,c.spin);
+  for(const f of fx){
+    const k=f.t/f.life;
+    if(f.type==='ring'){ctx.strokeStyle=f.col;ctx.globalAlpha=1-k;ctx.lineWidth=3;ctx.beginPath();ctx.arc(f.x,f.y,18+k*30,0,Math.PI*2);ctx.stroke()}
+    if(f.type==='spark'){ctx.fillStyle=f.col;ctx.globalAlpha=1-k;ctx.fillRect(f.x-2,f.y-2,4,4)}
+    if(f.type==='miss'){ctx.strokeStyle='#9ca2d6';ctx.globalAlpha=1-k;ctx.lineWidth=2;const s=8;ctx.beginPath();ctx.moveTo(f.x-s,f.y-s);ctx.lineTo(f.x+s,f.y+s);ctx.moveTo(f.x+s,f.y-s);ctx.lineTo(f.x-s,f.y+s);ctx.stroke()}
+    if(f.type==='text'){ctx.globalAlpha=1-k*k;ctx.fillStyle=f.col;ctx.font=`${Math.round(18*f.size)}px 'Black Han Sans',sans-serif`;ctx.textAlign='center';ctx.fillText(f.txt,f.x,f.y-k*30)}
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+}
+
+/* ---------- loop ---------- */
+function tick(now){
+  if(state!=='play') return;
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  const elapsed=(now-t0)/1000, left=Math.max(0,ROUND-elapsed);
+  const interval=Math.max(.17,.42-elapsed/ROUND*.22)*(elapsed>ROUND-10?.75:1);
+  spawnAcc+=dt; while(spawnAcc>interval){spawnAcc-=interval;spawn(elapsed)}
+  for(const c of circles){c.x+=c.vx*dt;c.y+=c.vy*dt;c.spin+=dt*1.5}
+  circles=circles.filter(c=>c.x>-40&&c.x<W+40&&c.y>-40&&c.y<H+40);
+  for(const p of players) if(p.bot) botThink(p,now);
+  for(const f of fx){f.t+=dt; if(f.vx){f.x+=f.vx*dt;f.y+=f.vy*dt;f.vx*=.92;f.vy*=.92}}
+  fx=fx.filter(f=>f.t<f.life);
+  if(shake>0) shake-=dt;
+  // HUD
+  const fev=feverActive();
+  const fill=fev?((me.feverUntil-now)/FEVER_MS*100):me.fever;
+  if(!fev && me.fever>=100) me.fever=0;
+  $('meterFill').style.width=fill+'%';
+  $('flabel').textContent=fev?'×3':'피버';
+  for(const p of players){const ch=$('chip'+p.color);if(ch)ch.classList.toggle('marked',now<p.markedUntil)}
+  stage.classList.toggle('feverOn',fev);
+  $('combo').textContent=me.combo+' 콤보';
+  $('timer').textContent=Math.ceil(left);
+  $('timer').classList.toggle('hot',left<=10);
+  draw(now);
+  if(left<=0) return end();
+  requestAnimationFrame(tick);
+}
+
+function start(){
+  initAudio(); if(ac&&ac.state==='suspended') ac.resume();
+  setupPlayers(); renderScores();
+  circles=[];fx=[];spawnAcc=0;shake=0;
+  const now=performance.now(); t0=last=now;
+  players.forEach(p=>p.next=now+800+Math.random()*600);
+  $('menu').hidden=true; $('result').hidden=true;
+  state='play'; startMusic(); requestAnimationFrame(tick);
+}
+function end(){
+  state='over'; stopMusic(); stage.classList.remove('feverOn');
+  const sorted=[...players].sort((a,b)=>b.score-a.score);
+  const myRank=sorted.indexOf(me)+1;
+  $('resTitle').textContent=myRank===1?'1등!':`${myRank}등`;
+  $('rank').innerHTML=sorted.map((p,i)=>`<div><span class="pos">${i+1}</span>${shapeSVG(COLORS[p.color].shape,COLORS[p.color].hex,24)}<span>${p.name}</span><span class="v">${p.score}</span></div>`).join('');
+  $('result').hidden=false;
+  if(ac) (myRank===1?[523,659,784,1047]:[392,349,330]).forEach((f,i)=>tone(f,.2,'square',.07,i*.12));
+}
+
+/* ---------- menu ---------- */
+function renderPicks(){
+  $('picks').innerHTML=COLORS.map((c,i)=>`<button type="button" class="pick" id="pick${i}" aria-pressed="${i===myColor}">${shapeSVG(c.shape,c.hex,34)}${c.name}</button>`).join('');
+  COLORS.forEach((c,i)=>$('pick'+i).onclick=()=>{myColor=i;renderPicks();renderLegend();setupPlayers();renderScores()});
+}
+function renderLegend(){
+  const other=(myColor+1)%4;
+  $('lgOwn').innerHTML=shapeSVG(COLORS[myColor].shape,COLORS[myColor].hex,20);
+  $('lgY').innerHTML=shapeSVG('dot',YELLOW.hex,20);
+  $('lgOther').innerHTML=shapeSVG(COLORS[other].shape,COLORS[other].hex,20);
+  $('lgR').innerHTML=shapeSVG('rainbow','',20);
+  $('lgMark').innerHTML=shapeSVG(COLORS[other].shape,COLORS[other].hex,20);
+}
+$('startBtn').onclick=start;
+$('againBtn').onclick=start;
+function renderDiffs(){
+  $('diffs').innerHTML=DIFFS.map((d,i)=>`<button type="button" class="pick" id="diff${i}" aria-pressed="${i===diff}">${d.name}</button>`).join('');
+  DIFFS.forEach((d,i)=>$('diff'+i).onclick=()=>{diff=i;try{localStorage.setItem('cb-diff',i)}catch(e){};renderDiffs()});
+}
+renderDiffs();
+renderPicks(); renderLegend(); setupPlayers(); renderScores();
+
+// idle attract mode behind the menu
+let idleLast=performance.now();
+function idle(now){
+  if(state==='play'){return}
+  const dt=Math.min(.05,(now-idleLast)/1000); idleLast=now;
+  if(Math.random()<dt*3) spawn(20);
+  for(const c of circles){c.x+=c.vx*dt*.6;c.y+=c.vy*dt*.6;c.spin+=dt}
+  circles=circles.filter(c=>c.x>-40&&c.x<W+40&&c.y>-40&&c.y<H+40);
+  fx=fx.filter(f=>(f.t+=dt)<f.life);
+  draw(now);
+  requestAnimationFrame(idle);
+}
+requestAnimationFrame(idle);
+const _end=end;
+end=function(){_end();idleLast=performance.now();requestAnimationFrame(idle)};
+})();
+</script>
+</body>
+</html>
