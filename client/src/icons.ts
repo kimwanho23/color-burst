@@ -5,7 +5,7 @@ import {
   Hammer, Crosshair, Pickaxe, Umbrella, Wind, Shield, EyeOff, HandCoins, Swords, RadioTower,
   GlassWater, Dices, Axe, MoveUp, Droplet, Bomb, Target, Skull,
   Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
-  Wifi, Bot, TrendingUp, TrendingDown, Trophy,
+  Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
 } from 'lucide';
 import type { AbilityCategory, AbilityId } from '@color-burst/shared';
 
@@ -15,12 +15,13 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
   hammer: Hammer, hunter: Crosshair, crusher: Pickaxe,
   insurance: Umbrella, calm: Wind, shield: Shield,
   thickSkin: EyeOff, plunder: HandCoins, counterPro: Swords, jammer: RadioTower,
+  jackpot: Coins, wideHand: Hand, magnet: Magnet,
   glassCannon: GlassWater, gambler: Dices, berserker: Axe, oneWay: MoveUp,
   vampire: Droplet, timeBomb: Bomb, selfTarget: Target, devilPact: Skull,
 };
 
 const CATEGORY_ICON: Record<AbilityCategory, IconNode> = {
-  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 저주: Skull,
+  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 저주: Skull,
 };
 
 export const UI = {

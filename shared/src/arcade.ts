@@ -53,11 +53,12 @@ export type AbilityId =
   | 'hammer' | 'hunter' | 'crusher'
   | 'insurance' | 'calm' | 'shield'
   | 'thickSkin' | 'plunder' | 'counterPro' | 'jammer'
+  | 'jackpot' | 'wideHand' | 'magnet'
   | CurseId;
 
 export type CurseId = 'glassCannon' | 'gambler' | 'berserker' | 'oneWay' | 'vampire' | 'timeBomb' | 'selfTarget' | 'devilPact';
 
-export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '저주';
+export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '보조' | '저주';
 
 export interface AbilityDef {
   id: AbilityId;
@@ -84,6 +85,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'rainbowHunt', name: '무지개 사냥', cat: '점수', values: [3, 6, 9, 15], desc: (v) => `무지개 +${v}점` },
   { id: 'comboArtist', name: '콤보 장인', cat: '점수', values: [1, 2, 3, 5], cap: 7, desc: (v) => `콤보 보너스가 ${comboPeriod(v)}콤보마다` },
   { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 10, 15, 25], desc: (v) => `라운드 시작할 때 +${v}점` },
+  { id: 'jackpot', name: '잭팟', cat: '점수', values: [5, 10, 15, 25], cap: 50, desc: (v) => `원을 잡을 때 ${v}% 확률로 잭팟 (×1.5~×3)` },
   // 피버
   { id: 'preheat', name: '예열', cat: '피버', values: [20, 40, 60, 100], cap: 100, desc: (v) => (v >= 100 ? '라운드를 피버 상태로 시작' : `라운드를 피버 게이지 ${v}%로 시작`) },
   { id: 'overtime', name: '연장전', cat: '피버', values: [1, 2, 3, 5], desc: (v) => `피버 시간 +${v}초` },
@@ -103,7 +105,16 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'plunder', name: '강탈', cat: '견제', values: [1, 2, 3, 5], provisional: true, desc: (v) => `견제하면 상대 점수 ${v}점을 빼앗음` },
   { id: 'counterPro', name: '반격 전문가', cat: '견제', values: [2, 4, 6, 10], provisional: true, desc: (v) => `반격 +${v}점` },
   { id: 'jammer', name: '방해 전파', cat: '견제', values: [500, 1000, 1500, 2500], provisional: true, desc: (v) => `내 피버가 터지면 상대 원이 ${sec(v)} 동안 흐려짐` },
+  // 보조
+  { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 55], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
+  { id: 'magnet', name: '자석', cat: '보조', values: [30, 50, 70, 110], cap: 150, desc: (v) => `빗나가면 ${v} 안의 가장 가까운 내 원을 잡음` },
 ];
+
+/** 봇은 고르지 않는 능력 (봇은 원을 정확히 눌러서 효과가 없음) */
+export const ASSIST_ABILITIES: readonly AbilityId[] = ['wideHand', 'magnet'];
+
+/** 잭팟 배율과 그 확률(%) */
+export const JACKPOT = { mults: [1.5, 2, 3], odds: [70, 25, 5] } as const;
 
 const C = CURSE;
 /** 저주 카드: 큰 보상 + 확실한 대가. 등급이 없고 수치는 고정(값 1 = 보유) */
@@ -153,6 +164,14 @@ function crushText(v: number) {
   const whole = 1 + Math.floor(v);
   const frac = v - Math.floor(v);
   return frac ? `${whole}타, ${Math.round(frac * 100)}% 확률로 ${whole + 1}타` : `${whole}타`;
+}
+
+/** 잭팟: 터지면 배율, 아니면 1 */
+export function jackpotMult(m: Mods, rand = Math.random) {
+  if (!(rand() < m.jackpot / 100)) return 1;
+  let r = rand() * 100;
+  for (let i = 0; i < JACKPOT.mults.length; i++) { r -= JACKPOT.odds[i]; if (r < 0) return JACKPOT.mults[i]; }
+  return JACKPOT.mults[JACKPOT.mults.length - 1];
 }
 
 /** 파쇄: 보스에 주는 피해 */

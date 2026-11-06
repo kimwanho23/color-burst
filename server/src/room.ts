@@ -1,8 +1,8 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
-  applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
+  ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -212,12 +212,7 @@ export class Room {
     // 멈춰 있던 시간만큼 모든 시각을 뒤로 민다
     this.startAt += delta; this.endAt += delta; this.lastSpawn += delta;
     for (const c of this.circles.values()) c.born += delta;
-    for (const p of this.players) {
-      if (p.feverUntil > this.pausedAt) p.feverUntil += delta;
-      if (p.markedUntil > this.pausedAt) p.markedUntil += delta;
-      if (p.afterUntil > this.pausedAt) p.afterUntil += delta;
-      if (p.blurUntil > this.pausedAt) p.blurUntil += delta;
-    }
+    for (const p of this.players) shiftTimes(p, this.pausedAt, delta);
     for (const b of this.bots.values()) b.shift(delta);
     this.pausedAt = 0;
     this.pausedBy = null;
@@ -435,11 +430,13 @@ export class Room {
     for (const p of this.players) {
       if (!p.bot) { this.sendOffer(p.id); continue; }
       // 봇은 1~3초 고민하다가 가장 높은 등급을 고른다. 저주는 꼴찌일 때만 반반 확률로 고른다
+      // 보조 능력(넓은 손·자석)은 봇에게 효과가 없어서, 다른 선택지가 있으면 고르지 않는다
       const { options: opts, last } = this.offers.get(p.id)!;
       const curseAt = opts.findIndex((o) => isCurse(o.id));
+      const useful = opts.some((o) => !isCurse(o.id) && !ASSIST_ABILITIES.includes(o.id));
       let best = -1;
       opts.forEach((o, i) => {
-        if (isCurse(o.id)) return;
+        if (isCurse(o.id) || (useful && ASSIST_ABILITIES.includes(o.id))) return;
         if (best < 0 || o.tier > opts[best].tier || (o.tier === opts[best].tier && Math.random() < 0.5)) best = i;
       });
       if (curseAt >= 0 && (best < 0 || (last && Math.random() < 0.5))) best = curseAt;

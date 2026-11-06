@@ -1,4 +1,4 @@
-import { CURSE, bossDamage, comboPeriod, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
+import { ABILITY, CURSE, bossDamage, comboPeriod, jackpotMult, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -47,6 +47,12 @@ export const RULES = {
     r: 90,
     /** 화면 밖으로 나가기까지 걸리는 시간(초, 속도 ×1 기준) */
     lifeSec: 8,
+  },
+  /** 아이템 원 */
+  items: {
+    /** 넓은 손 아이템의 범위, 자석 아이템의 거리 (능력과 더하고 능력 상한 적용) */
+    wideHand: 35,
+    magnet: 70,
   },
 } as const;
 
@@ -244,9 +250,49 @@ export interface PlayerState {
   pactPending: boolean;
   /** 악마의 계약: 다음 능력 선택이 전부 레전드 */
   legendNext: boolean;
+  /** 아이템 효과가 끝나는 서버 시각 */
+  buffs: Partial<Record<BuffId, number>>;
+  /** 황금 손: 점수 2배가 남은 원 수 */
+  goldLeft: number;
+}
+
+/** 시간 제한이 있는 아이템 효과 */
+export type BuffId = 'wideHand' | 'magnet' | 'missGuard' | 'comboLock' | 'guard' | 'double' | 'paint';
+
+export const buffOn = (p: PlayerState, id: BuffId, now: number) => now < (p.buffs[id] ?? 0);
+
+/** 효과 걸기. 이미 걸려 있으면 남은 시간에 더하되 원래 시간의 2배까지 */
+export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
+  p.buffs[id] = Math.min(Math.max(p.buffs[id] ?? 0, now) + ms, now + ms * 2);
+}
+
+/** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
+export function shiftTimes(p: PlayerState, since: number, delta: number) {
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
+}
+
+/** 넓은 손 범위: 능력 + 아이템, 능력 상한 */
+export function reachOf(p: PlayerState, now: number) {
+  const v = modsOf(p.picks).wideHand + (buffOn(p, 'wideHand', now) ? RULES.items.wideHand : 0);
+  return Math.min(ABILITY.wideHand.cap ?? Infinity, v);
+}
+/** 자석 거리: 능력 + 아이템, 능력 상한 */
+export function magnetOf(p: PlayerState, now: number) {
+  const v = modsOf(p.picks).magnet + (buffOn(p, 'magnet', now) ? RULES.items.magnet : 0);
+  return Math.min(ABILITY.magnet.cap ?? Infinity, v);
+}
+
+/** 점수 2배·황금 손 배율 (서로 겹치지 않음). consume이면 황금 손 하나를 쓴다 */
+export function itemMult(p: PlayerState, now: number, consume: boolean) {
+  if (buffOn(p, 'double', now)) return 2;
+  if (p.goldLeft > 0) { if (consume) p.goldLeft--; return 2; }
+  return 1;
 }
 
 export type ClaimType = 'own' | 'yellow' | 'rainbow' | 'steal' | 'feverSteal' | 'counter';
+/** 어떻게 잡았는지: 직접 클릭, 넓은 손 범위, 자석, 장판, 폭죽·필드 클리어 */
+export type ClaimVia = 'click' | 'range' | 'magnet' | 'zone' | 'blast';
 
 export interface ClaimResult {
   type: ClaimType;
@@ -261,13 +307,16 @@ export interface ClaimResult {
   plundered: number;
   /** 상대의 방패로 콤보 끊기가 막혔는지 */
   shielded: boolean;
+  via: ClaimVia;
+  /** 잭팟 배율 (안 터지면 1) */
+  jackpot: number;
 }
 
 export function newPlayer(id: string, name: string, color: ColorIndex, bot = false): PlayerState {
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
-    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false,
+    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0,
   };
 }
 
@@ -287,6 +336,7 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   const m = modsOf(p.picks);
   p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
   p.calmLeft = m.calm; p.shieldLeft = m.shield;
+  p.buffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0;
   p.score += m.headStart;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
@@ -335,8 +385,9 @@ function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
   p.afterUntil = m.afterglow ? p.feverUntil + m.afterglow * 1000 : 0;
 }
 
-/** 콤보 끊기 (보험이 있으면 일부 유지). 실제로 줄었으면 true */
-function breakCombo(p: PlayerState, m: Mods) {
+/** 콤보 끊기 (보험이 있으면 일부 유지, 콤보 고정 중이면 그대로). 실제로 줄었으면 true */
+function breakCombo(p: PlayerState, m: Mods, now: number) {
+  if (buffOn(p, 'comboLock', now)) return false;
   const before = p.combo;
   p.combo = Math.floor((p.combo * m.insurance) / 100);
   return p.combo < before;
@@ -356,10 +407,37 @@ export function isOut(c: Circle, t: number) {
   return p.x < -c.r || p.x > FIELD.w + c.r || p.y < -c.r || p.y > FIELD.h + c.r;
 }
 
-export function isHit(c: Circle, t: number, x: number, y: number) {
+/** pad: 원 둘레 바깥으로 인정하는 여유(필드 단위). 넓은 손·자석은 이 값을 늘려서 판정한다 */
+export function isHit(c: Circle, t: number, x: number, y: number, pad: number = RULES.hitPad) {
   const p = circlePos(c, t);
-  const rr = c.r + RULES.hitPad;
+  const rr = c.r + pad;
   return (p.x - x) ** 2 + (p.y - y) ** 2 <= rr * rr;
+}
+
+/** 내 원: 내 색, 노란색, 무지개. 넓은 손·자석·장판은 내 원만 잡는다 */
+export function isMine(kind: CircleKind, color: ColorIndex) {
+  return typeof kind === 'number' ? kind === color : kind === 'y' || kind === 'rainbow';
+}
+
+/**
+ * 직접 맞은 원이 없을 때(또는 그 밖에) 넓은 손·자석으로 같이 잡히는 원.
+ * range: 클릭 둘레 reach 안의 내 원 전부 / magnet: range가 비었을 때 magnet 거리 안에서 가장 가까운 내 원
+ */
+export function assistTargets(
+  circles: Iterable<Circle>, color: ColorIndex, x: number, y: number, t: number,
+  reach: number, magnet: number, skip?: ReadonlySet<number>,
+): { range: Circle[]; magnet: Circle | null } {
+  const mine = [...circles].filter((c) => isMine(c.kind, color) && !skip?.has(c.id));
+  const range = reach > 0 ? mine.filter((c) => isHit(c, t, x, y, RULES.hitPad + reach)) : [];
+  if (range.length || magnet <= 0) return { range, magnet: null };
+  let best: Circle | null = null, bd = Infinity;
+  for (const c of mine) {
+    if (!isHit(c, t, x, y, RULES.hitPad + magnet)) continue;
+    const p = circlePos(c, t);
+    const d = Math.hypot(p.x - x, p.y - y) - c.r;
+    if (d < bd) { bd = d; best = c; }
+  }
+  return { range, magnet: best };
 }
 
 /** 경과 시간에 따른 원 생성 간격(ms) */
@@ -444,12 +522,17 @@ function addFever(p: PlayerState, amt: number, now: number, G: GameRules, player
  * - 평상시 견제: +1, 내 콤보 끊김, 피버 감소, 표적이 됨
  * - 표적인 사람의 색: 반격 보너스
  */
-export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: PlayerState[], now: number, G: GameRules): ClaimResult {
+export function resolveClaim(
+  claimer: PlayerState, kind: CircleKind, players: PlayerState[], now: number, G: GameRules,
+  opts: { via?: ClaimVia; rand?: () => number } = {},
+): ClaimResult {
+  const via = opts.via ?? 'click';
+  const blast = via === 'blast';
   const fever = isFever(claimer, now);
   const after = !fever && now < claimer.afterUntil;
   const m = modsOf(claimer.picks);
   const P = RULES.points;
-  const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false };
+  const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1 };
   let pts = 0;
   let steal = false;
 
@@ -458,6 +541,10 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
   if (kind === 'rainbow') {
     res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.rainbow, now, G, players);
+  } else if (kind === 'y' && !fever && buffOn(claimer, 'paint', now)) {
+    // 물들이기: 노란 원을 내 색으로 계산 (외길이면 그대로 0점)
+    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
+    res.feverStarted = addFever(claimer, RULES.fever.own, now, G, players);
   } else if (kind === 'y' && fever) {
     res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
   } else if (kind === 'y') {
@@ -469,27 +556,35 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
   } else {
     steal = true;
     const owner = players.find((p) => p.color === kind);
-    if (owner && isMarked(owner, now)) {
-      res.type = 'counter'; pts = P.counter + m.counterPro;
-    } else if (fever || !G.stealPenalty) {
+    if (blast) {
+      // 폭죽·필드 클리어: 남의 색도 +1만, 견제 페널티·표적·반격·강탈 없음
       res.type = 'feverSteal'; pts = P.stealCalm;
     } else {
-      res.type = 'steal'; pts = P.stealCalm;
-      breakCombo(claimer, m);
-      addFever(claimer, RULES.fever.stealCalm, now, G, players);
-      // 철면피: 표적 시간 감소 (99 이상이면 표적 안 됨)
-      const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
-      if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
-    }
-    if (owner && owner.combo > 0) {
-      if (owner.shieldLeft > 0) { owner.shieldLeft--; res.shielded = true; }
-      else if (breakCombo(owner, modsOf(owner.picks))) res.brokeComboOf = owner.id;
-    }
-    // 강탈·흡혈귀: 상대 점수를 빼앗음 (배율 없음). 흡혈귀를 가진 사람은 견제당할 때도 빼앗긴다
-    if (owner && res.type !== 'counter') {
-      const take = m.plunder + (m.vampire ? CURSE.vampire.drain : 0) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
-      res.plundered = Math.min(take, owner.score);
-      owner.score -= res.plundered;
+      if (owner && isMarked(owner, now)) {
+        res.type = 'counter'; pts = P.counter + m.counterPro;
+      } else if (fever || !G.stealPenalty) {
+        res.type = 'feverSteal'; pts = P.stealCalm;
+      } else {
+        res.type = 'steal'; pts = P.stealCalm;
+        breakCombo(claimer, m, now);
+        addFever(claimer, RULES.fever.stealCalm, now, G, players);
+        // 철면피: 표적 시간 감소 (99 이상이면 표적 안 됨)
+        const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
+        if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
+      }
+      const guarded = !!owner && buffOn(owner, 'guard', now);
+      if (owner && owner.combo > 0) {
+        // 보호막 아이템이 먼저 막는다 (방패 횟수는 그대로)
+        if (guarded) res.shielded = true;
+        else if (owner.shieldLeft > 0) { owner.shieldLeft--; res.shielded = true; }
+        else if (breakCombo(owner, modsOf(owner.picks), now)) res.brokeComboOf = owner.id;
+      }
+      // 강탈·흡혈귀: 상대 점수를 빼앗음 (배율 없음). 흡혈귀를 가진 사람은 견제당할 때도 빼앗긴다
+      if (owner && res.type !== 'counter') {
+        const take = (guarded ? 0 : m.plunder) + (m.vampire ? CURSE.vampire.drain : 0) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
+        res.plundered = Math.min(take, owner.score);
+        owner.score -= res.plundered;
+      }
     }
   }
 
@@ -499,14 +594,16 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
   }
   const st = claimer.stats;
   st.hits++;
-  if (res.type === 'steal' || res.type === 'feverSteal') st.steals++;
+  if (!blast && (res.type === 'steal' || res.type === 'feverSteal')) st.steals++;
   if (res.type === 'counter') st.counters++;
   if (res.feverStarted) st.fevers++;
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준)
-  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m);
-  res.gained = Math.round(pts * mult) + res.plundered;
+  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true);
+  // 잭팟은 맨 마지막에 곱한다 (블라스트는 없음)
+  if (!blast) res.jackpot = jackpotMult(m, opts.rand);
+  res.gained = Math.round(pts * mult * res.jackpot) + res.plundered;
   claimer.score += res.gained;
   return res;
 }
@@ -515,10 +612,11 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
 export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
   p.stats.misses++;
   const m = modsOf(p.picks);
-  if (G.missPenalty) {
+  // 헛클릭 무효 아이템이 먼저 막는다 (침착 횟수는 그대로, 유리 대포 감점은 아래에서 그대로 적용)
+  if (G.missPenalty && !buffOn(p, 'missGuard', now)) {
     // 침착: 라운드당 정해진 횟수만큼 페널티 무시
     if (p.calmLeft > 0) { p.calmLeft--; return; }
-    breakCombo(p, m);
+    breakCombo(p, m, now);
     addFever(p, RULES.fever.miss, now, G, players);
   }
   // 유리 대포: 빈 곳 클릭 감점 (저주의 대가라서 방 규칙과 상관없이 적용)
