@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULES, distToSegment, laserHits, modsOf, nextCursor, nextLaserIn, pickMagnetTargets, rollLaser, type Circle,
+  RULES, cursorActive, distToSegment, laserHits, modsOf, nextCursor, nextLaserIn, pickMagnetTargets, rollLaser, type Circle,
 } from '../src/index.ts';
 
 test('nextCursor: 효과가 없으면 진짜 마우스 위치 그대로', () => {
@@ -61,4 +61,15 @@ test('자석 능력 60 / 90 / 120 / 160, 상한 200, 아이템 +90', () => {
   assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'magnet', tier: t as 0 }]).magnet), [60, 90, 120, 160]);
   assert.equal(modsOf([{ id: 'magnet', tier: 3 }, { id: 'magnet', tier: 3 }]).magnet, 200);
   assert.equal(RULES.items.magnet, 90);
+});
+
+test('cursorActive: 탭이 숨겨졌거나 창이 포커스를 잃으면 커서를 보내지 않는다', () => {
+  const on = { playing: true, picking: false, roundOver: false, paused: false, hidden: false, focused: true };
+  assert.equal(cursorActive(on), true);
+  assert.equal(cursorActive({ ...on, hidden: true }), false);
+  assert.equal(cursorActive({ ...on, focused: false }), false);
+  assert.equal(cursorActive({ ...on, paused: true }), false);
+  assert.equal(cursorActive({ ...on, picking: true }), false);
+  assert.equal(cursorActive({ ...on, roundOver: true }), false);
+  assert.equal(cursorActive({ ...on, playing: false }), false);
 });

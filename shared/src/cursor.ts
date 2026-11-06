@@ -52,3 +52,11 @@ export function pickMagnetTargets(
   }
   return found.sort((a, b) => a.d - b.d).slice(0, max).map((f) => f.c);
 }
+
+/**
+ * 커서를 서버로 보낼 상태인지. 탭이 숨겨졌거나 창이 포커스를 잃으면 보내지 않아서,
+ * 자리를 비운 사람이 레이저에 맞거나 자석이 계속 끌어오지 않게 한다 (서버는 오래된 커서를 판정에서 뺀다)
+ */
+export function cursorActive(s: { playing: boolean; picking: boolean; roundOver: boolean; paused: boolean; hidden: boolean; focused: boolean }) {
+  return s.playing && !s.picking && !s.roundOver && !s.paused && !s.hidden && s.focused;
+}

@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, holdCircles, isStunned, magnetOf, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, cursorActive, holdCircles, isStunned, magnetOf, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserShot, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
@@ -448,7 +448,11 @@ socket.on('stun', ({ playerId }) => {
 });
 socket.on('circle:pull', (pl) => { pulls.set(pl.circleId, pl); if (pl.by === myId()) sfx.pull(); });
 // 커서 위치는 게임 중에만 보낸다 (캔버스 밖·탭 전환이면 서버가 판정에서 뺀다)
-startCursorSync(() => (playing && !picking() && !roundOver && !pausedView ? gameCursor.pos : null), (p) => socket.emit('cursor:move', p));
+const cursorOn = () => cursorActive({ playing, picking: picking(), roundOver, paused: !!pausedView, hidden: document.hidden, focused: document.hasFocus() });
+startCursorSync(() => (cursorOn() ? gameCursor.pos : null), (p) => socket.emit('cursor:move', p));
+// 탭을 바꾸거나 다른 창으로 가면 커서를 지운다 (돌아와서 마우스를 움직이면 다시 생김)
+document.addEventListener('visibilitychange', () => { if (document.hidden) gameCursor.leave(); });
+window.addEventListener('blur', () => gameCursor.leave());
 socket.on('wave:warn', ({ at }) => { renderer.waveWarn(Math.max(100, at - serverNow())); sfx.wave(); });
 socket.on('circles:hold', ({ ids, at, ms }) => {
   // 서버와 같은 방식으로 붙인다 (정지 중 또 정지하면 이어 붙임)
