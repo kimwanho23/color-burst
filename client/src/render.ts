@@ -53,8 +53,12 @@ export interface DrawState {
   zones?: { x: number; y: number; r: number; until: number; color: ColorIndex }[];
   /** 시간 정지 중 */
   frozen?: boolean;
-  /** 넓은 손: 커서 둘레 범위 표시 */
-  reachRing?: { x: number; y: number; r: number } | null;
+  /** 게임 커서 (내 커서만): 스턴이면 회색, 넓은 손·자석 범위 */
+  cursor?: { x: number; y: number; stunned: boolean; reach: number; magnet: number } | null;
+  /** 레이저: at 전에는 경고선, at부터 fireMs 동안 빛줄기 */
+  laser?: { a: { x: number; y: number }; b: { x: number; y: number }; at: number } | null;
+  /** 자석에 끌려가는 원: from에서 to(내가 끌면 내 커서, 남이면 null → 제자리에서 작아짐)로 */
+  pulls?: Map<number, { from: { x: number; y: number }; to: { x: number; y: number } | null; at: number; ms: number }>;
 }
 
 export class Renderer {
@@ -185,10 +189,7 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
 
     for (const z of s.zones ?? []) this.drawZone(z, s.now);
-    if (s.reachRing) {
-      ctx.strokeStyle = 'rgba(127, 211, 255, .55)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(s.reachRing.x, s.reachRing.y, s.reachRing.r, 0, Math.PI * 2); ctx.stroke();
-    }
+
 
     // 방해 전파: 원을 흐리고 옅게 / 시간 정지: 채도를 낮춘다
     const filters = [s.blurred ? 'blur(7px)' : '', s.frozen ? 'saturate(0.25)' : ''].filter(Boolean);
@@ -196,16 +197,25 @@ export class Renderer {
     if (s.blurred) ctx.globalAlpha = 0.55;
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
+    if (s.laser) this.drawLaser(s.laser, s.now, now);
     const base = ctx.globalAlpha;
     // 발사 보호 구역 안의 원은 반투명 (아직 잡을 수 없음)
     const fade = (c: Circle) => { ctx.globalAlpha = isGuarded(c, s.now) ? base * 0.4 : base; };
     for (const c of list) if (c.kind === 'boss') { fade(c); this.drawBoss(c, s.now, now); }
     for (const c of list) {
       if (c.kind === 'boss') continue;
-      const p = circlePos(c, s.now);
+      let p = circlePos(c, s.now), r = c.r;
+      // 자석에 끌려가는 원: 끄는 사람 커서 쪽으로 빨려 들며 작아진다
+      const pl = s.pulls?.get(c.id);
+      if (pl) {
+        const k = Math.max(0, Math.min(1, (s.now - pl.at) / pl.ms)), e = k * k;
+        const to = pl.to ?? pl.from;
+        p = { x: pl.from.x + (to.x - pl.from.x) * e, y: pl.from.y + (to.y - pl.from.y) * e };
+        r = c.r * (1 - 0.6 * k);
+      }
       fade(c);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now);
-      else this.drawCircle(c.kind, p.x, p.y, c.r, (s.now - c.born) / 700 + c.id, s);
+      else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
     ctx.globalAlpha = base;
     ctx.filter = 'none'; ctx.globalAlpha = 1;
@@ -239,6 +249,7 @@ export class Renderer {
       }
       ctx.globalAlpha = 1;
     }
+    if (s.cursor) this.drawCursor(s.cursor, now);
     ctx.restore();
   }
 
@@ -312,6 +323,53 @@ export class Renderer {
       for (const dx of [-r * 0.18, r * 0.12]) { ctx.moveTo(dx - r * 0.12, top - r * 0.05); ctx.lineTo(dx + r * 0.08, top + r * 0.12); ctx.lineTo(dx - r * 0.12, top + r * 0.29); }
       ctx.stroke();
     }
+  }
+
+  /** 레이저: 발사 전에는 깜빡이는 빨간 점선, 발사 중에는 굵은 빛줄기와 흰 심지 */
+  private drawLaser(l: NonNullable<DrawState['laser']>, t: number, frameNow: number) {
+    const ctx = this.ctx;
+    const fire = RULES.laser.fireMs;
+    if (t >= l.at + fire) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    if (t < l.at) {
+      ctx.setLineDash([14, 10]); ctx.lineWidth = 3;
+      ctx.strokeStyle = `rgba(255, 77, 77, ${0.35 + 0.35 * Math.abs(Math.sin(frameNow / 80))})`;
+      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+    } else {
+      const k = 1 - (t - l.at) / fire;
+      ctx.strokeStyle = `rgba(255, 60, 60, ${0.55 * k + 0.2})`; ctx.lineWidth = RULES.laser.width * 2;
+      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.9 * k + 0.1})`; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 내 게임 커서: 흰 십자 고리 (스턴이면 회색 + 도는 별), 넓은 손 범위(실선)·자석 범위(점선) */
+  private drawCursor(c: NonNullable<DrawState['cursor']>, frameNow: number) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    if (c.reach > 0) { ctx.strokeStyle = 'rgba(127, 211, 255, .55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, c.reach + RULES.hitPad, 0, Math.PI * 2); ctx.stroke(); }
+    if (c.magnet > 0) {
+      ctx.setLineDash([6, 6]); ctx.strokeStyle = 'rgba(127, 211, 255, .45)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, c.magnet, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    const col = c.stunned ? '#8a8fb8' : '#ffffff';
+    ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-6, 0); ctx.moveTo(6, 0); ctx.lineTo(18, 0); ctx.moveTo(0, -18); ctx.lineTo(0, -6); ctx.moveTo(0, 6); ctx.lineTo(0, 18); ctx.stroke();
+    if (c.stunned) {
+      ctx.fillStyle = '#ffd43b';
+      for (let i = 0; i < 3; i++) {
+        const a = frameNow / 250 + (Math.PI * 2 * i) / 3;
+        ctx.beginPath(); ctx.arc(Math.cos(a) * 22, -26 + Math.sin(a) * 6, 3.5, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
   }
 
   /** 아이템 원: 등급색 테두리 + 천천히 흔들리는 ? (전설은 프리즘이 돈다) */

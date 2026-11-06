@@ -157,3 +157,109 @@ test('빈 곳 클릭은 지금처럼 페널티', () => {
   assert.equal(me.stats.misses, 1);
   room.destroy();
 });
+
+// ---------- 3단계 1차: 커서·스턴·레이저·자석 ----------
+type Priv = {
+  updateLaser(now: number): void;
+  updatePulls(now: number): void;
+  laser: { a: { x: number; y: number }; b: { x: number; y: number }; at: number; hit: Set<string> } | null;
+  hostId: string;
+};
+const priv = (room: Room) => room as unknown as Priv;
+/** now에 (x, y)에 있고 거의 안 움직이는 원 */
+const slowAt = (id: number, kind: Circle['kind'], x: number, y: number, now: number): Circle => {
+  const d = Math.hypot(x - 800, y - 450);
+  return { id, kind, angle: Math.atan2(y - 450, x - 800), speed: d / 100, r: 40, born: now - 100_000 };
+};
+
+test('스턴 중에는 빈 곳·원 클릭 모두 무시', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  me.stunUntil = now + 1000; me.combo = 5;
+  circles.set(70, slowAt(70, 0, 1200, 450, now));
+  room.click(me.id, { circleId: null, x: 10, y: 10 });
+  room.click(me.id, { circleId: 70, x: 1200, y: 450 });
+  assert.deepEqual([me.combo, me.stats.misses, circles.has(70)], [5, 0, true]);
+  room.destroy();
+});
+
+test('레이저: 선 위에 커서가 있는 사람만 1.5초 스턴, 한 레이저에 한 번', () => {
+  const { room, me } = playingRoom();
+  const other = room.players.find((p) => p.id !== me.id)!;
+  const now = Date.now();
+  room.cursor(me.id, { x: 800, y: 300 });
+  room.cursor(other.id, { x: 800, y: 600 });
+  priv(room).laser = { a: { x: 0, y: 300 }, b: { x: 1600, y: 300 }, at: now - 10, hit: new Set() };
+  sent.length = 0;
+  priv(room).updateLaser(now);
+  assert.ok(me.stunUntil >= now + 1400 && me.stunUntil <= now + 1600, String(me.stunUntil - now));
+  assert.equal(other.stunUntil, 0);
+  const first = me.stunUntil;
+  priv(room).updateLaser(now + 50);
+  assert.equal(me.stunUntil, first);
+  assert.equal(sent.filter((e) => e === 'stun').length, 1);
+  room.destroy();
+});
+
+test('레이저: 0.5초 넘게 소식 없는 커서는 안 맞는다', (t) => {
+  const { room, me } = playingRoom();
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  room.cursor(me.id, { x: 800, y: 300 });
+  t.mock.timers.tick(600);
+  const now = Date.now();
+  priv(room).laser = { a: { x: 0, y: 300 }, b: { x: 1600, y: 300 }, at: now - 10, hit: new Set() };
+  priv(room).updateLaser(now);
+  assert.equal(me.stunUntil, 0);
+  room.destroy();
+});
+
+test('자석: 커서 근처 내 원을 1초에 2개까지 끌어와 0.25초 뒤 잡는다, 끌리는 원은 남이 못 잡음', () => {
+  const { room, me, circles } = playingRoom();
+  const other = room.players.find((p) => p.id !== me.id)!;
+  me.picks = [{ id: 'magnet', tier: 0 }]; // 반경 60
+  const now = Date.now();
+  room.cursor(me.id, { x: 1200, y: 450 });
+  for (const [id, x] of [[81, 1220], [82, 1240], [83, 1180]] as const) circles.set(id, slowAt(id, me.color, x, 450, now));
+  sent.length = 0;
+  priv(room).updatePulls(now);
+  assert.equal(sent.filter((e) => e === 'circle:pull').length, 2);
+  // 가장 가까운 81(20)과 83(20) 중 둘이 끌림 → 82는 남음
+  room.click(other.id, { circleId: 81, x: 1220, y: 450 });
+  assert.equal(other.score, 0);
+  priv(room).updatePulls(now + 300);
+  assert.equal(me.score, 6);
+  assert.equal(circles.has(82), true);
+  // 1.1초 뒤에도 커서를 계속 움직이고 있다고 본다 (커서가 오래되면 끌지 않음)
+  (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors.set(me.id, { x: 1200, y: 450, at: now + 1100 });
+  priv(room).updatePulls(now + 1100);
+  assert.equal(sent.filter((e) => e === 'circle:pull').length, 3);
+  room.destroy();
+});
+
+test('자석: 스턴 중이거나 커서가 오래되면 끌지 않는다', () => {
+  const { room, me, circles } = playingRoom();
+  me.picks = [{ id: 'magnet', tier: 0 }];
+  const now = Date.now();
+  circles.set(91, slowAt(91, me.color, 1220, 450, now));
+  room.cursor(me.id, { x: 1200, y: 450 });
+  me.stunUntil = now + 1000;
+  sent.length = 0;
+  priv(room).updatePulls(now);
+  me.stunUntil = 0;
+  priv(room).updatePulls(now + 700); // 커서가 0.7초 전 것
+  assert.equal(sent.filter((e) => e === 'circle:pull').length, 0);
+  room.destroy();
+});
+
+test('일시정지가 풀리면 레이저 발사 시각도 그만큼 밀린다', (t) => {
+  const { room } = playingRoom();
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const at = Date.now() + 500;
+  priv(room).laser = { a: { x: 0, y: 0 }, b: { x: 1, y: 1 }, at, hit: new Set() };
+  const host = priv(room).hostId;
+  room.pause(host);
+  t.mock.timers.tick(2000);
+  room.resume(host);
+  assert.equal(priv(room).laser!.at, at + 2000);
+  room.destroy();
+});

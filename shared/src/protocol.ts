@@ -7,6 +7,12 @@ import type { Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
 import type { WavePattern } from './waves.ts';
+import type { Point } from './cursor.ts';
+
+/** 커서 자석으로 끌려가는 원: at부터 ms 동안 by의 커서로 빨려 들어간 뒤 잡힌다 */
+export interface Pull { circleId: number; by: string; from: Point; at: number; ms: number }
+/** 레이저: at(서버 시각)에 a-b 선분으로 발사 (그 전은 경고) */
+export interface LaserShot { a: Point; b: Point; at: number }
 import type { ThemeId } from './rules.ts';
 
 /** 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다 */
@@ -72,6 +78,9 @@ export interface PlayPayload {
   /** 아케이드 모드가 아니면 null */
   arcade: ArcadeState | null;
   zones: Zone[];
+  /** 끌려가는 원, 예고·발사 중인 레이저 (재접속 때 이어서 그린다) */
+  pulls: Pull[];
+  laser: LaserShot | null;
   /** 이번 라운드 테마 (아케이드 랜덤 이벤트) */
   theme: ThemeId | null;
 }
@@ -101,6 +110,12 @@ export interface ServerToClient {
   /** 아이템 원을 잡음. 블라스트(폭죽·필드 클리어)면 이 이벤트가 먼저 오고 circle:claimed가 이어진다 */
   'item:got': (d: { circleId: number; by: string; item: ItemId; tier: ItemTier; x: number; y: number }) => void;
   'zone:add': (z: Zone) => void;
+  /** 레이저 예고 (at에 발사) */
+  'laser:warn': (d: LaserShot) => void;
+  /** 스턴: until까지 클릭 불가 */
+  stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' }) => void;
+  /** 커서 자석이 원을 끌기 시작함 */
+  'circle:pull': (d: Pull) => void;
   /** 발사 패턴 예고: at(서버 시각)에 웨이브가 나온다 */
   'wave:warn': (d: { pattern: WavePattern; at: number }) => void;
   /** 시간 정지: 해당 원들에 정지 구간 [at, at + ms] */
@@ -137,6 +152,8 @@ export interface ClientToServer {
   'arcade:choose': (index: number) => void;
   /** 아케이드: 선택지 다시 뽑기 (고를 때마다 1번) */
   'arcade:reroll': () => void;
+  /** 게임 커서 위치 (필드 좌표, 초당 약 15번) */
+  'cursor:move': (d: { x: number; y: number }) => void;
   /** circleId가 null이면 빈 공간 클릭. x, y는 필드 좌표 */
   'game:click': (d: { circleId: number | null; x: number; y: number }) => void;
   /** 서버 시각 맞추기 */

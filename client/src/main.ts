@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, holdCircles, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, holdCircles, isStunned, magnetOf, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
+  type Zone, type LaserShot, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
@@ -9,6 +9,7 @@ import { renderResult } from './results.ts';
 import { pickChips, renderPick } from './arcadeUI.ts';
 import { UI, icon } from './icons.ts';
 import { buffChips, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
+import { GameCursor, startCursorSync } from './cursor.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
@@ -278,6 +279,9 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   if (fresh && d.theme) renderer.text(800, 330, THEMES[d.theme].name, '#ffd43b', 1.8);
   for (const c of d.circles) circles.set(c.id, c);
   zones = d.zones ?? [];
+  pulls.clear();
+  for (const pl of d.pulls ?? []) pulls.set(pl.circleId, pl);
+  setLaser(d.laser ?? null);
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
   playing = true;
@@ -378,7 +382,7 @@ socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => { players = p; renderScores(); if (picking()) showPick(); });
 socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   const claimedKind = circles.get(circleId)?.kind;
-  circles.delete(circleId); pending.delete(circleId);
+  circles.delete(circleId); pending.delete(circleId); pulls.delete(circleId);
   const who = players.find((p) => p.id === by);
   if (!who) return;
   // 견제 반사: 원 주인이 반사해서 주인이 잡은 것으로 처리됨
@@ -396,7 +400,6 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   // 폭죽·필드 클리어: 폭발 중심에서 가까운 원부터 충격파를 따라 차례로 터진다
   if (blasted) renderer.burstDelayed(x, y, COLORS[who.color].hex, (Math.hypot(x - blast.x, y - blast.y) / blast.R) * 350);
   else renderer.burst(x, y, COLORS[who.color].hex, mine);
-  if (mine && result.via === 'magnet') renderer.pullLine(lastClick.x, lastClick.y, x, y);
   if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
   if (mine) {
     const label = blasted ? '' : (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
@@ -423,6 +426,29 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
   if (item === 'fieldClear') { blast = { x: 800, y: 450, R: 1000 }; renderer.flash(); renderer.shockwave(800, 450, 1000); sfx.clear(); }
 });
 socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); });
+// ---------- 게임 커서: 레이저·스턴·자석 끌기 ----------
+const gameCursor = new GameCursor();
+/** 커서 자석으로 끌려가는 원 */
+const pulls = new Map<number, Pull>();
+let laser: LaserShot | null = null;
+let laserFireTimer = 0;
+function setLaser(l: LaserShot | null) {
+  laser = l;
+  clearTimeout(laserFireTimer);
+  if (l && l.at > serverNow()) laserFireTimer = window.setTimeout(() => sfx.laserFire(), l.at - serverNow());
+}
+socket.on('laser:warn', (l) => { setLaser(l); sfx.laserWarn(); });
+socket.on('stun', ({ playerId }) => {
+  const p = nameOf(playerId);
+  if (playerId === myId()) {
+    sfx.stun();
+    const c = gameCursor.pos ?? { x: 800, y: 450 };
+    renderer.text(c.x, c.y - 40, '스턴!', '#9ca2d6', 1.2);
+  } else if (p) renderer.text(800, 120, `${p.name} 스턴!`, COLORS[p.color].hex, 0.8);
+});
+socket.on('circle:pull', (pl) => { pulls.set(pl.circleId, pl); if (pl.by === myId()) sfx.pull(); });
+// 커서 위치는 게임 중에만 보낸다 (캔버스 밖·탭 전환이면 서버가 판정에서 뺀다)
+startCursorSync(() => (playing && !picking() && !roundOver && !pausedView ? gameCursor.pos : null), (p) => socket.emit('cursor:move', p));
 socket.on('wave:warn', ({ at }) => { renderer.waveWarn(Math.max(100, at - serverNow())); sfx.wave(); });
 socket.on('circles:hold', ({ ids, at, ms }) => {
   // 서버와 같은 방식으로 붙인다 (정지 중 또 정지하면 이어 붙임)
@@ -454,23 +480,32 @@ socket.on('game:over', (d) => {
   show('result');
 });
 
-// 넓은 손이 걸려 있으면 커서 둘레에 범위를 얇게 보여 준다
-let cursor: { x: number; y: number } | null = null;
-$('cv').addEventListener('pointermove', (e) => { cursor = renderer.toField(e.clientX, e.clientY); });
-$('cv').addEventListener('pointerleave', () => { cursor = null; });
+// 게임 커서: 진짜 마우스 위치와 이동량으로 움직인다 (1차는 효과 없음 → 마우스 위치 그대로)
+const moveCursor = (e: PointerEvent) => {
+  const real = renderer.toField(e.clientX, e.clientY);
+  const prev = renderer.toField(e.clientX - e.movementX, e.clientY - e.movementY);
+  gameCursor.move(real, { x: real.x - prev.x, y: real.y - prev.y }, null);
+};
+$('cv').addEventListener('pointermove', moveCursor);
+$('cv').addEventListener('pointerleave', () => gameCursor.leave());
 $('cv').addEventListener('pointerdown', (e) => {
   if (!playing || pausedView || picking() || roundOver) return;
   ensureMusic();
   const now = serverNow();
   if (now < startAt) return;
-  const { x, y } = renderer.toField(e.clientX, e.clientY);
+  // 클릭은 게임 커서 위치로 판정한다 (터치는 누른 자리로 커서를 옮긴 뒤)
+  moveCursor(e);
+  const { x, y } = gameCursor.pos ?? renderer.toField(e.clientX, e.clientY);
   lastClick = { x, y };
+  const meNow = me();
+  if (meNow && isStunned(meNow, now)) { renderer.miss(x, y, true); return; }
   const m = me();
   const reach = m ? reachOf(m, now) : 0;
   if (reach > 0) renderer.reachRing(x, y, reach);
   // 위에 그려진(나중에 나온) 원부터, 보스는 맨 마지막에 판정
   const list = [...circles.values()].reverse();
-  const hit = list.find((c) => c.kind !== 'boss' && !pending.has(c.id) && isHit(c, now, x, y))
+  // 자석에 끌려가는 원은 누를 수 없다
+  const hit = list.find((c) => c.kind !== 'boss' && !pending.has(c.id) && !pulls.has(c.id) && isHit(c, now, x, y))
     ?? list.find((c) => c.kind === 'boss' && isHit(c, now, x, y));
   if (hit?.kind === 'boss') {
     // 보호막·붉은 상태면 서버 응답(막힘·감점)으로만 연출한다
@@ -566,6 +601,8 @@ function updateHud(now: number) {
 function frame() {
   const now = viewNow();
   $('pauseBtn').hidden = !(playing && canPause() && !picking());
+  // 게임 중에는 진짜 마우스 커서를 숨기고 게임 커서를 그린다
+  $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView);
   for (const [id, c] of circles) if (isOut(c, now)) { circles.delete(id); pending.delete(id); }
   const m = me();
   updateHud(now);
@@ -579,7 +616,11 @@ function frame() {
     blurred: !!m && now < m.blurUntil,
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
-    reachRing: cursor && m && playing && !picking() && reachOf(m, now) > 0 ? { ...cursor, r: reachOf(m, now) + RULES.hitPad } : null,
+    cursor: gameCursor.pos && playing && !picking() && !roundOver
+      ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now) : 0 }
+      : null,
+    laser,
+    pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),
   });
   requestAnimationFrame(frame);
 }

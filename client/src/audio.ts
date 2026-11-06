@@ -83,6 +83,11 @@ export const sfx = {
   clear: () => [262, 392, 523, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.06, i * 0.04)),
   freeze: () => tone(1800, 0.4, 'sine', 0.08, 0, 0.3),
   zone: () => tone(440, 0.25, 'triangle', 0.1, 0, 1.5),
+  /** 레이저 예고·발사, 스턴, 자석 끌기 */
+  laserWarn: () => [880, 880].forEach((f, i) => tone(f, 0.08, 'square', 0.05, i * 0.16)),
+  laserFire: () => tone(1400, 0.3, 'sawtooth', 0.06, 0, 0.25),
+  stun: () => [523, 440, 392].forEach((f, i) => tone(f, 0.1, 'triangle', 0.09, i * 0.07)),
+  pull: () => tone(300, 0.2, 'sine', 0.08, 0, 2.2),
   /** 라운드 종료 */
   roundEnd: () => [784, 659, 523].forEach((f, i) => tone(f, 0.16, 'square', 0.08, i * 0.1)),
   /** 웨이브 예고: 올라가는 휙 소리 */
