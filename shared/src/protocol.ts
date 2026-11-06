@@ -4,6 +4,10 @@
  */
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
 import type { Pick, RoundEffect } from './arcade.ts';
+import type { ItemId, ItemTier } from './items.ts';
+
+/** 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다 */
+export interface Zone { id: number; by: string; x: number; y: number; r: number; until: number }
 
 /** 아케이드 진행 상태 */
 export interface ArcadeState {
@@ -60,6 +64,7 @@ export interface PlayPayload {
   pausedBy: string | null;
   /** 아케이드 모드가 아니면 null */
   arcade: ArcadeState | null;
+  zones: Zone[];
 }
 
 export type Ack<T = {}> = (r: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -80,10 +85,15 @@ export interface ServerToClient {
   'circle:spawn': (c: Circle) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;
+  /** 아이템 원을 잡음. 블라스트(폭죽·필드 클리어)면 이 이벤트가 먼저 오고 circle:claimed가 이어진다 */
+  'item:got': (d: { circleId: number; by: string; item: ItemId; tier: ItemTier; x: number; y: number }) => void;
+  'zone:add': (z: Zone) => void;
+  /** 시간 정지: 해당 원들에 정지 구간 [at, at + ms] */
+  'circles:hold': (d: { ids: number[]; at: number; ms: number }) => void;
   /** 보스를 때림 (hp: 남은 체력) */
-  'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number }) => void;
+  'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number; jackpot: number }) => void;
   /** 보스 처치: by가 막타, mvp가 최다 타격 */
-  'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number }) => void;
+  'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number }) => void;
   'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
   'game:over': (d: GameOver) => void;

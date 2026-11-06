@@ -70,6 +70,17 @@ export const sfx = {
   pickChoose: () => { tone(784, 0.08, 'square', 0.08); tone(1175, 0.14, 'square', 0.07, 0.07); },
   legend: () => [784, 988, 1175, 1568, 1976, 2349].forEach((f, i) => tone(f, 0.22, 'triangle', 0.07, i * 0.06)),
   tick: () => tone(1000, 0.06, 'square', 0.06),
+  /** 아이템 원 획득 (등급이 높을수록 음이 많다) */
+  item: (tier: number) => [659, 880, 1175, 1568].slice(0, 2 + tier).forEach((f, i) => tone(f, 0.1, 'triangle', 0.1, i * 0.05)),
+  /** 잭팟: 배율이 클수록 높고 길게 */
+  jackpot: (mult: number) => {
+    const n = mult >= 3 ? 6 : mult >= 2 ? 4 : 3;
+    [1047, 1319, 1568, 2093, 2637, 3136].slice(0, n).forEach((f, i) => tone(f, 0.09, 'square', 0.06, i * 0.045));
+  },
+  bomb: () => { tone(120, 0.3, 'sawtooth', 0.12, 0, 0.4); tone(60, 0.35, 'square', 0.08, 0.02, 0.5); },
+  clear: () => [262, 392, 523, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.06, i * 0.04)),
+  freeze: () => tone(1800, 0.4, 'sine', 0.08, 0, 0.3),
+  zone: () => tone(440, 0.25, 'triangle', 0.1, 0, 1.5),
   win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
   lose: () => [392, 349, 330].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
 };

@@ -1,13 +1,14 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, RULES, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut,
-  type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
+  type Zone, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { pickChips, renderPick } from './arcadeUI.ts';
 import { UI, icon } from './icons.ts';
+import { buffChips, renderBuffBar, showItemPop } from './effectsUI.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
@@ -58,6 +59,14 @@ let room: RoomSnapshot | null = null;
 let players: PlayerState[] = [];
 const circles = new Map<number, Circle>();
 const pending = new Set<number>();
+// ---------- 아이템 ----------
+let zones: Zone[] = [];
+/** 시간 정지가 끝나는 서버 시각 */
+let frozenUntil = 0;
+/** 마지막 클릭 위치 (자석 끌림 선) */
+let lastClick = { x: 0, y: 0 };
+/** 마지막 폭죽·필드 클리어: 연쇄 폭발 순서 계산용 */
+let blast = { x: 800, y: 450, R: 1000 };
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
 /** 지금 판(또는 대기실)의 방 규칙 */
 let rules: RoomRules = DEFAULT_RULES;
@@ -243,6 +252,9 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   circles.clear(); pending.clear();
   if (fresh) lastCount = -1;
   for (const c of d.circles) circles.set(c.id, c);
+  zones = d.zones ?? [];
+  // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
+  frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
   playing = true;
   show(null);
   renderScores();
@@ -291,18 +303,26 @@ socket.on('circle:spawn', (c) => {
   if (c.kind === 'boss') { sfx.bossAppear(); renderer.text(800, 300, '보스 등장!', '#ffc23a', 1.8); }
 });
 const nameOf = (id: string | null) => players.find((p) => p.id === id);
-socket.on('boss:hit', ({ circleId, by, hp, gained }) => {
+const GOLD = '#ffd166';
+/** 잭팟 숫자는 배율이 클수록 크게 */
+const jackpotSize = (mult: number, base = 1) => base * (1 + (mult - 1) * 0.5);
+socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot }) => {
   const c = circles.get(circleId);
   if (c) c.hp = hp;
   renderer.bossPoke(circleId);
-  if (by === myId() && c) { const p = circlePos(c, serverNow()); renderer.text(p.x + 60, p.y - 70, `+${gained}`, '#fff', 0.7); }
+  if (by === myId() && c) {
+    const p = circlePos(c, serverNow());
+    if (jackpot > 1) { renderer.jackpot(p.x, p.y, jackpot, true); sfx.jackpot(jackpot); }
+    renderer.text(p.x + 60, p.y - 70, `+${gained}`, jackpot > 1 ? GOLD : '#fff', jackpotSize(jackpot, 0.7));
+  }
 });
-socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y }) => {
+socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot }) => {
   circles.delete(circleId);
   const killer = nameOf(by), mvpP = nameOf(mvp);
   renderer.burst(x, y, '#ffc23a', true); renderer.burst(x, y, '#fff', true);
   sfx.bossKill();
-  if (killer) renderer.text(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, by === myId() ? '#ffc23a' : COLORS[killer.color].hex, 1.3);
+  if (jackpot > 1) { renderer.jackpot(x, y, jackpot, true); if (by === myId()) sfx.jackpot(jackpot); }
+  if (killer) renderer.text(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, jackpot > 1 ? GOLD : by === myId() ? '#ffc23a' : COLORS[killer.color].hex, jackpotSize(jackpot, 1.3));
   if (mvpP && mvpGained) renderer.text(x, y + 50, `최다 타격 ${mvp === myId() ? '나' : mvpP.name} +${mvpGained}`, '#fff', 0.85);
 });
 socket.on('boss:escaped', ({ circleId }) => {
@@ -317,11 +337,17 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   const who = players.find((p) => p.id === by);
   if (!who) return;
   const mine = by === myId();
-  renderer.burst(x, y, COLORS[who.color].hex, mine);
+  const blasted = result.via === 'blast';
+  // 폭죽·필드 클리어: 폭발 중심에서 가까운 원부터 충격파를 따라 차례로 터진다
+  if (blasted) renderer.burstDelayed(x, y, COLORS[who.color].hex, (Math.hypot(x - blast.x, y - blast.y) / blast.R) * 350);
+  else renderer.burst(x, y, COLORS[who.color].hex, mine);
+  if (mine && result.via === 'magnet') renderer.pullLine(lastClick.x, lastClick.y, x, y);
+  if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
   if (mine) {
-    const label = (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
-    renderer.text(x, y, `+${result.gained}${label}${result.comboBonus ? ' 콤보!' : ''}`, isFever(who, serverNow()) ? '#ff9f1c' : '#fff');
-    ({ own: sfx.own, yellow: sfx.yellow, rainbow: sfx.rainbow, steal: sfx.steal, feverSteal: sfx.steal, counter: sfx.rainbow })[result.type]();
+    const label = blasted ? '' : (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
+    const col = result.jackpot > 1 ? GOLD : isFever(who, serverNow()) ? '#ff9f1c' : '#fff';
+    renderer.text(x, y, `+${result.gained}${label}${result.comboBonus ? ' 콤보!' : ''}`, col, jackpotSize(result.jackpot));
+    if (!blasted) ({ own: sfx.own, yellow: sfx.yellow, rainbow: sfx.rainbow, steal: sfx.steal, feverSteal: sfx.steal, counter: sfx.rainbow })[result.type]();
     if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
     if (result.feverStarted) { sfx.fever(); renderer.text(800, 400, 'FEVER!', '#ff9f1c', 2); }
   } else {
@@ -329,6 +355,23 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   }
   if (result.brokeComboOf === myId()) { sfx.comboBroken(); renderer.text(x, y - 45, '콤보 끊김!', '#ff5d73', 1.1); }
   if (result.shielded && claimedKind === me()?.color) renderer.text(x, y - 45, '방패!', '#4d9bff', 1.1);
+});
+socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
+  circles.delete(circleId); pending.delete(circleId);
+  const who = nameOf(by);
+  if (by === myId()) {
+    const sp = renderer.toScreen(x, y);
+    showItemPop($('itemPops'), sp.x, sp.y, item, tier, !fxOn());
+    sfx.item(tier);
+  } else if (who) renderer.text(x, y, `${who.name} ${ITEMS[item].name}`, COLORS[who.color].hex, 0.75);
+  if (item === 'bomb') { blast = { x, y, R: RULES.items.bombR }; renderer.shockwave(x, y, RULES.items.bombR); sfx.bomb(); }
+  if (item === 'fieldClear') { blast = { x: 800, y: 450, R: 1000 }; renderer.flash(); renderer.shockwave(800, 450, 1000); sfx.clear(); }
+});
+socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); });
+socket.on('circles:hold', ({ ids, at, ms }) => {
+  for (const id of ids) { const c = circles.get(id); if (c) (c.holds ??= []).push([at, ms]); }
+  frozenUntil = Math.max(frozenUntil, at + ms);
+  sfx.freeze();
 });
 socket.on('game:over', (d) => {
   const { ranking } = d;
@@ -360,6 +403,10 @@ $('cv').addEventListener('pointerdown', (e) => {
   const now = serverNow();
   if (now < startAt) return;
   const { x, y } = renderer.toField(e.clientX, e.clientY);
+  lastClick = { x, y };
+  const m = me();
+  const reach = m ? reachOf(m, now) : 0;
+  if (reach > 0) renderer.reachRing(x, y, reach);
   // 위에 그려진(나중에 나온) 원부터, 보스는 맨 마지막에 판정
   const list = [...circles.values()].reverse();
   const hit = list.find((c) => c.kind !== 'boss' && !pending.has(c.id) && isHit(c, now, x, y))
@@ -371,8 +418,13 @@ $('cv').addEventListener('pointerdown', (e) => {
     pending.add(hit.id);
     socket.emit('game:click', { circleId: hit.id, x, y });
   } else {
+    // 넓은 손·자석으로 잡힐 원이 있으면 빗나간 표시를 하지 않는다 (서버가 잡아서 알려 준다)
+    const assist = m ? assistTargets(circles.values(), m.color, x, y, now, reach, magnetOf(m, now), pending) : null;
+    const saved = !!assist && (assist.range.length > 0 || !!assist.magnet);
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
-    if (rules.missPenalty) { renderer.miss(x, y); sfx.miss(); } else renderer.miss(x, y, true);
+    if (!saved) {
+      if (rules.missPenalty) { renderer.miss(x, y); sfx.miss(); } else renderer.miss(x, y, true);
+    }
     socket.emit('game:click', { circleId: null, x, y });
   }
 });
@@ -405,9 +457,10 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
-  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [])}</div>`).join('');
+  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [])}${buffChips(p, serverNow())}</div>`).join('');
 }
 
+let lastBuffSec = 0;
 function updateHud(now: number) {
   const m = me();
   const fever = !!m && isFever(m, now);
@@ -418,6 +471,10 @@ function updateHud(now: number) {
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
   $('combo').textContent = `${m?.combo ?? 0} 콤보`;
+  renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id]);
+  // 점수판의 버프 아이콘은 1초마다 다시 그려 끝난 것을 지운다
+  const sec = Math.floor(now / 1000);
+  if (playing && sec !== lastBuffSec) { lastBuffSec = sec; renderScores(); }
   $('stage').classList.toggle('feverOn', playing && !picking() && fever);
   document.querySelectorAll<HTMLElement>('.chip').forEach((el) => {
     const p = players.find((x) => x.id === el.dataset.id);
@@ -455,6 +512,8 @@ function frame() {
     markedColors: new Set(players.filter((p) => isMarked(p, now)).map((p) => p.color)),
     now,
     blurred: !!m && now < m.blurUntil,
+    zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
+    frozen: now < frozenUntil,
   });
   requestAnimationFrame(frame);
 }

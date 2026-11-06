@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
-  type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient,
+  applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
+  type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
+  type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
 
@@ -62,6 +63,13 @@ export class Room {
   private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean; allLegend: boolean }>();
   private pickTimer: NodeJS.Timeout | null = null;
   private botPickTimers: NodeJS.Timeout[] = [];
+  // ---------- 아이템 ----------
+  private zones: Zone[] = [];
+  private nextZoneId = 1;
+  /** 내 색 비: 이 시각까지 그 색 원만 나온다 */
+  private rain: { color: ColorIndex; until: number } | null = null;
+  /** 시간 정지: 이 시각까지 새 원이 나오지 않는다 */
+  private freezeUntil = 0;
 
   constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false) {
     if (solo) this.fillBots = true;
@@ -156,7 +164,7 @@ export class Room {
     let base = this.rules;
     // 프리셋은 점수·속도 규칙만 바꾸고 모드 설정은 유지
     if (d.preset && d.preset in PRESETS) {
-      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec };
+      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec, hostEvents: this.rules.hostEvents };
     }
     this.rules = sanitizeRules(base, d.rules ?? {});
     this.broadcastState();
@@ -211,8 +219,12 @@ export class Room {
     const delta = Date.now() - this.pausedAt;
     // 멈춰 있던 시간만큼 모든 시각을 뒤로 민다
     this.startAt += delta; this.endAt += delta; this.lastSpawn += delta;
-    for (const c of this.circles.values()) c.born += delta;
+    // 원의 정지 구간도 출발 시각과 같이 민다 (상대 위치가 그대로여야 한다)
+    for (const c of this.circles.values()) { c.born += delta; for (const h of c.holds ?? []) h[0] += delta; }
     for (const p of this.players) shiftTimes(p, this.pausedAt, delta);
+    for (const z of this.zones) z.until += delta;
+    if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
+    if (this.freezeUntil > this.pausedAt) this.freezeUntil += delta;
     for (const b of this.bots.values()) b.shift(delta);
     this.pausedAt = 0;
     this.pausedBy = null;
@@ -259,19 +271,43 @@ export class Room {
       return;
     }
 
-    if (d.circleId === null) {
+    // 판정 순서: ① 직접 맞은 원 ② 넓은 손 범위 안의 내 원 전부 ③ (아무것도 없으면) 자석 ④ 빈 곳
+    let got = false;
+    if (d.circleId !== null) {
+      const c = this.circles.get(d.circleId);
+      // 이미 누가 가져갔거나, 위치가 맞지 않으면 거절
+      if (!c || !this.hitWithLag(c, now, d.x, d.y)) this.rejectTo(id, d.circleId);
+      else {
+        got = true;
+        if (c.kind === 'boss') this.hitBoss(p, c, now);
+        else if (c.kind === 'item') this.claimItem(p, c, now);
+        else this.claim(p, c, now, 'click');
+      }
+    }
+    const reach = reachOf(p, now);
+    if (reach > 0) {
+      for (const c of [...this.circles.values()]) {
+        if (!isMine(c.kind, p.color) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) continue;
+        this.claim(p, c, now, 'range');
+        got = true;
+      }
+    }
+    const magnet = magnetOf(p, now);
+    if (!got && magnet > 0) {
+      // 클릭 시점 위치 기준으로 가장 가까운 내 원 (지연 보정 안에서 닿았던 원 중)
+      let best: Circle | null = null, bd = Infinity;
+      for (const c of this.circles.values()) {
+        if (!isMine(c.kind, p.color) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + magnet)) continue;
+        const q = circlePos(c, now);
+        const dist = Math.hypot(q.x - d.x, q.y - d.y) - c.r;
+        if (dist < bd) { bd = dist; best = c; }
+      }
+      if (best) { this.claim(p, best, now, 'magnet'); got = true; }
+    }
+    if (!got) {
       resolveMiss(p, now, this.G, this.players);
       this.emitPlayers();
-      return;
     }
-    const c = this.circles.get(d.circleId);
-    // 이미 누가 가져갔거나, 위치가 맞지 않으면 거절
-    if (!c || !this.hitWithLag(c, now, d.x, d.y)) {
-      this.rejectTo(id, d.circleId);
-      return;
-    }
-    if (c.kind === 'boss') this.hitBoss(p, c, now);
-    else this.claim(p, c, now);
   }
 
   snapshot(): RoomSnapshot {
@@ -349,12 +385,15 @@ export class Room {
     p.stats.bossHits++;
     c.hp = Math.max(0, (c.hp ?? 1) - dmg);
 
-    const mult = bossMult(p, now, this.G);
-    let gained = Math.round(info.hit * mult * info.boost);
+    // 배율 순서: 피버(보스 상한) → 점수 2배·황금 손 → 잭팟 (타격과 막타는 잭팟을 따로 굴린다)
+    const mult = bossMult(p, now, this.G) * info.boost * itemMult(p, now, true);
+    const m = modsOf(p.picks);
+    const hitJp = jackpotMult(m);
+    let gained = Math.round(info.hit * mult * hitJp);
 
     if (c.hp > 0) {
       p.score += gained;
-      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp, gained });
+      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp, gained, jackpot: hitJp });
       this.emitPlayers();
       return;
     }
@@ -362,7 +401,8 @@ export class Room {
     // 막타
     this.circles.delete(c.id);
     this.bossHits.delete(c.id);
-    gained += Math.round(info.kill * mult * info.boost);
+    const killJp = jackpotMult(m);
+    gained += Math.round(info.kill * mult * killJp);
     p.score += gained;
     p.stats.bossKills++;
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
@@ -371,14 +411,14 @@ export class Room {
     const mvpP = this.players.find((x) => x.id === mvp);
     if (mvpP) mvpP.score += B.mvp;
     const { x, y } = circlePos(c, now);
-    this.io.to(this.code).emit('boss:killed', { circleId: c.id, by: p.id, gained, mvp, mvpGained: mvpP ? B.mvp : 0, x, y });
+    this.io.to(this.code).emit('boss:killed', { circleId: c.id, by: p.id, gained, mvp, mvpGained: mvpP ? B.mvp : 0, x, y, jackpot: killJp });
     this.emitPlayers();
   }
 
   private playPayload() {
     return {
       startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
-      rules: this.rules, pausedBy: this.pausedBy, arcade: this.arcadeState(),
+      rules: this.rules, pausedBy: this.pausedBy, arcade: this.arcadeState(), zones: this.zones,
     };
   }
 
@@ -396,6 +436,9 @@ export class Room {
     this.bossHits.clear();
     this.clickLog.clear();
     this.bossQueue = bossTimes(this.G);
+    this.zones = [];
+    this.rain = null;
+    this.freezeUntil = 0;
     this.pausedAt = 0;
     this.pausedBy = null;
     this.nextSample = HISTORY_STEP_MS;
@@ -504,13 +547,15 @@ export class Room {
     }
 
     const kinds = this.players.map((p) => p.color);
+    // 시간 정지 중에는 새 원이 나오지 않는다
+    if (now < this.freezeUntil) this.lastSpawn = Math.max(this.lastSpawn, now);
     while (now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt, this.G)) {
       this.lastSpawn += spawnInterval(this.lastSpawn - this.startAt, this.G);
-      const c = makeCircle(this.nextCircleId++, this.lastSpawn, this.lastSpawn - this.startAt, kinds, this.G);
+      const c = makeCircle(this.nextCircleId++, this.lastSpawn, this.lastSpawn - this.startAt, kinds, this.G, Math.random, this.spawnOpts(now));
       this.circles.set(c.id, c);
       this.io.to(this.code).emit('circle:spawn', c);
     }
-    while (this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
+    while (now >= this.freezeUntil && this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
       this.bossQueue.shift();
       const b = makeBoss(this.nextCircleId++, now, this.players.length, this.G);
       this.circles.set(b.id, b);
@@ -522,26 +567,87 @@ export class Room {
       if (c.kind === 'boss') { this.bossHits.delete(id); this.io.to(this.code).emit('boss:escaped', { circleId: id }); }
     }
 
+    // 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다
+    this.zones = this.zones.filter((z) => z.until > now);
+    for (const z of this.zones) {
+      const owner = this.players.find((p) => p.id === z.by);
+      if (!owner) continue;
+      for (const c of [...this.circles.values()]) {
+        if (!isMine(c.kind, owner.color)) continue;
+        const q = circlePos(c, now);
+        if (Math.hypot(q.x - z.x, q.y - z.y) <= c.r + z.r) this.claim(owner, c, now, 'zone');
+      }
+    }
+
     for (const p of this.players) {
       const bot = this.bots.get(p.id);
       if (!bot) continue;
       const target = bot.think(p, [...this.circles.values()], this.players, now);
       if (!target) continue;
       if (target.kind === 'boss') this.hitBoss(p, target, now);
-      else this.claim(p, target, now);
+      else if (target.kind === 'item') this.claimItem(p, target, now);
+      else this.claim(p, target, now, 'click');
     }
   }
 
-  private claim(p: PlayerState, c: Circle, now: number) {
+  /** 새 원 생성 옵션: 아이템 원 확률, 내 색 비 */
+  private spawnOpts(now: number): SpawnOpts {
+    const o: SpawnOpts = { itemChance: this.G.items ? RULES.items.chance : 0 };
+    if (this.rain && now < this.rain.until) o.forceKind = this.rain.color;
+    return o;
+  }
+
+  private claim(p: PlayerState, c: Circle, now: number, via: ClaimVia) {
+    // 같은 틱에 다른 경로(장판·범위·다른 사람)로 이미 가져간 원이면 무시
+    if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
-    const result = resolveClaim(p, c.kind, this.players, now, this.G);
+    const result = resolveClaim(p, c.kind, this.players, now, this.G, { via });
     const { x, y } = circlePos(c, now);
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
     this.emitPlayers();
   }
 
-  private hitWithLag(c: Circle, now: number, x: number, y: number) {
-    for (let t = now; t >= now - LAG_WINDOW_MS; t -= 25) if (isHit(c, t, x, y)) return true;
+  /** 아이템 원: 무작위 아이템을 바로 발동한다 */
+  private claimItem(p: PlayerState, c: Circle, now: number) {
+    if (!this.circles.has(c.id)) return;
+    this.circles.delete(c.id);
+    const tier = c.itemTier ?? 0;
+    const item = rollItem(tier, this.G);
+    const { x, y } = circlePos(c, now);
+    const action = applyItem(p, item, now, this.G, this.players);
+    // 블라스트의 circle:claimed보다 먼저 보내서 화면이 폭발 중심을 알게 한다
+    this.io.to(this.code).emit('item:got', { circleId: c.id, by: p.id, item, tier, x, y });
+    const I = RULES.items;
+    switch (action?.kind) {
+      case 'zone': {
+        const z: Zone = { id: this.nextZoneId++, by: p.id, x, y, r: I.zoneR, until: now + I.zoneMs };
+        this.zones.push(z);
+        this.io.to(this.code).emit('zone:add', z);
+        break;
+      }
+      case 'bomb':
+      case 'fieldClear':
+        for (const o of [...this.circles.values()]) {
+          if (o.kind === 'boss' || o.kind === 'item') continue;
+          const q = circlePos(o, now);
+          if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast');
+        }
+        break;
+      case 'timeStop': {
+        const ids = holdCircles(this.circles.values(), now, I.freezeMs);
+        this.freezeUntil = now + I.freezeMs;
+        this.io.to(this.code).emit('circles:hold', { ids, at: now, ms: I.freezeMs });
+        break;
+      }
+      case 'rain':
+        this.rain = { color: p.color, until: now + I.ms.rain };
+        break;
+    }
+    this.emitPlayers();
+  }
+
+  private hitWithLag(c: Circle, now: number, x: number, y: number, pad: number = RULES.hitPad) {
+    for (let t = now; t >= now - LAG_WINDOW_MS; t -= 25) if (isHit(c, t, x, y, pad)) return true;
     return false;
   }
 

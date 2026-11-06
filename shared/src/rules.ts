@@ -50,9 +50,26 @@ export const RULES = {
   },
   /** 아이템 원 */
   items: {
+    /** 일반 원이 생길 때 대신 아이템 원이 나올 확률 */
+    chance: 0.025,
+    /** 등급 확률(%) [흔함, 희귀, 전설] */
+    tierOdds: [70, 25, 5],
+    r: 34,
     /** 넓은 손 아이템의 범위, 자석 아이템의 거리 (능력과 더하고 능력 상한 적용) */
     wideHand: 35,
     magnet: 70,
+    /** 효과 시간(ms) */
+    ms: { wideHand: 5000, magnet: 5000, missGuard: 8000, comboLock: 5000, guard: 5000, double: 5000, paint: 5000, rain: 3000 },
+    goldCount: 5,
+    zoneR: 90,
+    zoneMs: 4000,
+    bombR: 180,
+    freezeMs: 1500,
+    feverCharge: 50,
+    /** 즉시 피버를 피버 중에 잡으면 늘어나는 시간 */
+    feverExtendMs: 3000,
+    /** 꼴찌 보정이 켜진 방에서 꼴찌가 잡은 아이템 효과 시간 배율 */
+    comebackDur: 1.5,
   },
 } as const;
 
@@ -85,10 +102,14 @@ export interface RoomRules {
   mode: 'classic' | 'arcade';
   /** 아케이드 라운드 시간(초) */
   arcadeRoundSec: number;
+  /** 아이템 원 등장 */
+  items: boolean;
+  /** 아케이드: 라운드 사이 진행자 이벤트 */
+  hostEvents: boolean;
 }
 
 /** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
-export const MODE_KEYS = ['mode', 'arcadeRoundSec'] as const;
+export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'hostEvents'] as const;
 
 /** 각 설정에서 고를 수 있는 값. 화면의 선택지와 서버 검사에 같이 쓴다 */
 export const RULE_CHOICES = {
@@ -108,7 +129,7 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
-  mode: 'classic', arcadeRoundSec: 30,
+  mode: 'classic', arcadeRoundSec: 30, items: true, hostEvents: true,
 };
 
 export const PRESETS = {
@@ -119,7 +140,7 @@ export const PRESETS = {
   },
   hardcore: {
     name: '하드코어', desc: '빠르고 많은 원, 짧은 피버',
-    rules: { ...DEFAULT_RULES, speed: 1.5, density: 1.3, feverMult: 2, feverSec: 4, feverGain: 0.7, rainbowPct: 0 },
+    rules: { ...DEFAULT_RULES, speed: 1.5, density: 1.3, feverMult: 2, feverSec: 4, feverGain: 0.7, rainbowPct: 0, items: false },
   },
   chill: {
     name: '느긋하게', desc: '천천히, 처음 하는 친구와 함께',
@@ -144,7 +165,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'hostEvents'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
@@ -166,6 +187,8 @@ export interface GameRules {
   boss: boolean;
   missPenalty: boolean;
   arcade: boolean;
+  items: boolean;
+  hostEvents: boolean;
 }
 
 export function toGameRules(r: RoomRules): GameRules {
@@ -183,11 +206,13 @@ export function toGameRules(r: RoomRules): GameRules {
     boss: r.boss,
     missPenalty: r.missPenalty,
     arcade: r.mode === 'arcade',
+    items: r.items,
+    hostEvents: r.hostEvents,
   };
 }
 
 export type ColorIndex = 0 | 1 | 2 | 3;
-export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss';
+export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item';
 
 export interface Circle {
   id: number;
@@ -202,6 +227,12 @@ export interface Circle {
   /** 보스 원만: 남은 체력 / 최대 체력 */
   hp?: number;
   maxHp?: number;
+  /** 아이템 원만: 등급 (0 흔함, 1 희귀, 2 전설). 무슨 아이템인지는 잡을 때 정해진다 */
+  itemTier?: 0 | 1 | 2;
+  /** 시간 정지로 멈춘 구간 [시작 서버 시각, 길이 ms] */
+  holds?: [from: number, ms: number][];
+  /** 역발사: 가장자리에서 중앙으로 */
+  rev?: boolean;
 }
 
 /** 결과 화면 칭호 계산용 기록 (한 판 단위) */
@@ -379,7 +410,7 @@ export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[
   return out;
 }
 
-function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
+export function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
   p.fever = 0;
   p.feverUntil = now + G.feverMs + m.overtime * 1000;
   p.afterUntil = m.afterglow ? p.feverUntil + m.afterglow * 1000 : 0;
@@ -398,7 +429,10 @@ export const isMarked = (p: PlayerState, now: number) => now < p.markedUntil;
 
 /** 원의 위치는 발사 정보와 시각만으로 결정된다. 그래서 서버는 생성 정보만 보내면 된다. */
 export function circlePos(c: Circle, t: number) {
-  const d = (c.speed * Math.max(0, t - c.born)) / 1000;
+  let el = Math.max(0, t - c.born);
+  // 시간 정지: 멈춘 구간과 겹친 시간만큼 덜 움직인다
+  for (const [from, ms] of c.holds ?? []) el -= Math.max(0, Math.min(t, from + ms) - Math.max(c.born, from));
+  const d = (c.speed * Math.max(0, el)) / 1000;
   return { x: FIELD.w / 2 + Math.cos(c.angle) * d, y: FIELD.h / 2 + Math.sin(c.angle) * d };
 }
 
@@ -448,16 +482,28 @@ export function spawnInterval(elapsedMs: number, G: GameRules) {
   return iv / G.density;
 }
 
+/** 원 생성 옵션: 아이템 원 확률, 색 고정(내 색 비·전원 같은 색), 확률 덮어쓰기(라운드 테마) */
+export interface SpawnOpts {
+  itemChance?: number;
+  forceKind?: CircleKind;
+  yellowChance?: number;
+  rainbowChance?: number;
+}
+
 /** kinds: 이번 판에 참가한 색 목록(주인 없는 색은 나오지 않음) */
-export function makeCircle(id: number, now: number, elapsedMs: number, kinds: ColorIndex[], G: GameRules, rand = Math.random): Circle {
+export function makeCircle(id: number, now: number, elapsedMs: number, kinds: ColorIndex[], G: GameRules, rand = Math.random, opts: SpawnOpts = {}): Circle {
   const prog = Math.min(1, elapsedMs / G.roundMs);
   const rush = elapsedMs > G.roundMs - RULES.finalRushMs ? 1.25 : 1;
+  const item = rand() < (opts.itemChance ?? 0);
+  const rainbow = opts.rainbowChance ?? G.rainbowChance;
   const roll = rand();
   let kind: CircleKind;
-  if (roll < G.rainbowChance) kind = 'rainbow';
-  else if (roll < G.rainbowChance + RULES.yellowChance) kind = 'y';
+  if (item) kind = 'item';
+  else if (opts.forceKind !== undefined) kind = opts.forceKind;
+  else if (roll < rainbow) kind = 'rainbow';
+  else if (roll < rainbow + (opts.yellowChance ?? RULES.yellowChance)) kind = 'y';
   else kind = kinds[Math.floor(rand() * kinds.length)];
-  return {
+  const c: Circle = {
     id,
     kind,
     angle: rand() * Math.PI * 2,
@@ -465,6 +511,15 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
     r: 40 * (0.85 + rand() * 0.3),
     born: now,
   };
+  if (item) { c.r = RULES.items.r; c.itemTier = rollItemTier(rand); }
+  return c;
+}
+
+function rollItemTier(rand: () => number): 0 | 1 | 2 {
+  const odds = RULES.items.tierOdds;
+  let r = rand() * odds.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < odds.length; i++) { r -= odds[i]; if (r < 0) return i as 0 | 1 | 2; }
+  return 0;
 }
 
 /** 보스가 나오는 시점(판 시작 후 ms). 마지막 10초에 한 번은 꼭 나온다 */
@@ -496,16 +551,19 @@ export function bossHitInfo(p: PlayerState, rand = Math.random) {
 }
 
 /** 꼴찌인지 (동점이면 모두 꼴찌가 아님) */
-function isLast(p: PlayerState, players: PlayerState[]) {
+export function isLast(p: PlayerState, players: PlayerState[]) {
   const min = Math.min(...players.map((x) => x.score));
   return p.score === min && players.some((x) => x.score > min);
 }
 
-/** 피버 게이지 증감. 가득 차면 피버 시작 후 true 반환. 피버 중에는 변화 없음. */
-function addFever(p: PlayerState, amt: number, now: number, G: GameRules, players: PlayerState[]): boolean {
+/**
+ * 피버 게이지 증감. 가득 차면 피버 시작 후 true 반환. 피버 중에는 변화 없음.
+ * raw: 충전 속도 보정 없이 그대로 (피버 충전 아이템)
+ */
+export function addFever(p: PlayerState, amt: number, now: number, G: GameRules, players: PlayerState[], raw = false): boolean {
   if (isFever(p, now)) return false;
   const m = modsOf(p.picks);
-  if (amt > 0) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1) / (m.berserker ? CURSE.berserker.gainDiv : 1);
+  if (amt > 0 && !raw) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1) / (m.berserker ? CURSE.berserker.gainDiv : 1);
   p.fever = Math.max(0, Math.min(100, p.fever + amt));
   if (p.fever >= 100) {
     startFever(p, now, G, m);

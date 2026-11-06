@@ -6,8 +6,9 @@ import {
   GlassWater, Dices, Axe, MoveUp, Droplet, Bomb, Target, Skull,
   Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
+  Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer,
 } from 'lucide';
-import type { AbilityCategory, AbilityId } from '@color-burst/shared';
+import type { AbilityCategory, AbilityId, ItemId } from '@color-burst/shared';
 
 const ABILITY_ICON: Record<AbilityId, IconNode> = {
   picky: UtensilsCrossed, yellowTaste: Citrus, rainbowHunt: Rainbow, comboArtist: Link2, headStart: Flag,
@@ -22,6 +23,12 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
 
 const CATEGORY_ICON: Record<AbilityCategory, IconNode> = {
   점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 저주: Skull,
+};
+
+export const ITEM_ICON: Record<ItemId, IconNode> = {
+  wideHand: Hand, magnet: Magnet, missGuard: Wind, comboLock: Lock, guard: ShieldCheck, markClear: CircleOff,
+  feverCharge: BatteryCharging, instantFever: Flame, goldHand: HandCoins, double: ChevronsUp, paint: Paintbrush,
+  rain: CloudRain, zone: CircleDot, bomb: Bomb, timeStop: Timer, fieldClear: Sparkles,
 };
 
 export const UI = {
@@ -42,3 +49,4 @@ export function icon(node: IconNode, size = 18, cls = '') {
 
 export const abilityIcon = (id: AbilityId, size = 18, cls = '') => icon(ABILITY_ICON[id], size, cls);
 export const categoryIcon = (c: AbilityCategory, size = 14) => icon(CATEGORY_ICON[c], size);
+export const itemIcon = (id: ItemId, size = 18, cls = '') => icon(ITEM_ICON[id], size, cls);

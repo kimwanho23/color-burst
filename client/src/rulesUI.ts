@@ -4,7 +4,7 @@ import { shapeSVG } from './render.ts';
 import { UI, icon } from './icons.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
-type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty';
+type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'hostEvents';
 
 const NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] = [
   { key: 'speed', label: '게임 속도', fmt: (v) => `×${v}` },
@@ -21,6 +21,11 @@ const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'missPenalty', label: '빈 곳 클릭 페널티' },
   { key: 'stealPenalty', label: '평상시 견제 페널티' },
   { key: 'comeback', label: '꼴찌 보정 (피버 빨리 참)' },
+  { key: 'items', label: '아이템 원' },
+];
+/** 아케이드에서만 보이는 설정 */
+const ARCADE_BOOL_FIELDS: { key: BoolKey; label: string }[] = [
+  { key: 'hostEvents', label: '진행자 이벤트' },
 ];
 
 export interface RulesUIHandlers {
@@ -59,7 +64,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
               ${RULE_CHOICES[f.key].map((v) => `<option value="${v}" ${rules[f.key] === v ? 'selected' : ''}>${f.fmt(v)}</option>`).join('')}
             </select>
           </label>`).join('')}
-        ${BOOL_FIELDS.map((f) => `
+        ${[...BOOL_FIELDS, ...(arcade ? ARCADE_BOOL_FIELDS : [])].map((f) => `
           <label class="adv-row check" for="rule-${f.key}"><span>${f.label}</span>
             <input type="checkbox" id="rule-${f.key}" data-b="${f.key}" ${rules[f.key] ? 'checked' : ''} ${dis}>
           </label>`).join('')}
@@ -93,5 +98,6 @@ export function scoreTable(r: RoomRules) {
     ${r.stealPenalty && r.markSec ? `<tr><td>표적의 색 (반격)</td><td>+${P.counter}</td><td>+${P.counter * m}</td></tr>` : ''}
     ${r.boss ? `<tr><td>${shapeSVG('boss', 16)} 보스 원</td><td>때릴 때 +${RULES.boss.hit}, 막타 +${RULES.boss.kill}, 최다 타격 +${RULES.boss.mvp}</td><td>배율 최대 ×${Math.min(m, RULES.boss.feverMultCap)}</td></tr>` : ''}
     <tr><td>빈 공간</td>${r.missPenalty ? '<td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td>' : '<td>페널티 없음</td><td>페널티 없음</td>'}</tr>
+    ${r.items ? '<tr><td>? 아이템 원</td><td colspan="2">잡으면 무작위 아이템이 바로 발동 (점수 없음)</td></tr>' : ''}
   </table>`;
 }

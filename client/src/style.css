@@ -273,3 +273,26 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
   .scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .brand { font-size: 18px; }
 }
+
+/* ---------- 아이템: 내 버프 바, 룰렛 팝업, 점수판 아이콘 ---------- */
+:root { --sky: #7fd3ff; }
+.buffs { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 8px; pointer-events: none; z-index: 1; }
+.buff { position: relative; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: var(--fg);
+  background: radial-gradient(circle, var(--panel) 62%, transparent 63%), conic-gradient(var(--tc, var(--t0)) calc(var(--f) * 360deg), rgba(255, 255, 255, .12) 0); }
+.buff.it1 { --tc: var(--t1); } .buff.gold { --tc: var(--yellow); color: var(--yellow); }
+.buff em { position: absolute; right: -4px; bottom: -4px; font-style: normal; font-size: 11px; font-weight: 800; background: var(--yellow); color: #3a2a00; border-radius: 999px; padding: 0 5px; }
+.buff.blink { animation: pulse .25s steps(2) infinite; }
+.itempops { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+.itempop { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--fg); }
+.itempop .ic { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; background: var(--panel); border: 3px solid var(--t0); box-shadow: 0 0 18px rgba(255, 255, 255, .25); }
+.itempop.it1 .ic { border-color: var(--t1); color: var(--t1); box-shadow: 0 0 22px rgba(77, 155, 255, .5); }
+.itempop.it2 .ic { border-color: transparent; background: linear-gradient(var(--panel), var(--panel)) padding-box, var(--prism) border-box; background-size: 100% 100%, 300% 300%; animation: prism 1.5s linear infinite; color: var(--yellow); box-shadow: 0 0 30px rgba(255, 212, 59, .6); }
+.itempop b { font-family: var(--display); font-weight: 400; font-size: 18px; text-shadow: 0 2px 6px rgba(0, 0, 0, .6); opacity: 0; }
+.itempop.done .ic { animation: pop .25s cubic-bezier(.2, .8, .3, 1.4); }
+.itempop.done b { opacity: 1; animation: rise .3s ease-out; }
+.itempop.done { animation: itemfade 1.4s ease-in forwards; }
+@keyframes itemfade { 0%, 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -90%); } }
+.buffs-mini { position: absolute; left: 50%; top: -8px; transform: translateX(-50%); display: inline-flex; gap: 3px; }
+.bm { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--t0); color: var(--fg); }
+.bm.it1 { border-color: var(--t1); color: var(--t1); }
+@media (prefers-reduced-motion: reduce) { .buff.blink, .itempop.it2 .ic { animation: none; } }
