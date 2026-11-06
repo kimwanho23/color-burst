@@ -371,7 +371,8 @@ $('cv').addEventListener('pointerdown', (e) => {
     pending.add(hit.id);
     socket.emit('game:click', { circleId: hit.id, x, y });
   } else {
-    renderer.miss(x, y); sfx.miss();
+    // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
+    if (rules.missPenalty) { renderer.miss(x, y); sfx.miss(); } else renderer.miss(x, y, true);
     socket.emit('game:click', { circleId: null, x, y });
   }
 });

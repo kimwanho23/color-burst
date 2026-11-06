@@ -73,6 +73,8 @@ export interface RoomRules {
   comeback: boolean;
   /** 보스 원 등장 */
   boss: boolean;
+  /** 빈 곳 클릭 페널티 (콤보 끊김, 피버 게이지 감소) */
+  missPenalty: boolean;
   /** 클래식: 한 판 / 아케이드: 5라운드 + 라운드마다 능력 선택 */
   mode: 'classic' | 'arcade';
   /** 아케이드 라운드 시간(초) */
@@ -99,7 +101,7 @@ export const DEFAULT_RULES: RoomRules = {
   speed: 1, density: 1, roundSec: 60,
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
-  comeback: false, boss: true,
+  comeback: false, boss: true, missPenalty: true,
   mode: 'classic', arcadeRoundSec: 30,
 };
 
@@ -115,7 +117,7 @@ export const PRESETS = {
   },
   chill: {
     name: '느긋하게', desc: '천천히, 처음 하는 친구와 함께',
-    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true },
+    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false },
   },
 } as const satisfies Record<string, { name: string; desc: string; rules: RoomRules }>;
 export type PresetId = keyof typeof PRESETS;
@@ -136,7 +138,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
@@ -156,6 +158,7 @@ export interface GameRules {
   rainbowChance: number;
   comeback: boolean;
   boss: boolean;
+  missPenalty: boolean;
   arcade: boolean;
 }
 
@@ -172,6 +175,7 @@ export function toGameRules(r: RoomRules): GameRules {
     rainbowChance: r.rainbowPct / 100,
     comeback: r.comeback,
     boss: r.boss,
+    missPenalty: r.missPenalty,
     arcade: r.mode === 'arcade',
   };
 }
@@ -510,13 +514,15 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
 /** 빈 공간 클릭 */
 export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
   p.stats.misses++;
-  // 침착: 라운드당 정해진 횟수만큼 페널티 무시
-  if (p.calmLeft > 0) { p.calmLeft--; return; }
   const m = modsOf(p.picks);
-  breakCombo(p, m);
-  // 유리 대포: 빈 곳 클릭 감점
+  if (G.missPenalty) {
+    // 침착: 라운드당 정해진 횟수만큼 페널티 무시
+    if (p.calmLeft > 0) { p.calmLeft--; return; }
+    breakCombo(p, m);
+    addFever(p, RULES.fever.miss, now, G, players);
+  }
+  // 유리 대포: 빈 곳 클릭 감점 (저주의 대가라서 방 규칙과 상관없이 적용)
   if (m.glassCannon) p.score = Math.max(0, p.score - CURSE.glassCannon.missPenalty);
-  addFever(p, RULES.fever.miss, now, G, players);
 }
 
 export function ranking(players: PlayerState[]) {

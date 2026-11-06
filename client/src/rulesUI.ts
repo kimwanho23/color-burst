@@ -4,7 +4,7 @@ import { shapeSVG } from './render.ts';
 import { UI, icon } from './icons.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
-type BoolKey = 'stealPenalty' | 'comeback' | 'boss';
+type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty';
 
 const NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] = [
   { key: 'speed', label: '게임 속도', fmt: (v) => `×${v}` },
@@ -18,6 +18,7 @@ const NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] =
 ];
 const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'boss', label: '보스 원 등장' },
+  { key: 'missPenalty', label: '빈 곳 클릭 페널티' },
   { key: 'stealPenalty', label: '평상시 견제 페널티' },
   { key: 'comeback', label: '꼴찌 보정 (피버 빨리 참)' },
 ];
@@ -91,6 +92,6 @@ export function scoreTable(r: RoomRules) {
     <tr><td>남의 색 (견제)</td><td>${steal}</td><td>+${P.stealCalm * m}, 페널티 없음</td></tr>
     ${r.stealPenalty && r.markSec ? `<tr><td>표적의 색 (반격)</td><td>+${P.counter}</td><td>+${P.counter * m}</td></tr>` : ''}
     ${r.boss ? `<tr><td>${shapeSVG('boss', 16)} 보스 원</td><td>때릴 때 +${RULES.boss.hit}, 막타 +${RULES.boss.kill}, 최다 타격 +${RULES.boss.mvp}</td><td>배율 최대 ×${Math.min(m, RULES.boss.feverMultCap)}</td></tr>` : ''}
-    <tr><td>빈 공간</td><td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td></tr>
+    <tr><td>빈 공간</td>${r.missPenalty ? '<td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td>' : '<td>페널티 없음</td><td>페널티 없음</td>'}</tr>
   </table>`;
 }

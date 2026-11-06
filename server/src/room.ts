@@ -467,7 +467,7 @@ export class Room {
 
   private roll(p: PlayerState | undefined, last: boolean, allLegend: boolean) {
     const curses = p ? p.picks.filter((x) => isCurse(x.id)).length : 0;
-    return rollOptions(this.round - 1, last, Math.random, { curses, allLegend });
+    return rollOptions(this.round - 1, last, Math.random, { curses, allLegend, exclude: this.G.missPenalty ? [] : ['calm'] });
   }
 
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */

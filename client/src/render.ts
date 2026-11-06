@@ -73,9 +73,9 @@ export class Renderer {
   bossPoke(id: number) { this.bossPoked.set(id, performance.now()); }
 
   text(x: number, y: number, txt: string, col: string, size = 1) { this.fx.push({ type: 'text', x, y, txt, col, size, t: 0, life: 0.8 }); }
-  miss(x: number, y: number) {
-    this.fx.push({ type: 'miss', x, y, t: 0, life: 0.35 });
-    if (!reduceMotion) this.shake = 0.15;
+  miss(x: number, y: number, soft = false) {
+    this.fx.push({ type: 'miss', x, y, t: 0, life: soft ? 0.2 : 0.35 });
+    if (!reduceMotion && !soft) this.shake = 0.15;
   }
 
   draw(s: DrawState) {

@@ -176,12 +176,14 @@ export interface RollOpts {
   curses?: number;
   /** 악마의 계약: 이번 선택은 전부 레전드 */
   allLegend?: boolean;
+  /** 이 방 규칙에서 의미 없는 능력 (예: 빈 곳 페널티가 꺼져 있으면 침착) */
+  exclude?: readonly AbilityId[];
 }
 
 export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.random, opts: RollOpts = {}, count: number = ARCADE.optionCount): Pick[] {
   const i = Math.min(pickIndex, TIER_ODDS.length - 1);
   const odds = lastPlace ? (i + 1 < TIER_ODDS.length ? TIER_ODDS[i + 1] : LAST_PLACE_FINAL_ODDS) : TIER_ODDS[i];
-  const pool = [...ABILITIES];
+  const pool = ABILITIES.filter((a) => !opts.exclude?.includes(a.id));
   const out: Pick[] = [];
   while (out.length < count && pool.length) {
     const a = pool.splice(Math.floor(rand() * pool.length), 1)[0];
