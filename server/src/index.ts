@@ -93,6 +93,7 @@ io.on('connection', (socket) => {
   socket.on('room:leave', leaveCurrent);
   socket.on('lobby:color', (c) => { const s = here(); if (s && [0, 1, 2, 3].includes(c)) s.room.setColor(s.id, c as ColorIndex); });
   socket.on('lobby:options', (o) => { const s = here(); if (s) s.room.setOptions(s.id, o ?? {}); });
+  socket.on('lobby:rules', (d) => { const s = here(); if (s && d && typeof d === 'object') s.room.setRules(s.id, d); });
   socket.on('game:start', (ack) => {
     const s = here();
     const err = s ? s.room.start(s.id) : '방에 들어가 있지 않아요.';

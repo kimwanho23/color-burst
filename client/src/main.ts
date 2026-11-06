@@ -1,9 +1,10 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, RULES, isFever, isHit, isMarked, isOut,
-  type BotLevel, type Circle, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  COLORS, DEFAULT_RULES, RULES, isFever, isHit, isMarked, isOut,
+  type BotLevel, type Circle, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
+import { renderRules } from './rulesUI.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic, toggleMusic } from './audio.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -54,6 +55,8 @@ let players: PlayerState[] = [];
 const circles = new Map<number, Circle>();
 const pending = new Set<number>();
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
+/** 지금 판(또는 대기실)의 방 규칙 */
+let rules: RoomRules = DEFAULT_RULES;
 const myId = () => myPlayerId;
 const me = () => players.find((p) => p.id === myId());
 
@@ -88,6 +91,7 @@ if (location.hash.length === 5) codeInput.value = location.hash.slice(1).toUpper
 const LEVELS = ['쉬움', '보통', '어려움'];
 socket.on('room:state', (s) => {
   room = s;
+  if (!playing) rules = s.rules;
   if (!playing) players = s.players;
   $('roomTag').hidden = false;
   $('roomTag').textContent = `방 ${s.code}`;
@@ -117,6 +121,11 @@ function renderLobby() {
     b.onclick = () => socket.emit('lobby:options', { botLevel: Number(b.dataset.l) as BotLevel });
   });
 
+  renderRules($('rulesBox'), room.rules, host, {
+    preset: (preset) => socket.emit('lobby:rules', { preset }),
+    change: (patch) => socket.emit('lobby:rules', { rules: patch }),
+  });
+
   const humans = room.players.filter((p) => !p.bot).length;
   $<HTMLButtonElement>('startBtn').hidden = !host;
   $('lobbyHint').textContent = host
@@ -142,18 +151,11 @@ if (pre) { $('stageBadge').textContent = pre.toUpperCase(); $('stageBadge').hidd
 $('leaveBtn').onclick = () => { socket.emit('room:leave'); store('cb-room', null); resetToHome(); };
 $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 
-$('ruleTable').innerHTML = `
-  <tr><th>대상</th><th>평상시</th><th>피버 중 (×${RULES.feverMult})</th></tr>
-  <tr><td>${shapeSVG(0, 16)} 내 색</td><td>+${RULES.points.own}</td><td>+${RULES.points.own * RULES.feverMult}</td></tr>
-  <tr><td>${shapeSVG('y', 16)} 노란색</td><td>+${RULES.points.yellow}</td><td>내 색 취급 +${RULES.points.own * RULES.feverMult}</td></tr>
-  <tr><td>${shapeSVG('rainbow', 16)} 무지개</td><td>+${RULES.points.rainbow}</td><td>+${RULES.points.rainbow * RULES.feverMult}</td></tr>
-  <tr><td>남의 색 (견제)</td><td>+${RULES.points.stealCalm}, 내 콤보 끊김, ${RULES.markMs / 1000}초 표적</td><td>+${RULES.points.stealCalm * RULES.feverMult}, 페널티 없음</td></tr>
-  <tr><td>표적의 색 (반격)</td><td>+${RULES.points.counter}</td><td>+${RULES.points.counter * RULES.feverMult}</td></tr>
-  <tr><td>빈 공간</td><td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td></tr>`;
+
 
 // ---------- 게임 ----------
 socket.on('game:start', (d) => {
-  startAt = d.startAt; endAt = d.endAt; players = d.players;
+  startAt = d.startAt; endAt = d.endAt; players = d.players; rules = d.rules;
   circles.clear(); pending.clear(); lastCount = -1;
   for (const c of d.circles) circles.set(c.id, c);
   playing = true;
@@ -175,7 +177,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     const label = result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '';
     renderer.text(x, y, `+${result.gained}${label}${result.comboBonus ? ' 콤보!' : ''}`, isFever(who, serverNow()) ? '#ff9f1c' : '#fff');
     ({ own: sfx.own, yellow: sfx.yellow, rainbow: sfx.rainbow, steal: sfx.steal, feverSteal: sfx.steal, counter: sfx.rainbow })[result.type]();
-    if (result.marked) renderer.text(x, y + 45, `${RULES.markMs / 1000}초간 표적!`, '#ff5d73', 0.9);
+    if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
     if (result.feverStarted) { sfx.fever(); renderer.text(800, 400, 'FEVER!', '#ff9f1c', 2); }
   } else {
     renderer.text(x, y, who.name, COLORS[who.color].hex, 0.75);
@@ -222,9 +224,9 @@ function renderScores() {
 function updateHud(now: number) {
   const m = me();
   const fever = !!m && isFever(m, now);
-  const fill = !m ? 0 : fever ? ((m.feverUntil - now) / RULES.feverMs) * 100 : m.fever;
+  const fill = !m ? 0 : fever ? ((m.feverUntil - now) / (rules.feverSec * 1000)) * 100 : m.fever;
   $('meterFill').style.width = `${Math.max(0, fill)}%`;
-  $('flabel').textContent = fever ? `×${RULES.feverMult}` : '피버';
+  $('flabel').textContent = fever ? `×${rules.feverMult}` : '피버';
   $('combo').textContent = `${m?.combo ?? 0} 콤보`;
   $('stage').classList.toggle('feverOn', playing && fever);
   document.querySelectorAll<HTMLElement>('.chip').forEach((el) => {
@@ -233,7 +235,7 @@ function updateHud(now: number) {
     el.classList.toggle('fever', playing && !!p && isFever(p, now));
   });
 
-  const left = playing ? Math.max(0, endAt - Math.max(now, startAt)) : RULES.roundMs;
+  const left = playing ? Math.max(0, endAt - Math.max(now, startAt)) : rules.roundSec * 1000;
   $('timer').textContent = String(Math.ceil(left / 1000));
   $('timer').classList.toggle('hot', playing && left <= RULES.finalRushMs);
 

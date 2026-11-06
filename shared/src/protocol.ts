@@ -2,7 +2,7 @@
  * 클라이언트와 서버가 주고받는 메시지 형식.
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
-import type { Circle, ClaimResult, ColorIndex, PlayerState } from './rules.ts';
+import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules } from './rules.ts';
 
 export type Phase = 'lobby' | 'play';
 export type BotLevel = 0 | 1 | 2;
@@ -14,6 +14,7 @@ export interface RoomSnapshot {
   players: PlayerState[];
   fillBots: boolean;
   botLevel: BotLevel;
+  rules: RoomRules;
 }
 
 export type Ack<T = {}> = (r: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -21,7 +22,7 @@ export type Ack<T = {}> = (r: ({ ok: true } & T) | { ok: false; error: string })
 export interface ServerToClient {
   'room:state': (s: RoomSnapshot) => void;
   /** 게임 시작, 또는 게임 중 재접속했을 때(circles에 진행 중인 원이 담김) */
-  'game:start': (d: { startAt: number; endAt: number; players: PlayerState[]; circles: Circle[] }) => void;
+  'game:start': (d: { startAt: number; endAt: number; players: PlayerState[]; circles: Circle[]; rules: RoomRules }) => void;
   'circle:spawn': (c: Circle) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;
@@ -39,6 +40,8 @@ export interface ClientToServer {
   'room:leave': () => void;
   'lobby:color': (color: ColorIndex) => void;
   'lobby:options': (o: { fillBots?: boolean; botLevel?: BotLevel }) => void;
+  /** 방 규칙 변경(방장). preset을 주면 그 프리셋으로 덮어쓴 뒤 rules를 반영 */
+  'lobby:rules': (d: { preset?: PresetId; rules?: Partial<RoomRules> }) => void;
   'game:start': (ack: Ack) => void;
   /** circleId가 null이면 빈 공간 클릭. x, y는 필드 좌표 */
   'game:click': (d: { circleId: number | null; x: number; y: number }) => void;

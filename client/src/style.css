@@ -81,6 +81,17 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .seg button { background: none; border: 0; color: var(--muted); font: 600 13px var(--body); padding: 6px 12px; border-radius: 999px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 
+.rulesbox { display: flex; flex-direction: column; gap: 10px; }
+.presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.preset { background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 9px 8px; color: var(--fg); text-align: left; display: flex; flex-direction: column; gap: 3px; cursor: pointer; font: 400 12px var(--body); }
+.preset b { font: 400 16px var(--display); }
+.preset span { color: var(--muted); line-height: 1.35; }
+.preset[aria-pressed="true"] { border-color: var(--yellow); background: #2a2f62; }
+.preset:disabled { cursor: default; }
+.adv summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.adv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin-top: 8px; }
+.adv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; min-width: 0; }
+.adv-row select { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; font: 600 13px var(--body); }
 .rules summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
 th, td { padding: 6px 4px; border-top: 1px solid var(--line); text-align: left; }
@@ -97,6 +108,7 @@ td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align:
 .netbanner { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: var(--red); color: #fff; font-weight: 800; font-size: 13px; padding: 8px 14px; border-radius: 999px; white-space: nowrap; z-index: 5; }
 
 @media (max-width: 560px) {
+  .presets, .adv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .brand { font-size: 18px; }
 }

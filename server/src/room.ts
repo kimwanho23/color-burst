@@ -1,9 +1,10 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  COLORS, MAX_PLAYERS, RULES,
-  circlePos, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
-  type BotLevel, type Circle, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES,
+  circlePos, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
+  type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
+  type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
 
@@ -23,6 +24,9 @@ export class Room {
   players: PlayerState[] = [];
   fillBots = true;
   botLevel: BotLevel = 0;
+  rules: RoomRules = { ...DEFAULT_RULES };
+  /** 이번 판에 쓰는 계산용 규칙 (시작할 때 고정) */
+  private G: GameRules = toGameRules(DEFAULT_RULES);
 
   private circles = new Map<number, Circle>();
   private nextCircleId = 1;
@@ -118,6 +122,14 @@ export class Room {
     this.broadcastState();
   }
 
+  setRules(id: string, d: { preset?: PresetId; rules?: Partial<RoomRules> }) {
+    if (id !== this.hostId || this.phase !== 'lobby') return;
+    let base = this.rules;
+    if (d.preset && d.preset in PRESETS) base = { ...PRESETS[d.preset].rules };
+    this.rules = sanitizeRules(base, d.rules ?? {});
+    this.broadcastState();
+  }
+
   start(id: string): string | null {
     if (id !== this.hostId) return '방장만 시작할 수 있어요.';
     if (this.phase !== 'lobby') return '이미 진행 중이에요.';
@@ -142,10 +154,11 @@ export class Room {
     }
 
     this.players.forEach(resetForRound);
+    this.G = toGameRules(this.rules);
     this.circles.clear();
     const now = Date.now();
     this.startAt = now + RULES.countdownMs;
-    this.endAt = this.startAt + RULES.roundMs;
+    this.endAt = this.startAt + this.G.roundMs;
     this.lastSpawn = this.startAt;
     this.phase = 'play';
     this.io.to(this.code).emit('game:start', this.playPayload());
@@ -161,7 +174,7 @@ export class Room {
     if (!p) return;
 
     if (d.circleId === null) {
-      resolveMiss(p, now);
+      resolveMiss(p, now, this.G, this.players);
       this.emitPlayers();
       return;
     }
@@ -176,7 +189,7 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel };
+    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules };
   }
 
   destroy() {
@@ -226,7 +239,7 @@ export class Room {
   }
 
   private playPayload() {
-    return { startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()] };
+    return { startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()], rules: this.rules };
   }
 
   private tick() {
@@ -235,9 +248,9 @@ export class Room {
     if (now >= this.endAt) return this.end();
 
     const kinds = this.players.map((p) => p.color);
-    while (now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt)) {
-      this.lastSpawn += spawnInterval(this.lastSpawn - this.startAt);
-      const c = makeCircle(this.nextCircleId++, this.lastSpawn, this.lastSpawn - this.startAt, kinds);
+    while (now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt, this.G)) {
+      this.lastSpawn += spawnInterval(this.lastSpawn - this.startAt, this.G);
+      const c = makeCircle(this.nextCircleId++, this.lastSpawn, this.lastSpawn - this.startAt, kinds, this.G);
       this.circles.set(c.id, c);
       this.io.to(this.code).emit('circle:spawn', c);
     }
@@ -253,7 +266,7 @@ export class Room {
 
   private claim(p: PlayerState, c: Circle, now: number) {
     this.circles.delete(c.id);
-    const result = resolveClaim(p, c.kind, this.players, now);
+    const result = resolveClaim(p, c.kind, this.players, now, this.G);
     const { x, y } = circlePos(c, now);
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
     this.emitPlayers();
