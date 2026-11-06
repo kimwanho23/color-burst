@@ -76,6 +76,20 @@ test('점수 2배와 황금 손은 겹치지 않음', () => {
   assert.equal(itemMult(c, 100, false), 2);
 });
 
+test('황금 손: 0점 원(외길의 노란색)에는 소모되지 않는다', () => {
+  const [a, b] = two();
+  a.goldLeft = 3; a.picks = [{ id: 'oneWay', tier: 0 }];
+  assert.equal(resolveClaim(a, 'y', [a, b], 100, G).gained, 0);
+  assert.equal(a.goldLeft, 3);
+});
+
+test('황금 손: 폭죽·필드 클리어로 잡은 원에는 소모되지 않는다', () => {
+  const [a, b] = two();
+  a.goldLeft = 3;
+  assert.equal(resolveClaim(a, 0, [a, b], 100, G, { via: 'blast' }).gained, 3);
+  assert.equal(a.goldLeft, 3);
+});
+
 test('guard: 견제당해도 콤보·강탈 없음', () => {
   const [a, b] = two();
   a.picks = [{ id: 'plunder', tier: 3 }];

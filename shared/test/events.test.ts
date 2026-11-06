@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_RULES, applyEvent, bossTimes, circlePos, isCurse, isOut, newPlayer, rollEvent, rollOptions, toGameRules,
+  DEFAULT_RULES, applyEvent, bossTimes, payTax, circlePos, isCurse, isOut, newPlayer, rollEvent, rollOptions, toGameRules,
   type Circle, type EventId, type PlayerState,
 } from '../src/index.ts';
 
@@ -59,6 +59,24 @@ test('선물·저주 배달은 대상만 정한다', () => {
   assert.equal(applyEvent('gift', ps, G).giftTo, 'p3');
   ps[1].picks = [{ id: 'gambler', tier: 0 }];
   for (let i = 0; i < 20; i++) assert.notEqual(applyEvent('curseDelivery', ps, G, seq(i / 20)).curseTo, 'p1');
+});
+
+test('저주 배달: 다음 선택이 전부 레전드인 사람(악마의 계약)은 대상이 아니다', () => {
+  const ps = four(100, 50, 40, 20);
+  ps[0].legendNext = true; ps[1].legendNext = true; ps[2].legendNext = true;
+  for (let i = 0; i < 20; i++) assert.equal(applyEvent('curseDelivery', ps, G, seq(i / 20)).curseTo, 'p3');
+  ps[3].legendNext = true;
+  for (let i = 0; i < 50; i++) assert.notEqual(rollEvent(ps, 0, seq(0, i / 50)), 'curseDelivery');
+});
+
+test('세금 지급: 라운드에 가장 많이 번 사람, 동점이면 나누고 나머지는 총점이 낮은 사람에게', () => {
+  const ps = four(100, 60, 40, 20);
+  ps.forEach((p, i) => { p.roundStart = [70, 30, 30, 0][i]; });
+  // 라운드 증가량: 30, 30, 10, 20 → p0·p1 동점, 7점을 3·3 + 나머지 1은 총점이 낮은 p1
+  const fx = payTax(ps, 7);
+  assert.deepEqual(ps.map((p) => p.score), [103, 64, 40, 20]);
+  assert.deepEqual(fx.map((e) => [e.playerId, e.delta]), [['p0', 3], ['p1', 4]]);
+  assert.ok(fx.every((e) => e.id === 'tax'));
 });
 
 test('테마: 보스가 꺼진 방에서는 보스 러시가 안 나온다', () => {

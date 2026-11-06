@@ -3,7 +3,7 @@
  * 수치는 RANDOM_EVENT(등장·점수)와 rules.ts의 RULES.themes(라운드 테마)에 있다.
  */
 import { ranking, isLast, type GameRules, type PlayerState, type ThemeId } from './rules.ts';
-import { ABILITY, ARCADE, isCurse, type AbilityId, type Tier } from './arcade.ts';
+import { ABILITY, ARCADE, isCurse, type AbilityId, type RoundEffect, type Tier } from './arcade.ts';
 
 export const RANDOM_EVENT = {
   /** 라운드 사이마다 등장 확률, 한 게임 최대 횟수 */
@@ -60,6 +60,8 @@ export interface EventResult {
 
 const plainPicks = (p: PlayerState) => p.picks.filter((x) => !isCurse(x.id));
 const curseCount = (p: PlayerState) => p.picks.filter((x) => isCurse(x.id)).length;
+/** 저주 배달을 받을 수 있는 사람: 저주 상한이 아니고, 다음 선택이 전부 레전드(악마의 계약)가 아님 */
+const canGetCurse = (p: PlayerState) => curseCount(p) < ARCADE.maxCurses && !p.legendNext;
 const lastOf = (players: PlayerState[]) => players.find((p) => isLast(p, players));
 const pickOne = <T,>(list: readonly T[], rand: () => number) => list[Math.floor(rand() * list.length)];
 
@@ -71,7 +73,7 @@ function available(players: PlayerState[]): EventId[] {
     if (id === 'robinHood' || id === 'swap' || id === 'gift') return hasLast;
     if (id === 'abilitySwap') return players.filter((p) => plainPicks(p).length).length >= 2;
     if (id === 'demote') return !!top && plainPicks(top).some((x) => x.tier > 0);
-    if (id === 'curseDelivery') return players.some((p) => curseCount(p) < ARCADE.maxCurses);
+    if (id === 'curseDelivery') return players.some(canGetCurse);
     return true;
   });
 }
@@ -145,7 +147,7 @@ export function applyEvent(id: EventId, players: PlayerState[], G: GameRules, ra
       res.text = `${last!.name}님은 다음 능력 선택에서 선택지가 하나 더!`;
       break;
     case 'curseDelivery': {
-      const p = pickOne(players.filter((x) => curseCount(x) < ARCADE.maxCurses), rand);
+      const p = pickOne(players.filter(canGetCurse), rand);
       res.curseTo = p.id;
       res.text = `${p.name}님의 다음 선택지에 저주 카드가 배달됐어요`;
       break;
@@ -158,4 +160,21 @@ export function applyEvent(id: EventId, players: PlayerState[], G: GameRules, ra
     }
   }
   return res;
+}
+
+/**
+ * 세금 지급: 이번 라운드에 가장 많이 번 사람(라운드 점수 증가량)이 받는다.
+ * 동점이면 똑같이 나누고, 나누어떨어지지 않는 나머지는 그중 총점이 가장 낮은 사람에게
+ */
+export function payTax(players: PlayerState[], pot: number): RoundEffect[] {
+  const gain = (p: PlayerState) => p.score - p.roundStart;
+  const best = Math.max(...players.map(gain));
+  const winners = players.filter((p) => gain(p) === best);
+  const share = Math.floor(pot / winners.length);
+  const lowest = winners.reduce((a, b) => (b.score < a.score ? b : a));
+  return winners.map((p) => {
+    const delta = share + (p === lowest ? pot - share * winners.length : 0);
+    p.score += delta;
+    return { playerId: p.id, id: 'tax' as const, delta };
+  });
 }

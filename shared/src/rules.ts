@@ -342,10 +342,13 @@ export function magnetOf(p: PlayerState, now: number) {
   return Math.min(ABILITY.magnet.cap ?? Infinity, v);
 }
 
-/** 점수 2배·황금 손 배율 (서로 겹치지 않음). consume이면 황금 손 하나를 쓴다 */
-export function itemMult(p: PlayerState, now: number, consume: boolean) {
+/**
+ * 점수 2배·황금 손 배율 (서로 겹치지 않음). consume이면 황금 손 하나를 쓴다.
+ * gold가 false면 황금 손은 쓰지 않는다 (0점 원, 폭죽·필드 클리어)
+ */
+export function itemMult(p: PlayerState, now: number, consume: boolean, gold = true) {
   if (buffOn(p, 'double', now)) return 2;
-  if (p.goldLeft > 0) { if (consume) p.goldLeft--; return 2; }
+  if (gold && p.goldLeft > 0) { if (consume) p.goldLeft--; return 2; }
   return 1;
 }
 
@@ -701,7 +704,7 @@ export function resolveClaim(
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준)
-  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true);
+  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0);
   // 잭팟은 맨 마지막에 곱한다 (블라스트는 없음)
   if (!blast) res.jackpot = jackpotMult(m, opts.rand);
   res.gained = Math.round(pts * mult * res.jackpot) + res.plundered;

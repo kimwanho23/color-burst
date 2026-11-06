@@ -4,7 +4,7 @@ import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
-  RANDOM_EVENT, applyEvent, rollEvent, type ThemeId,
+  RANDOM_EVENT, applyEvent, payTax, rollEvent, type ThemeId,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
@@ -305,11 +305,13 @@ export class Room {
     }
     const reach = reachOf(p, now);
     if (reach > 0) {
+      let ranged = false;
       for (const c of [...this.circles.values()]) {
         if (!isMine(c.kind, p.color) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) continue;
-        this.claim(p, c, now, 'range');
-        got = true;
+        this.claim(p, c, now, 'range', true);
+        ranged = got = true;
       }
+      if (ranged) this.emitPlayers();
     }
     const magnet = magnetOf(p, now);
     if (!got && magnet > 0) {
@@ -481,7 +483,6 @@ export class Room {
     this.circles.clear();
     this.bossHits.clear();
     this.applyRoundCurses();
-    for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
     // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
@@ -495,6 +496,8 @@ export class Room {
       delay = RANDOM_EVENT.pickBonusMs;
       this.pickEndsAt += delay;
     }
+    // 점수 그래프: 저주·랜덤 이벤트까지 반영한 라운드 끝 점수
+    for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
 
     const scores = this.players.map((p) => p.score);
     const min = Math.min(...scores);
@@ -555,11 +558,9 @@ export class Room {
   private applyRoundCurses() {
     if (!this.G.arcade) return;
     const effects = this.players.flatMap((p) => endRoundCurses(p));
-    // 세금: 이번 라운드에 가장 많이 번 사람이 받는다
+    // 세금: 이번 라운드에 가장 많이 번 사람이 받는다 (동점이면 나눔)
     if (this.taxPot > 0) {
-      const best = [...this.players].sort((a, b) => (b.score - b.roundStart) - (a.score - a.roundStart))[0];
-      best.score += this.taxPot;
-      effects.push({ playerId: best.id, id: 'tax', delta: this.taxPot });
+      effects.push(...payTax(this.players, this.taxPot));
       this.taxPot = 0;
     }
     if (effects.length) this.io.to(this.code).emit('arcade:effects', effects);
@@ -619,15 +620,17 @@ export class Room {
 
     // 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다
     this.zones = this.zones.filter((z) => z.until > now);
+    let zoned = false;
     for (const z of this.zones) {
       const owner = this.players.find((p) => p.id === z.by);
       if (!owner) continue;
       for (const c of [...this.circles.values()]) {
         if (!isMine(c.kind, owner.color)) continue;
         const q = circlePos(c, now);
-        if (Math.hypot(q.x - z.x, q.y - z.y) <= c.r + z.r) this.claim(owner, c, now, 'zone');
+        if (Math.hypot(q.x - z.x, q.y - z.y) <= c.r + z.r) { this.claim(owner, c, now, 'zone', true); zoned = true; }
       }
     }
+    if (zoned) this.emitPlayers();
 
     for (const p of this.players) {
       const bot = this.bots.get(p.id);
@@ -675,14 +678,15 @@ export class Room {
     return o;
   }
 
-  private claim(p: PlayerState, c: Circle, now: number, via: ClaimVia) {
+  /** quiet: 여러 원을 한꺼번에 잡을 때는 플레이어 상태를 부르는 쪽에서 한 번만 보낸다 */
+  private claim(p: PlayerState, c: Circle, now: number, via: ClaimVia, quiet = false) {
     // 같은 틱에 다른 경로(장판·범위·다른 사람)로 이미 가져간 원이면 무시
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
     const result = resolveClaim(p, c.kind, this.players, now, this.G, { via });
     const { x, y } = circlePos(c, now);
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
-    this.emitPlayers();
+    if (!quiet) this.emitPlayers();
   }
 
   /** 아이템 원: 무작위 아이템을 바로 발동한다 */
@@ -708,7 +712,7 @@ export class Room {
         for (const o of [...this.circles.values()]) {
           if (o.kind === 'boss' || o.kind === 'item') continue;
           const q = circlePos(o, now);
-          if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast');
+          if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast', true);
         }
         break;
       case 'timeStop': {
