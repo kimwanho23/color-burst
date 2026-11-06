@@ -320,3 +320,7 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 @media (max-width: 560px) { .acards.four { grid-template-columns: 1fr; } .ewheel { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .eventcard, .eventov, .eventov.done .eresult { animation: none; } }
 .settle { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.event-now { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(255, 212, 59, .14); border: 1.5px solid var(--yellow); color: var(--fg); font-size: 14px; }
+.event-now svg { color: var(--yellow); }
+.event-now b { font-family: var(--display); font-weight: 400; color: var(--yellow); }
+.eventov.done { cursor: pointer; }

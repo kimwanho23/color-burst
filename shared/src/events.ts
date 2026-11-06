@@ -9,8 +9,8 @@ export const RANDOM_EVENT = {
   /** 라운드 사이마다 등장 확률, 한 게임 최대 횟수 */
   chance: 0.1,
   maxPerGame: 2,
-  /** 이벤트가 일어나면 능력 선택 시간이 이만큼 늘어난다 (룰렛 연출) */
-  pickBonusMs: 3000,
+  /** 이벤트가 일어나면 능력 선택 시간이 이만큼 늘어난다 (룰렛 연출 + 결과 읽는 시간) */
+  pickBonusMs: 4000,
   robinPct: 10,
   taxPct: 5,
   lottery: 30,

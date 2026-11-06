@@ -24,6 +24,8 @@ export interface ArcadeState {
   waiting: string[];
   /** 진행 중인 라운드(play) 또는 다음 라운드(pick)의 테마 */
   theme: ThemeId | null;
+  /** 능력 선택 중: 이번 라운드 사이에 일어난 랜덤 이벤트 (선택 화면에 계속 보여 준다) */
+  event: EventResult | null;
 }
 
 export interface ArcadeOffer {

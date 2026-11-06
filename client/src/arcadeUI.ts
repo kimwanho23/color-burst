@@ -1,9 +1,9 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, THEMES, TIERS, abilityText, modsOf,
+  ABILITY, EVENTS, THEMES, TIERS, abilityText, modsOf,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect,
 } from '@color-burst/shared';
-import { UI, abilityIcon, categoryIcon, icon } from './icons.ts';
+import { UI, abilityIcon, categoryIcon, eventIcon, icon } from './icons.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 /** 설명 속 숫자(+3, 50%, ×2, 1.5초 등)를 강조 */
@@ -100,6 +100,7 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
         <div class="pick-title">${roundPips(state)}<h2>능력 선택</h2></div>
         <div class="pick-timer" id="pickTimer"></div>
       </div>
+      ${state.event ? `<p class="event-now">${eventIcon(state.event.id, 16)}<b>랜덤 이벤트 · ${EVENTS[state.event.id].name}</b><span>${esc(state.event.text)}</span></p>` : ''}
       ${state.theme ? `<p class="theme-next">${icon(UI.event, 15)} 다음 라운드: <b>${THEMES[state.theme].name}</b> · ${THEMES[state.theme].desc}</p>` : ''}
       ${effects ? `<ul class="effects">${effects}</ul>` : ''}
       ${offer?.lastPlace && !chosen ? `<p class="boost">${icon(UI.up, 15)} 꼴찌 보너스: 높은 등급·저주 카드가 더 잘 나와요</p>` : ''}

@@ -4,7 +4,7 @@ import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
-  RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type ThemeId,
+  RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
@@ -69,6 +69,8 @@ export class Room {
   /** 이번 라운드 테마 / 다음 라운드 테마 (능력 선택 중에 공개) */
   private theme: ThemeId | null = null;
   private nextTheme: ThemeId | null = null;
+  /** 이번 라운드 사이에 일어난 랜덤 이벤트 (능력 선택이 끝나면 지운다) */
+  private lastEvent: EventResult | null = null;
   /** 세금: 다음 라운드에 가장 많이 번 사람이 받는다 */
   private taxPot = 0;
   private pickTimer: NodeJS.Timeout | null = null;
@@ -449,6 +451,7 @@ export class Room {
     return {
       round: this.round, rounds: ARCADE.rounds, phase: this.roundPhase, pickEndsAt: this.pickEndsAt,
       theme: this.roundPhase === 'pick' ? this.nextTheme : this.theme,
+      event: this.roundPhase === 'pick' ? this.lastEvent : null,
       waiting: this.roundPhase === 'pick' ? [...this.offers].filter(([, o]) => !o.chosen).map(([id]) => id) : [],
     };
   }
@@ -488,6 +491,7 @@ export class Room {
     // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
     const eventId = this.G.randomEvents ? rollEvent(this.players, this.eventsUsed) : null;
     const ev = eventId ? applyEvent(eventId, this.players, this.G) : null;
+    this.lastEvent = ev;
     let delay = 0;
     if (ev) {
       this.eventsUsed++;

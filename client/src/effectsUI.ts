@@ -62,6 +62,9 @@ export function buffChips(p: PlayerState, now: number, size = 12) {
   return `<span class="buffs-mini">${ids.map((id) => `<span class="bm it${ITEMS[id].tier}" title="${ITEMS[id].name}">${itemIcon(id, size)}</span>`).join('')}</span>`;
 }
 
+/** 랜덤 이벤트 결과를 읽을 수 있게 띄워 두는 시간 (선택 시간 보너스 안에서 끝나야 한다) */
+const RESULT_MS = 2200;
+
 /**
  * 랜덤 이벤트: 카드가 가운데에서 커지며 나타나고, 이벤트 칸 9개를 불빛이 돌다가 결과에서 멈춘 뒤 결과를 보여 준다 (약 2.5초).
  * reduce면 룰렛 없이 결과 카드만. onTick: 룰렛이 한 칸 넘어갈 때(false)와 결과가 나올 때(true). 끝나면 resolve
@@ -83,16 +86,20 @@ export function showRandomEvent(host: HTMLElement, r: EventResult, players: Play
   const cellEls = [...el.querySelectorAll<HTMLElement>('.ecell')];
   const target = EVENT_IDS.indexOf(r.id);
   return new Promise((resolve) => {
-    const finish = (ms: number) => setTimeout(() => { el.classList.add('out'); setTimeout(() => { el.remove(); resolve(); }, 250); }, ms);
+    let closed = false;
+    const close = () => { if (closed) return; closed = true; el.classList.add('out'); setTimeout(() => { el.remove(); resolve(); }, 250); };
+    // 결과가 나온 뒤에는 화면을 눌러 바로 닫을 수 있다
+    el.addEventListener('pointerdown', () => { if (el.classList.contains('done')) close(); });
+    const finish = (ms: number) => setTimeout(close, ms);
     const reveal = () => { cellEls[target]?.classList.add('on', 'hit'); el.classList.add('done'); onTick?.(true); };
-    if (reduce) { reveal(); finish(1200); return; }
+    if (reduce) { reveal(); finish(RESULT_MS); return; }
     // 불빛이 한 바퀴 넘게 돌고 점점 느려지다 결과 칸에서 멈춘다
     const steps = EVENT_IDS.length + target;
     let i = 0;
     const tick = () => {
       cellEls.forEach((c, k) => c.classList.toggle('on', k === i % cellEls.length));
       onTick?.(false);
-      if (i >= steps) { reveal(); finish(900); return; }
+      if (i >= steps) { reveal(); finish(RESULT_MS); return; }
       i++;
       setTimeout(tick, 30 + (i / steps) ** 2 * 120);
     };
