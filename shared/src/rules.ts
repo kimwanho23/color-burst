@@ -1,4 +1,4 @@
-import { bossDamage, comboPeriod, modsOf, type Mods, type Pick } from './arcade.ts';
+import { CURSE, bossDamage, comboPeriod, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -232,6 +232,14 @@ export interface PlayerState {
   /** 이번 라운드에 남은 침착·방패 횟수 */
   calmLeft: number;
   shieldLeft: number;
+  /** 라운드 시작 때 점수 (도박사·악마의 계약 계산용) */
+  roundStart: number;
+  /** 이번 라운드 최대 콤보 (시한폭탄) */
+  roundMaxCombo: number;
+  /** 악마의 계약: 다음 라운드 끝에 점수 절반 */
+  pactPending: boolean;
+  /** 악마의 계약: 다음 능력 선택이 전부 레전드 */
+  legendNext: boolean;
 }
 
 export type ClaimType = 'own' | 'yellow' | 'rainbow' | 'steal' | 'feverSteal' | 'counter';
@@ -255,27 +263,67 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
+    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false,
   };
 }
 
 /** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.stats = emptyStats(); p.picks = [];
+  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false;
+}
+
+/** 능력(또는 저주)을 고른 직후 처리 */
+export function applyPick(p: PlayerState, pick: Pick) {
+  p.picks.push(pick);
+  if (pick.id === 'devilPact') p.pactPending = true;
 }
 
 /** 라운드 시작(클래식은 판 시작): 라운드 단위 상태 초기화와 능력 적용. 점수는 누적 */
-export function startRound(p: PlayerState, startAt: number, G: GameRules) {
+export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt = 0) {
   const m = modsOf(p.picks);
   p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
   p.calmLeft = m.calm; p.shieldLeft = m.shield;
+  p.roundStart = p.score; p.roundMaxCombo = 0;
   p.score += m.headStart;
+  if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
+  // 표적 자처: 라운드 내내 표적
+  if (m.selfTarget) p.markedUntil = endAt || startAt + G.roundMs;
   if (m.preheat >= 100) startFever(p, startAt, G, m);
   else p.fever = m.preheat;
 }
 
 /** 능력을 반영한 피버 시간·배율 */
 export const feverMsOf = (p: PlayerState, G: GameRules) => G.feverMs + modsOf(p.picks).overtime * 1000;
-export const feverMultOf = (p: PlayerState, G: GameRules) => G.feverMult + modsOf(p.picks).frenzy;
+export const feverMultOf = (p: PlayerState, G: GameRules) => {
+  const m = modsOf(p.picks);
+  return G.feverMult + m.frenzy + (m.berserker ? CURSE.berserker.multAdd : 0);
+};
+/** 유리 대포·표적 자처: 모든 점수 배율 */
+export const scoreBoostOf = (m: Mods) =>
+  1 + ((m.glassCannon ? CURSE.glassCannon.boostPct : 0) + (m.selfTarget ? CURSE.selfTarget.boostPct : 0)) / 100;
+
+/** 라운드가 끝날 때 저주 효과 적용 (시한폭탄 → 악마의 계약 → 도박사 순) */
+export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[] {
+  const m = modsOf(p.picks);
+  const out: RoundEffect[] = [];
+  const add = (id: RoundEffect['id'], delta: number) => {
+    const d = Math.max(-p.score, Math.round(delta));
+    p.score += d;
+    out.push({ playerId: p.id, id, delta: d });
+  };
+  if (m.timeBomb && p.roundMaxCombo < CURSE.timeBomb.comboGoal) add('timeBomb', -CURSE.timeBomb.penalty);
+  if (p.pactPending) {
+    // 계약을 맺은 다음 라운드가 끝났을 때 (계약은 라운드 사이에 고르므로 이 시점이 곧 다음 라운드 끝)
+    add('devilPact', -Math.max(0, p.score - p.roundStart) * (1 - CURSE.devilPact.keepPct / 100));
+    p.pactPending = false;
+    p.legendNext = true;
+  }
+  if (m.gambler) {
+    const round = Math.max(0, p.score - p.roundStart);
+    add('gambler', rand() < CURSE.gambler.chance ? (round * CURSE.gambler.winPct) / 100 : (-round * CURSE.gambler.losePct) / 100);
+  }
+  return out;
+}
 
 function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
   p.fever = 0;
@@ -362,7 +410,7 @@ export function bossMult(p: PlayerState, now: number, G: GameRules) {
 /** 보스를 한 번 때렸을 때: 피해, 타격 점수(배율 전), 막타 점수(배율 전) */
 export function bossHitInfo(p: PlayerState, rand = Math.random) {
   const m = modsOf(p.picks);
-  return { damage: bossDamage(m, rand), hit: RULES.boss.hit + m.hammer, kill: RULES.boss.kill + m.hunter };
+  return { damage: bossDamage(m, rand), hit: RULES.boss.hit + m.hammer, kill: RULES.boss.kill + m.hunter, boost: scoreBoostOf(m) };
 }
 
 /** 꼴찌인지 (동점이면 모두 꼴찌가 아님) */
@@ -375,7 +423,7 @@ function isLast(p: PlayerState, players: PlayerState[]) {
 function addFever(p: PlayerState, amt: number, now: number, G: GameRules, players: PlayerState[]): boolean {
   if (isFever(p, now)) return false;
   const m = modsOf(p.picks);
-  if (amt > 0) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1);
+  if (amt > 0) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1) / (m.berserker ? CURSE.berserker.gainDiv : 1);
   p.fever = Math.max(0, Math.min(100, p.fever + amt));
   if (p.fever >= 100) {
     startFever(p, now, G, m);
@@ -401,16 +449,18 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
   let pts = 0;
   let steal = false;
 
+  // 외길: 내 색 ×3, 노란색·무지개 0점
+  const own = (P.own + m.picky) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
   if (kind === 'rainbow') {
-    res.type = 'rainbow'; pts = P.rainbow + m.rainbowHunt; claimer.combo++;
+    res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.rainbow, now, G, players);
   } else if (kind === 'y' && fever) {
-    res.type = 'own'; pts = P.own + m.picky + m.yellowTaste; claimer.combo++;
+    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
   } else if (kind === 'y') {
-    res.type = 'yellow'; pts = Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); claimer.combo++;
+    res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.yellow, now, G, players);
   } else if (kind === claimer.color) {
-    res.type = 'own'; pts = P.own + m.picky; claimer.combo++;
+    res.type = 'own'; pts = own; claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.own, now, G, players);
   } else {
     steal = true;
@@ -431,9 +481,10 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
       if (owner.shieldLeft > 0) { owner.shieldLeft--; res.shielded = true; }
       else if (breakCombo(owner, modsOf(owner.picks))) res.brokeComboOf = owner.id;
     }
-    // 강탈: 상대 점수를 빼앗음 (배율 없음)
-    if (owner && m.plunder && res.type !== 'counter') {
-      res.plundered = Math.min(m.plunder, owner.score);
+    // 강탈·흡혈귀: 상대 점수를 빼앗음 (배율 없음). 흡혈귀를 가진 사람은 견제당할 때도 빼앗긴다
+    if (owner && res.type !== 'counter') {
+      const take = m.plunder + (m.vampire ? CURSE.vampire.drain : 0) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
+      res.plundered = Math.min(take, owner.score);
       owner.score -= res.plundered;
     }
   }
@@ -448,8 +499,9 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
   if (res.type === 'counter') st.counters++;
   if (res.feverStarted) st.fevers++;
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
+  claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준)
-  const mult = fever ? G.feverMult + m.frenzy : after ? 1.5 : 1;
+  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m);
   res.gained = Math.round(pts * mult) + res.plundered;
   claimer.score += res.gained;
   return res;
@@ -460,7 +512,10 @@ export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: 
   p.stats.misses++;
   // 침착: 라운드당 정해진 횟수만큼 페널티 무시
   if (p.calmLeft > 0) { p.calmLeft--; return; }
-  breakCombo(p, modsOf(p.picks));
+  const m = modsOf(p.picks);
+  breakCombo(p, m);
+  // 유리 대포: 빈 곳 클릭 감점
+  if (m.glassCannon) p.score = Math.max(0, p.score - CURSE.glassCannon.missPenalty);
   addFever(p, RULES.fever.miss, now, G, players);
 }
 

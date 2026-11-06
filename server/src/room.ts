@@ -2,7 +2,7 @@ import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
   ARCADE, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
-  awardTitles, bossHitInfo, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
+  applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
   type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -59,7 +59,7 @@ export class Room {
   private round = 0;
   private roundPhase: 'play' | 'pick' = 'play';
   private pickEndsAt = 0;
-  private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean }>();
+  private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean; allLegend: boolean }>();
   private pickTimer: NodeJS.Timeout | null = null;
   private botPickTimers: NodeJS.Timeout[] = [];
 
@@ -237,7 +237,7 @@ export class Room {
     const p = this.players.find((x) => x.id === id);
     const pick = o?.options[index];
     if (!o || !p || o.chosen || !pick) return;
-    p.picks.push(pick);
+    applyPick(p, pick);
     o.chosen = true;
     this.emitPlayers();
     this.emitArcade();
@@ -250,7 +250,7 @@ export class Room {
     const o = this.offers.get(id);
     if (!o || o.chosen || o.rerolls <= 0) return;
     o.rerolls--;
-    o.options = rollOptions(this.round - 1, o.last);
+    o.options = this.roll(p0(this.players, id), o.last, o.allLegend);
     this.sendOffer(id);
   }
 
@@ -355,7 +355,7 @@ export class Room {
     c.hp = Math.max(0, (c.hp ?? 1) - dmg);
 
     const mult = bossMult(p, now, this.G);
-    let gained = Math.round(info.hit * mult);
+    let gained = Math.round(info.hit * mult * info.boost);
 
     if (c.hp > 0) {
       p.score += gained;
@@ -367,7 +367,7 @@ export class Room {
     // 막타
     this.circles.delete(c.id);
     this.bossHits.delete(c.id);
-    gained += Math.round(info.kill * mult);
+    gained += Math.round(info.kill * mult * info.boost);
     p.score += gained;
     p.stats.bossKills++;
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
@@ -408,7 +408,7 @@ export class Room {
     this.startAt = now + RULES.countdownMs;
     this.endAt = this.startAt + this.G.roundMs;
     this.lastSpawn = this.startAt;
-    for (const p of this.players) startRound(p, this.startAt, this.G);
+    for (const p of this.players) startRound(p, this.startAt, this.G, this.endAt);
     this.io.to(this.code).emit('game:start', this.playPayload());
   }
 
@@ -417,6 +417,7 @@ export class Room {
     this.roundPhase = 'pick';
     this.circles.clear();
     this.bossHits.clear();
+    this.applyRoundCurses();
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
@@ -426,14 +427,22 @@ export class Room {
     this.offers.clear();
     for (const p of this.players) {
       const last = !tied && p.score === min;
-      this.offers.set(p.id, { options: rollOptions(this.round - 1, last), rerolls: ARCADE.rerollsPerPick, chosen: false, last });
+      const allLegend = p.legendNext;
+      p.legendNext = false;
+      this.offers.set(p.id, { options: this.roll(p, last, allLegend), rerolls: ARCADE.rerollsPerPick, chosen: false, last, allLegend });
     }
     this.emitArcade();
     for (const p of this.players) {
       if (!p.bot) { this.sendOffer(p.id); continue; }
-      // 봇은 1~3초 고민하다가 가장 높은 등급을 고른다
-      const opts = this.offers.get(p.id)!.options;
-      const best = opts.reduce((bi, o, i) => (o.tier > opts[bi].tier || (o.tier === opts[bi].tier && Math.random() < 0.5) ? i : bi), 0);
+      // 봇은 1~3초 고민하다가 가장 높은 등급을 고른다. 저주는 꼴찌일 때만 반반 확률로 고른다
+      const { options: opts, last } = this.offers.get(p.id)!;
+      const curseAt = opts.findIndex((o) => isCurse(o.id));
+      let best = -1;
+      opts.forEach((o, i) => {
+        if (isCurse(o.id)) return;
+        if (best < 0 || o.tier > opts[best].tier || (o.tier === opts[best].tier && Math.random() < 0.5)) best = i;
+      });
+      if (curseAt >= 0 && (best < 0 || (last && Math.random() < 0.5))) best = curseAt;
       this.botPickTimers.push(setTimeout(() => this.choose(p.id, best), 1000 + Math.random() * 2000));
     }
     this.pickTimer = setTimeout(() => this.finishPick(), ARCADE.pickSec * 1000);
@@ -446,7 +455,7 @@ export class Room {
     for (const [id, o] of this.offers) {
       if (o.chosen) continue;
       const p = this.players.find((x) => x.id === id);
-      if (p) p.picks.push(o.options[Math.floor(Math.random() * o.options.length)]);
+      if (p) applyPick(p, o.options[Math.floor(Math.random() * o.options.length)]);
       o.chosen = true;
     }
     this.offers.clear();
@@ -454,6 +463,18 @@ export class Room {
     this.roundPhase = 'play';
     this.emitPlayers();
     this.beginRound();
+  }
+
+  private roll(p: PlayerState | undefined, last: boolean, allLegend: boolean) {
+    const curses = p ? p.picks.filter((x) => isCurse(x.id)).length : 0;
+    return rollOptions(this.round - 1, last, Math.random, { curses, allLegend });
+  }
+
+  /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
+  private applyRoundCurses() {
+    if (!this.G.arcade) return;
+    const effects = this.players.flatMap((p) => endRoundCurses(p));
+    if (effects.length) this.io.to(this.code).emit('arcade:effects', effects);
   }
 
   private sendOffer(id: string) {
@@ -530,6 +551,7 @@ export class Room {
   private end() {
     this.stop();
     this.clearPickTimers();
+    this.applyRoundCurses();
     this.offers.clear();
     this.roundPhase = 'play';
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
@@ -572,3 +594,5 @@ export class Room {
   private emitPlayers() { this.io.to(this.code).emit('players', this.players); }
   private broadcastState() { this.io.to(this.code).emit('room:state', this.snapshot()); }
 }
+
+const p0 = (players: PlayerState[], id: string) => players.find((p) => p.id === id);

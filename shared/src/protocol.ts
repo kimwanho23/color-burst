@@ -3,7 +3,7 @@
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
-import type { Pick } from './arcade.ts';
+import type { Pick, RoundEffect } from './arcade.ts';
 
 /** 아케이드 진행 상태 */
 export interface ArcadeState {
@@ -73,6 +73,8 @@ export interface ServerToClient {
   'game:pause': (d: { by: string }) => void;
   /** 아케이드: 라운드가 끝나 능력 선택 시작, 또는 선택 현황이 바뀜 */
   'arcade:pick': (d: ArcadeState) => void;
+  /** 아케이드: 라운드가 끝날 때 적용된 저주 결과 */
+  'arcade:effects': (d: RoundEffect[]) => void;
   /** 아케이드: 나에게만 보내는 능력 선택지 */
   'arcade:offer': (d: ArcadeOffer) => void;
   'circle:spawn': (c: Circle) => void;
