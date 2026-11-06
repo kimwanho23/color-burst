@@ -8,7 +8,7 @@ import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { pickChips, renderPick } from './arcadeUI.ts';
 import { UI, icon } from './icons.ts';
-import { buffChips, renderBuffBar, showHost, showItemPop } from './effectsUI.ts';
+import { buffChips, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
@@ -92,10 +92,10 @@ function holdRender(ms: number) {
   animUntil = performance.now() + ms;
   setTimeout(() => { if (renderQueued) { renderQueued = false; showPick(); } }, ms + 20);
 }
-/** 진행자 룰렛이 도는 동안은 카드를 고를 수 없다 */
-let hostShowing = false;
+/** 랜덤 이벤트 룰렛이 도는 동안은 카드를 고를 수 없다 */
+let eventShowing = false;
 function chooseCard(i: number) {
-  if (hostShowing || picked || !offer?.options[i] || performance.now() < animUntil) return;
+  if (eventShowing || picked || !offer?.options[i] || performance.now() < animUntil) return;
   const cards = $('pickOv').querySelector('.acards');
   cards?.classList.add('choosing');
   cards?.querySelectorAll('.acard')[i]?.classList.add('picked');
@@ -104,7 +104,7 @@ function chooseCard(i: number) {
   socket.emit('arcade:choose', i);
 }
 function rerollCards() {
-  if (hostShowing || picked || !offer?.rerollLeft || performance.now() < animUntil) return;
+  if (eventShowing || picked || !offer?.rerollLeft || performance.now() < animUntil) return;
   $('pickOv').querySelector('.acards')?.classList.add('out');
   holdRender(280);
   socket.emit('arcade:reroll');
@@ -134,10 +134,10 @@ socket.on('arcade:pick', (st) => {
   showPick();
 });
 socket.on('arcade:effects', (e) => { effects = e; if (picking()) showPick(); });
-socket.on('arcade:host', (r) => {
-  hostShowing = true;
-  sfx.host();
-  showHost($('stage'), r, players, myId(), !fxOn()).then(() => { hostShowing = false; });
+socket.on('arcade:event', (r) => {
+  eventShowing = true;
+  sfx.event();
+  showRandomEvent($('stage'), r, players, myId(), !fxOn(), (result) => (result ? sfx.eventResult() : sfx.eventTick())).then(() => { eventShowing = false; });
 });
 socket.on('arcade:offer', (o) => {
   offer = o;

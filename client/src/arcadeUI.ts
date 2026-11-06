@@ -95,7 +95,7 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
         <div class="pick-title">${roundPips(state)}<h2>능력 선택</h2></div>
         <div class="pick-timer" id="pickTimer"></div>
       </div>
-      ${state.theme ? `<p class="theme-next">${icon(UI.host, 15)} 다음 라운드: <b>${THEMES[state.theme].name}</b> · ${THEMES[state.theme].desc}</p>` : ''}
+      ${state.theme ? `<p class="theme-next">${icon(UI.event, 15)} 다음 라운드: <b>${THEMES[state.theme].name}</b> · ${THEMES[state.theme].desc}</p>` : ''}
       ${effects ? `<ul class="effects">${effects}</ul>` : ''}
       ${offer?.lastPlace && !chosen ? `<p class="boost">${icon(UI.up, 15)} 꼴찌 보너스: 높은 등급·저주 카드가 더 잘 나와요</p>` : ''}
       ${chosen || !offer

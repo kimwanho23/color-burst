@@ -195,7 +195,7 @@ export interface RollOpts {
   curses?: number;
   /** 악마의 계약: 이번 선택은 전부 레전드 */
   allLegend?: boolean;
-  /** 진행자 이벤트 '저주 배달': 선택지 하나를 반드시 저주로 (저주 상한이면 무시) */
+  /** 랜덤 이벤트 '저주 배달': 선택지 하나를 반드시 저주로 (저주 상한이면 무시) */
   forceCurse?: boolean;
   /** 이 방 규칙에서 의미 없는 능력 (예: 빈 곳 페널티가 꺼져 있으면 침착) */
   exclude?: readonly AbilityId[];
@@ -222,5 +222,5 @@ export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.r
 }
 
 /** 라운드가 끝날 때 적용되는 저주 결과 */
-/** 'tax': 진행자 이벤트 세금을 받은 사람 */
+/** 'tax': 랜덤 이벤트 세금을 받은 사람 */
 export interface RoundEffect { playerId: string; id: CurseId | 'tax'; delta: number }

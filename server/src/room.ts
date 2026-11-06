@@ -4,7 +4,7 @@ import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
-  HOST, applyHost, rollHost, type ThemeId,
+  RANDOM_EVENT, applyEvent, rollEvent, type ThemeId,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
@@ -62,9 +62,9 @@ export class Room {
   private roundPhase: 'play' | 'pick' = 'play';
   private pickEndsAt = 0;
   private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean; allLegend: boolean; extra: RollExtra }>();
-  // ---------- 진행자 이벤트 ----------
-  /** 이번 게임에 진행자가 나온 횟수 */
-  private hostUsed = 0;
+  // ---------- 랜덤 이벤트 ----------
+  /** 이번 게임에 랜덤 이벤트가 일어난 횟수 */
+  private eventsUsed = 0;
   /** 이번 라운드 테마 / 다음 라운드 테마 (능력 선택 중에 공개) */
   private theme: ThemeId | null = null;
   private nextTheme: ThemeId | null = null;
@@ -173,7 +173,7 @@ export class Room {
     let base = this.rules;
     // 프리셋은 점수·속도 규칙만 바꾸고 모드 설정은 유지
     if (d.preset && d.preset in PRESETS) {
-      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec, hostEvents: this.rules.hostEvents };
+      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec, randomEvents: this.rules.randomEvents };
     }
     this.rules = sanitizeRules(base, d.rules ?? {});
     this.broadcastState();
@@ -206,7 +206,7 @@ export class Room {
     this.G = toGameRules(this.rules);
     this.history = Object.fromEntries(this.players.map((p) => [p.id, [0]]));
     this.round = 1;
-    this.hostUsed = 0;
+    this.eventsUsed = 0;
     this.theme = null;
     this.nextTheme = null;
     this.taxPot = 0;
@@ -476,15 +476,15 @@ export class Room {
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
-    // 진행자 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
-    const hostId = this.G.hostEvents ? rollHost(this.players, this.hostUsed) : null;
-    const host = hostId ? applyHost(hostId, this.players, this.G) : null;
+    // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
+    const eventId = this.G.randomEvents ? rollEvent(this.players, this.eventsUsed) : null;
+    const ev = eventId ? applyEvent(eventId, this.players, this.G) : null;
     let delay = 0;
-    if (host) {
-      this.hostUsed++;
-      this.nextTheme = host.theme ?? null;
-      this.taxPot += host.pot ?? 0;
-      delay = HOST.pickBonusMs;
+    if (ev) {
+      this.eventsUsed++;
+      this.nextTheme = ev.theme ?? null;
+      this.taxPot += ev.pot ?? 0;
+      delay = RANDOM_EVENT.pickBonusMs;
       this.pickEndsAt += delay;
     }
 
@@ -496,11 +496,11 @@ export class Room {
       const last = !tied && p.score === min;
       const allLegend = p.legendNext;
       p.legendNext = false;
-      const extra: RollExtra = { gift: host?.giftTo === p.id, curse: host?.curseTo === p.id };
+      const extra: RollExtra = { gift: ev?.giftTo === p.id, curse: ev?.curseTo === p.id };
       this.offers.set(p.id, { options: this.roll(p, last, allLegend, extra), rerolls: ARCADE.rerollsPerPick, chosen: false, last, allLegend, extra });
     }
     this.emitArcade();
-    if (host) { this.io.to(this.code).emit('arcade:host', host); this.emitPlayers(); }
+    if (ev) { this.io.to(this.code).emit('arcade:event', ev); this.emitPlayers(); }
     for (const p of this.players) {
       if (!p.bot) { this.sendOffer(p.id); continue; }
       // 봇은 1~3초 고민하다가 가장 높은 등급을 고른다. 저주는 꼴찌일 때만 반반 확률로 고른다
@@ -536,7 +536,7 @@ export class Room {
     this.beginRound();
   }
 
-  /** extra: 진행자 이벤트 선물(선택지 +1)·저주 배달 */
+  /** extra: 랜덤 이벤트 선물(선택지 +1)·저주 배달 */
   private roll(p: PlayerState | undefined, last: boolean, allLegend: boolean, extra: RollExtra) {
     const curses = p ? p.picks.filter((x) => isCurse(x.id)).length : 0;
     const opts = { curses, allLegend, forceCurse: extra.curse, exclude: this.G.missPenalty ? [] : ['calm' as const] };
@@ -745,5 +745,5 @@ export class Room {
 }
 
 const p0 = (players: PlayerState[], id: string) => players.find((p) => p.id === id);
-/** 진행자 이벤트로 이번 선택지에 붙는 것 */
+/** 랜덤 이벤트로 이번 선택지에 붙는 것 */
 interface RollExtra { gift: boolean; curse: boolean }

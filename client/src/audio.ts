@@ -81,8 +81,10 @@ export const sfx = {
   clear: () => [262, 392, 523, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.06, i * 0.04)),
   freeze: () => tone(1800, 0.4, 'sine', 0.08, 0, 0.3),
   zone: () => tone(440, 0.25, 'triangle', 0.1, 0, 1.5),
-  /** 진행자 등장 팡파르 */
-  host: () => [392, 523, 392, 659, 784].forEach((f, i) => tone(f, 0.12, 'square', 0.07, i * 0.09)),
+  /** 랜덤 이벤트: 등장음, 룰렛이 한 칸 넘어갈 때마다 틱, 결과음 */
+  event: () => [523, 659, 784].forEach((f, i) => tone(f, 0.08, 'square', 0.07, i * 0.05)),
+  eventTick: () => tone(1400, 0.025, 'square', 0.04),
+  eventResult: () => { tone(988, 0.1, 'triangle', 0.1); tone(1319, 0.18, 'triangle', 0.09, 0.08); },
   win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
   lose: () => [392, 349, 330].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
 };

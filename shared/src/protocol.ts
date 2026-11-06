@@ -5,7 +5,7 @@
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
 import type { Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
-import type { HostResult } from './host.ts';
+import type { EventResult } from './events.ts';
 import type { ThemeId } from './rules.ts';
 
 /** 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다 */
@@ -69,7 +69,7 @@ export interface PlayPayload {
   /** 아케이드 모드가 아니면 null */
   arcade: ArcadeState | null;
   zones: Zone[];
-  /** 이번 라운드 테마 (아케이드 진행자 이벤트) */
+  /** 이번 라운드 테마 (아케이드 랜덤 이벤트) */
   theme: ThemeId | null;
 }
 
@@ -88,8 +88,8 @@ export interface ServerToClient {
   'arcade:effects': (d: RoundEffect[]) => void;
   /** 아케이드: 나에게만 보내는 능력 선택지 */
   'arcade:offer': (d: ArcadeOffer) => void;
-  /** 아케이드: 라운드 사이 진행자 이벤트 (능력 선택 시작 직후) */
-  'arcade:host': (d: HostResult) => void;
+  /** 아케이드: 라운드 사이 랜덤 이벤트 (능력 선택 시작 직후) */
+  'arcade:event': (d: EventResult) => void;
   'circle:spawn': (c: Circle) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;

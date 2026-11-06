@@ -48,7 +48,7 @@ export const RULES = {
     /** 화면 밖으로 나가기까지 걸리는 시간(초, 속도 ×1 기준) */
     lifeSec: 8,
   },
-  /** 아케이드 라운드 테마 (진행자 이벤트) */
+  /** 아케이드 라운드 테마 (랜덤 이벤트) */
   themes: {
     goldRushYellow: 0.6,
     /** 보스 러시: 라운드 진행률 지점마다 보스 */
@@ -112,12 +112,12 @@ export interface RoomRules {
   arcadeRoundSec: number;
   /** 아이템 원 등장 */
   items: boolean;
-  /** 아케이드: 라운드 사이 진행자 이벤트 */
-  hostEvents: boolean;
+  /** 아케이드: 라운드 사이 랜덤 이벤트 */
+  randomEvents: boolean;
 }
 
 /** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
-export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'hostEvents'] as const;
+export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'randomEvents'] as const;
 
 /** 각 설정에서 고를 수 있는 값. 화면의 선택지와 서버 검사에 같이 쓴다 */
 export const RULE_CHOICES = {
@@ -137,7 +137,7 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
-  mode: 'classic', arcadeRoundSec: 30, items: true, hostEvents: true,
+  mode: 'classic', arcadeRoundSec: 30, items: true, randomEvents: true,
 };
 
 export const PRESETS = {
@@ -173,7 +173,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'hostEvents'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'randomEvents'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
@@ -196,7 +196,7 @@ export interface GameRules {
   missPenalty: boolean;
   arcade: boolean;
   items: boolean;
-  hostEvents: boolean;
+  randomEvents: boolean;
 }
 
 export function toGameRules(r: RoomRules): GameRules {
@@ -215,7 +215,7 @@ export function toGameRules(r: RoomRules): GameRules {
     missPenalty: r.missPenalty,
     arcade: r.mode === 'arcade',
     items: r.items,
-    hostEvents: r.hostEvents,
+    randomEvents: r.randomEvents,
   };
 }
 

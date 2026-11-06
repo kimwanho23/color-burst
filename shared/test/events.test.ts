@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_RULES, applyHost, bossTimes, circlePos, isCurse, isOut, newPlayer, rollHost, rollOptions, toGameRules,
-  type Circle, type HostEventId, type PlayerState,
+  DEFAULT_RULES, applyEvent, bossTimes, circlePos, isCurse, isOut, newPlayer, rollEvent, rollOptions, toGameRules,
+  type Circle, type EventId, type PlayerState,
 } from '../src/index.ts';
 
 const G = toGameRules({ ...DEFAULT_RULES, mode: 'arcade' });
@@ -10,38 +10,38 @@ const seq = (...v: number[]) => { let i = 0; return () => v[i++ % v.length]; };
 const four = (...scores: number[]): PlayerState[] =>
   scores.map((s, i) => Object.assign(newPlayer(`p${i}`, `P${i}`, i as 0 | 1 | 2 | 3), { score: s }));
 
-test('rollHost: 10% 확률, 한 게임 최대 2번', () => {
+test('rollEvent: 10% 확률, 한 게임 최대 2번', () => {
   const ps = four(50, 40, 30, 20);
-  assert.notEqual(rollHost(ps, 0, seq(0.05, 0.5)), null);
-  assert.equal(rollHost(ps, 0, seq(0.2)), null);
-  assert.equal(rollHost(ps, 2, () => 0), null);
+  assert.notEqual(rollEvent(ps, 0, seq(0.05, 0.5)), null);
+  assert.equal(rollEvent(ps, 0, seq(0.2)), null);
+  assert.equal(rollEvent(ps, 2, () => 0), null);
 });
 
-test('rollHost: 모두 동점이면 꼴찌가 필요한 이벤트는 안 나온다', () => {
+test('rollEvent: 모두 동점이면 꼴찌가 필요한 이벤트는 안 나온다', () => {
   const ps = four(10, 10, 10, 10);
-  const need: HostEventId[] = ['robinHood', 'swap', 'gift'];
+  const need: EventId[] = ['robinHood', 'swap', 'gift'];
   for (let i = 0; i < 100; i++) {
-    const id = rollHost(ps, 0, seq(0, i / 100));
+    const id = rollEvent(ps, 0, seq(0, i / 100));
     assert.ok(id && !need.includes(id), String(id));
   }
 });
 
 test('로빈 후드: 1등 점수 10%를 꼴찌에게', () => {
   const ps = four(100, 50, 40, 20);
-  const r = applyHost('robinHood', ps, G);
+  const r = applyEvent('robinHood', ps, G);
   assert.deepEqual([ps[0].score, ps[3].score], [90, 30]);
   assert.equal(r.changes.length, 2);
 });
 
 test('순위 역전 룰렛: 1등과 꼴찌 점수 맞바꿈', () => {
   const ps = four(100, 50, 40, 20);
-  applyHost('swap', ps, G);
+  applyEvent('swap', ps, G);
   assert.deepEqual([ps[0].score, ps[3].score], [20, 100]);
 });
 
 test('세금: 모두 5% 내림, 걷은 합은 pot', () => {
   const ps = four(100, 50, 39, 20);
-  const r = applyHost('tax', ps, G);
+  const r = applyEvent('tax', ps, G);
   assert.deepEqual(ps.map((p) => p.score), [95, 48, 38, 19]);
   assert.equal(r.pot, 5 + 2 + 1 + 1);
 });
@@ -49,21 +49,21 @@ test('세금: 모두 5% 내림, 걷은 합은 pot', () => {
 test('강등: 1등의 올라간 등급 능력이 한 단계 내려감', () => {
   const ps = four(100, 50, 40, 20);
   ps[0].picks = [{ id: 'picky', tier: 1 }, { id: 'gambler', tier: 0 }];
-  const r = applyHost('demote', ps, G);
+  const r = applyEvent('demote', ps, G);
   assert.equal(ps[0].picks[0].tier, 0);
   assert.deepEqual(r.demoted, { playerId: 'p0', id: 'picky' });
 });
 
 test('선물·저주 배달은 대상만 정한다', () => {
   const ps = four(100, 50, 40, 20);
-  assert.equal(applyHost('gift', ps, G).giftTo, 'p3');
+  assert.equal(applyEvent('gift', ps, G).giftTo, 'p3');
   ps[1].picks = [{ id: 'gambler', tier: 0 }];
-  for (let i = 0; i < 20; i++) assert.notEqual(applyHost('curseDelivery', ps, G, seq(i / 20)).curseTo, 'p1');
+  for (let i = 0; i < 20; i++) assert.notEqual(applyEvent('curseDelivery', ps, G, seq(i / 20)).curseTo, 'p1');
 });
 
 test('테마: 보스가 꺼진 방에서는 보스 러시가 안 나온다', () => {
   const noBoss = toGameRules({ ...DEFAULT_RULES, mode: 'arcade', boss: false });
-  for (let i = 0; i < 50; i++) assert.notEqual(applyHost('theme', four(1, 2, 3, 4), noBoss, () => i / 50).theme, 'bossRush');
+  for (let i = 0; i < 50; i++) assert.notEqual(applyEvent('theme', four(1, 2, 3, 4), noBoss, () => i / 50).theme, 'bossRush');
 });
 
 test('보스 러시: 라운드 25%·55%·85% 지점', () => {

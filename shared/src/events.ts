@@ -1,15 +1,15 @@
 /**
- * 아케이드 진행자 이벤트: 라운드 사이에 가끔 진행자가 깜짝 등장해 룰렛으로 무작위 이벤트를 일으킨다.
- * 수치는 HOST(등장·점수)와 rules.ts의 RULES.themes(라운드 테마)에 있다.
+ * 아케이드 랜덤 이벤트: 라운드 사이에 가끔 깜짝 룰렛이 돌아 무작위 이벤트가 일어난다.
+ * 수치는 RANDOM_EVENT(등장·점수)와 rules.ts의 RULES.themes(라운드 테마)에 있다.
  */
 import { ranking, isLast, type GameRules, type PlayerState, type ThemeId } from './rules.ts';
 import { ABILITY, ARCADE, isCurse, type AbilityId, type Tier } from './arcade.ts';
 
-export const HOST = {
+export const RANDOM_EVENT = {
   /** 라운드 사이마다 등장 확률, 한 게임 최대 횟수 */
   chance: 0.1,
   maxPerGame: 2,
-  /** 진행자가 나오면 능력 선택 시간이 이만큼 늘어난다 (룰렛 연출) */
+  /** 이벤트가 일어나면 능력 선택 시간이 이만큼 늘어난다 (룰렛 연출) */
   pickBonusMs: 3000,
   robinPct: 10,
   taxPct: 5,
@@ -28,9 +28,9 @@ export const THEMES: Record<ThemeId, { name: string; desc: string }> = {
 };
 const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 
-export type HostEventId = 'robinHood' | 'tax' | 'lottery' | 'swap' | 'abilitySwap' | 'demote' | 'gift' | 'curseDelivery' | 'theme';
+export type EventId = 'robinHood' | 'tax' | 'lottery' | 'swap' | 'abilitySwap' | 'demote' | 'gift' | 'curseDelivery' | 'theme';
 
-export const HOST_EVENTS: Record<HostEventId, { name: string }> = {
+export const EVENTS: Record<EventId, { name: string }> = {
   robinHood: { name: '로빈 후드' },
   tax: { name: '세금' },
   lottery: { name: '복권' },
@@ -41,10 +41,10 @@ export const HOST_EVENTS: Record<HostEventId, { name: string }> = {
   curseDelivery: { name: '저주 배달' },
   theme: { name: '라운드 테마' },
 };
-export const HOST_EVENT_IDS = Object.keys(HOST_EVENTS) as HostEventId[];
+export const EVENT_IDS = Object.keys(EVENTS) as EventId[];
 
-export interface HostResult {
-  id: HostEventId;
+export interface EventResult {
+  id: EventId;
   /** 결과 카드에 보여 줄 문장 */
   text: string;
   /** 점수 변화 */
@@ -64,10 +64,10 @@ const lastOf = (players: PlayerState[]) => players.find((p) => isLast(p, players
 const pickOne = <T,>(list: readonly T[], rand: () => number) => list[Math.floor(rand() * list.length)];
 
 /** 지금 상황에서 일으킬 수 있는 이벤트 */
-function available(players: PlayerState[]): HostEventId[] {
+function available(players: PlayerState[]): EventId[] {
   const hasLast = !!lastOf(players);
   const top = ranking(players)[0];
-  return HOST_EVENT_IDS.filter((id) => {
+  return EVENT_IDS.filter((id) => {
     if (id === 'robinHood' || id === 'swap' || id === 'gift') return hasLast;
     if (id === 'abilitySwap') return players.filter((p) => plainPicks(p).length).length >= 2;
     if (id === 'demote') return !!top && plainPicks(top).some((x) => x.tier > 0);
@@ -76,19 +76,19 @@ function available(players: PlayerState[]): HostEventId[] {
   });
 }
 
-/** 라운드 사이: 진행자가 나올지, 나오면 어떤 이벤트인지. used: 이번 게임에 이미 나온 횟수 */
-export function rollHost(players: PlayerState[], used: number, rand = Math.random): HostEventId | null {
-  if (used >= HOST.maxPerGame || !(rand() < HOST.chance)) return null;
+/** 라운드 사이: 이벤트가 일어날지, 일어나면 어떤 이벤트인지. used: 이번 게임에 이미 나온 횟수 */
+export function rollEvent(players: PlayerState[], used: number, rand = Math.random): EventId | null {
+  if (used >= RANDOM_EVENT.maxPerGame || !(rand() < RANDOM_EVENT.chance)) return null;
   const ids = available(players);
-  const w = ids.map((id) => (id === 'swap' ? HOST.swapWeight : 1));
+  const w = ids.map((id) => (id === 'swap' ? RANDOM_EVENT.swapWeight : 1));
   let r = rand() * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < ids.length; i++) { r -= w[i]; if (r < 0) return ids[i]; }
   return ids[ids.length - 1] ?? null;
 }
 
 /** 이벤트 적용: 점수·능력을 바꾸고 결과를 돌려준다. 선물·저주 배달·테마·세금 지급은 서버가 결과를 보고 처리한다 */
-export function applyHost(id: HostEventId, players: PlayerState[], G: GameRules, rand = Math.random): HostResult {
-  const res: HostResult = { id, text: '', changes: [] };
+export function applyEvent(id: EventId, players: PlayerState[], G: GameRules, rand = Math.random): EventResult {
+  const res: EventResult = { id, text: '', changes: [] };
   const add = (p: PlayerState, delta: number) => {
     const d = Math.max(-p.score, Math.trunc(delta));
     p.score += d;
@@ -98,22 +98,22 @@ export function applyHost(id: HostEventId, players: PlayerState[], G: GameRules,
   const last = lastOf(players);
   switch (id) {
     case 'robinHood': {
-      const amt = Math.floor((top.score * HOST.robinPct) / 100);
+      const amt = Math.floor((top.score * RANDOM_EVENT.robinPct) / 100);
       add(top, -amt); add(last!, amt);
       res.text = `${top.name}님의 점수 ${amt}점이 ${last!.name}님에게!`;
       break;
     }
     case 'tax': {
       let pot = 0;
-      for (const p of players) { const d = Math.floor((p.score * HOST.taxPct) / 100); pot += d; add(p, -d); }
+      for (const p of players) { const d = Math.floor((p.score * RANDOM_EVENT.taxPct) / 100); pot += d; add(p, -d); }
       res.pot = pot;
-      res.text = `모두 ${HOST.taxPct}%씩 세금! 모인 ${pot}점은 다음 라운드에 가장 많이 번 사람에게`;
+      res.text = `모두 ${RANDOM_EVENT.taxPct}%씩 세금! 모인 ${pot}점은 다음 라운드에 가장 많이 번 사람에게`;
       break;
     }
     case 'lottery': {
       const p = pickOne(players, rand);
-      add(p, HOST.lottery);
-      res.text = `${p.name}님 복권 당첨! +${HOST.lottery}점`;
+      add(p, RANDOM_EVENT.lottery);
+      res.text = `${p.name}님 복권 당첨! +${RANDOM_EVENT.lottery}점`;
       break;
     }
     case 'swap': {
