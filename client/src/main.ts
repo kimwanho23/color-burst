@@ -127,7 +127,21 @@ function showPick() {
   });
   $('pickOv').hidden = false;
 }
+// 라운드 종료: 능력 선택이 열리기 전까지 "라운드 종료!"를 보여 주고 클릭을 막는다
+let roundOver = false;
+let roundEndTimer = 0;
+socket.on('round:end', () => {
+  roundOver = true;
+  circles.clear(); pending.clear(); zones = [];
+  $('roundEnd').hidden = false;
+  stopMusic();
+  sfx.roundEnd();
+  clearTimeout(roundEndTimer);
+  roundEndTimer = window.setTimeout(() => { $('roundEnd').hidden = true; }, RULES.roundEndMs);
+});
 socket.on('arcade:pick', (st) => {
+  roundOver = false;
+  $('roundEnd').hidden = true;
   const opening = !picking();
   arcade = st;
   if (opening) { offer = null; stopMusic(); sfx.pickOpen(); circles.clear(); pending.clear(); }
@@ -253,6 +267,8 @@ $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 
 // ---------- 게임 ----------
 function applyPlay(d: PlayPayload, fresh: boolean) {
+  roundOver = false;
+  $('roundEnd').hidden = true;
   startAt = d.startAt; endAt = d.endAt; players = d.players; rules = d.rules;
   arcade = d.arcade;
   if (!picking()) { offer = null; effects = []; }
@@ -325,7 +341,10 @@ socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot }) => {
     renderer.text(p.x + 60, p.y - 70, `+${gained}`, jackpot > 1 ? GOLD : '#fff', jackpotSize(jackpot, 0.7));
   }
 });
+/** 마지막으로 보스가 터진 서버 시각 */
+let bossKilledAt = 0;
 socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot }) => {
+  bossKilledAt = serverNow();
   circles.delete(circleId);
   const killer = nameOf(by), mvpP = nameOf(mvp);
   renderer.burst(x, y, '#ffc23a', true); renderer.burst(x, y, '#fff', true);
@@ -413,7 +432,7 @@ let cursor: { x: number; y: number } | null = null;
 $('cv').addEventListener('pointermove', (e) => { cursor = renderer.toField(e.clientX, e.clientY); });
 $('cv').addEventListener('pointerleave', () => { cursor = null; });
 $('cv').addEventListener('pointerdown', (e) => {
-  if (!playing || pausedView || picking()) return;
+  if (!playing || pausedView || picking() || roundOver) return;
   ensureMusic();
   const now = serverNow();
   if (now < startAt) return;
@@ -437,8 +456,10 @@ $('cv').addEventListener('pointerdown', (e) => {
     const assist = m ? assistTargets(circles.values(), m.color, x, y, now, reach, magnetOf(m, now), pending, RULES.lagWindowMs) : null;
     const saved = !!assist && (assist.range.length > 0 || !!assist.magnet);
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
+    // 보스가 막 터진 직후의 빈 곳 클릭은 서버도 페널티를 주지 않으므로 가볍게만 표시
+    const grace = now - bossKilledAt < RULES.boss.killGraceMs;
     if (!saved) {
-      if (rules.missPenalty) { renderer.miss(x, y); sfx.miss(); } else renderer.miss(x, y, true);
+      if (rules.missPenalty && !grace) { renderer.miss(x, y); sfx.miss(); } else renderer.miss(x, y, true);
     }
     socket.emit('game:click', { circleId: null, x, y });
   }

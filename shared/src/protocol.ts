@@ -93,6 +93,8 @@ export interface ServerToClient {
   'arcade:offer': (d: ArcadeOffer) => void;
   /** 아케이드: 라운드 사이 랜덤 이벤트 (능력 선택 시작 직후) */
   'arcade:event': (d: EventResult) => void;
+  /** 아케이드: 라운드가 끝남 (잠시 뒤 능력 선택이 열린다) */
+  'round:end': (d: { round: number }) => void;
   'circle:spawn': (c: Circle) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;

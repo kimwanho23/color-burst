@@ -324,3 +324,7 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .event-now svg { color: var(--yellow); }
 .event-now b { font-family: var(--display); font-weight: 400; color: var(--yellow); }
 .eventov.done { cursor: pointer; }
+
+/* ---------- 라운드 종료 ---------- */
+.roundend { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: clamp(40px, 9vw, 96px); color: var(--yellow); background: rgba(12, 13, 32, .45); text-shadow: 0 6px 30px rgba(0, 0, 0, .5); animation: pop .3s cubic-bezier(.2, .8, .3, 1.4); }
+@media (prefers-reduced-motion: reduce) { .roundend { animation: none; } }

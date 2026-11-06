@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import type { Circle } from '../src/index.ts';
+import { RULES, type Circle } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -50,8 +50,10 @@ test('랜덤 이벤트가 일어나면 능력 선택 상태에 그 결과가 남
   assert.equal(room.start(a.id), null);
   room.players[0].score = 50;
   t.mock.method(Math, 'random', () => 0);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const r = room as unknown as { endRound(): void; arcadeState(): { event: { id: string; text: string } | null } | null };
   r.endRound();
+  t.mock.timers.tick(RULES.roundEndMs);
   const ev = r.arcadeState()?.event;
   assert.ok(ev, 'pick 상태에 event가 있어야 함');
   assert.ok(ev!.text.length > 0);
@@ -69,6 +71,45 @@ test('발사 보호 구역: 필드 클리어·장판도 가운데 원은 못 잡
   assert.equal(circles.has(200), true);
   assert.equal(circles.has(201), false);
   room.destroy();
+});
+
+test('보스를 터뜨린 직후 1초 동안은 빈 곳 클릭 페널티 없음', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  // 가운데 밖에 멈춰 있는 체력 1짜리 보스
+  circles.set(50, { id: 50, kind: 'boss', angle: 0, speed: 300, r: 90, born: now - 1000, hp: 1, maxHp: 1 });
+  room.click(me.id, { circleId: 50, x: 1100, y: 450 });
+  assert.equal(circles.has(50), false);
+  me.combo = 7;
+  room.click(me.id, { circleId: null, x: 10, y: 10 });
+  assert.deepEqual([me.combo, me.stats.misses], [7, 0]);
+  // 1초가 지나면 다시 페널티
+  (room as unknown as { bossKilledAt: number }).bossKilledAt = Date.now() - 1001;
+  room.click(me.id, { circleId: null, x: 10, y: 10 });
+  assert.equal(me.combo, 0);
+  room.destroy();
+});
+
+test('라운드가 끝나면 "라운드 종료"를 먼저 알리고 1.5초 뒤에 능력 선택을 연다', (t) => {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.fillBots = false;
+  room.setRules(a.id, { rules: { mode: 'arcade' } });
+  assert.equal(room.start(a.id), null);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const r = room as unknown as { endRound(): void; offers: Map<string, unknown> };
+  sent.length = 0;
+  r.endRound();
+  assert.ok(sent.includes('round:end'));
+  assert.ok(!sent.includes('arcade:pick'));
+  assert.equal(r.offers.size, 0);
+  room.choose(a.id, 0); // 그사이 들어온 선택은 무시
+  t.mock.timers.tick(RULES.roundEndMs);
+  assert.ok(sent.includes('arcade:pick'));
+  assert.equal(r.offers.size, 2);
+  assert.equal(room.players[0].picks.length, 0);
 });
 
 test('빈 곳 클릭은 지금처럼 페널티', () => {

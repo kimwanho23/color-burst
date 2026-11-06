@@ -82,6 +82,8 @@ export class Room {
   private rain: { color: ColorIndex; until: number } | null = null;
   /** 시간 정지: 이 시각까지 새 원이 나오지 않는다 */
   private freezeUntil = 0;
+  /** 마지막으로 보스가 터진 시각: 직후 잠깐은 빈 곳 클릭 페널티를 주지 않는다 (보스 연타가 헛클릭이 되지 않게) */
+  private bossKilledAt = 0;
   // ---------- 발사 패턴 ----------
   /** 다음 웨이브 시점(판 시작 후 ms) */
   private nextWaveAt = 0;
@@ -328,7 +330,8 @@ export class Room {
       if (best) { this.claim(p, best, now, 'magnet'); got = true; }
     }
     // 원을 노리고 눌렀는데 거절된 경우(남이 먼저 가져감 등)는 빈 곳이 아니므로 페널티 없음
-    if (!got && d.circleId === null) {
+    // 보스가 터진 직후의 빈 곳 클릭도 페널티 없음
+    if (!got && d.circleId === null && now - this.bossKilledAt >= RULES.boss.killGraceMs) {
       resolveMiss(p, now, this.G, this.players);
       this.emitPlayers();
     }
@@ -425,6 +428,7 @@ export class Room {
     // 막타
     this.circles.delete(c.id);
     this.bossHits.delete(c.id);
+    this.bossKilledAt = now;
     const killJp = jackpotMult(m);
     gained += Math.round(info.kill * mult * killJp);
     p.score += gained;
@@ -480,11 +484,21 @@ export class Room {
     this.io.to(this.code).emit('game:start', this.playPayload());
   }
 
-  /** 아케이드: 라운드 종료 → 능력 선택 */
+  /**
+   * 아케이드: 라운드 종료. 먼저 "라운드 종료!"를 알리고 잠시 뒤에 능력 선택을 연다.
+   * 라운드 끝에 원을 누르던 클릭이 막 깔린 카드를 골라 버리지 않게 하려는 틈이다
+   */
   private endRound() {
     this.roundPhase = 'pick';
     this.circles.clear();
     this.bossHits.clear();
+    this.spawnQueue = [];
+    this.io.to(this.code).emit('round:end', { round: this.round });
+    this.pickTimer = setTimeout(() => this.startPick(), RULES.roundEndMs);
+  }
+
+  /** 능력 선택 시작: 저주 정산 → 랜덤 이벤트 → 선택지 */
+  private startPick() {
     this.applyRoundCurses();
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
