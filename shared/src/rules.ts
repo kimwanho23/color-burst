@@ -29,6 +29,11 @@ export const RULES = {
   yellowChance: 0.33,
   /** 원의 기본 발사 속도 배율 (방 규칙의 게임 속도와 따로) */
   launchSpeed: 1.15,
+  /**
+   * 원 생성 곡선: 판 진행률(0→1)에 따라 속도는 speedStart → speedStart + speedGain (+ 무작위 speedRand),
+   * 생성 간격(ms)은 gapStart → gapStart − gapDrop. 극초반이 심심하지 않게 시작 값을 높였다 (예전 130, 420ms)
+   */
+  spawn: { speedStart: 170, speedGain: 140, speedRand: 60, gapStart: 320, gapDrop: 120, gapMin: 170 },
   /** 꼴찌 보정이 켜졌을 때 꼴찌의 피버 충전 배율 */
   comebackGain: 1.25,
   /** 클릭 판정 여유(필드 단위) */
@@ -583,7 +588,8 @@ export function assistTargets(
 /** 경과 시간에 따른 원 생성 간격(ms) */
 export function spawnInterval(elapsedMs: number, G: GameRules) {
   const prog = Math.min(1, elapsedMs / G.roundMs);
-  let iv = Math.max(170, 420 - prog * 220);
+  const S = RULES.spawn;
+  let iv = Math.max(S.gapMin, S.gapStart - prog * S.gapDrop);
   if (elapsedMs > G.roundMs - RULES.finalRushMs) iv *= 0.75;
   return iv / G.density;
 }
@@ -613,7 +619,7 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
     id,
     kind,
     angle: rand() * Math.PI * 2,
-    speed: (130 + prog * 180 + rand() * 60) * rush * G.speed * RULES.launchSpeed,
+    speed: (RULES.spawn.speedStart + prog * RULES.spawn.speedGain + rand() * RULES.spawn.speedRand) * rush * G.speed * RULES.launchSpeed,
     r: 40 * (0.85 + rand() * 0.3),
     born: now,
   };
