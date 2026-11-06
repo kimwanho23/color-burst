@@ -127,6 +127,17 @@ export const RULES = {
     burstCount: 8,
     spiralCount: 8,
     spiralGapMs: 100,
+    /** 이중 링: 두 번째 링이 늦게 나가는 시간 */
+    ring2GapMs: 300,
+    /** 쌍나선: 갈래마다 원 수 (나선과 같은 간격·45°씩) */
+    twinCount: 6,
+    /** 연속 사출: 한 방향으로 */
+    streamCount: 6,
+    streamGapMs: 120,
+    /** 쓸기: 가운데 방향에서 양쪽으로 sweepDeg만큼 쓸며 */
+    sweepCount: 8,
+    sweepDeg: 60,
+    sweepGapMs: 100,
   },
 } as const;
 
@@ -354,6 +365,8 @@ export interface PlayerState {
   goldLeft: number;
   /** 이번 라운드에 붉은 공격형 보스를 때린 횟수 (감점이 커진다) */
   rageHits: number;
+  /** 이번 라운드에 남은 견제 반사 횟수 */
+  reflectLeft: number;
 }
 
 /** 시간 제한이 있는 아이템 효과 */
@@ -413,13 +426,16 @@ export interface ClaimResult {
   via: ClaimVia;
   /** 잭팟 배율 (안 터지면 1) */
   jackpot: number;
+  /** 견제 반사: 원 주인이 반사해서 주인이 잡은 것으로 처리됐으면 그 주인 id와 주인 쪽 결과 */
+  reflectedTo?: string;
+  reflected?: ClaimResult;
 }
 
 export function newPlayer(id: string, name: string, color: ColorIndex, bot = false): PlayerState {
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
-    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0,
+    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0,
   };
 }
 
@@ -438,7 +454,7 @@ export function applyPick(p: PlayerState, pick: Pick) {
 export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt = 0) {
   const m = modsOf(p.picks);
   p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
-  p.calmLeft = m.calm; p.shieldLeft = m.shield;
+  p.calmLeft = m.calm; p.shieldLeft = m.shield; p.reflectLeft = m.reflect;
   p.buffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.score += m.headStart;
@@ -771,6 +787,15 @@ export function resolveClaim(
     if (blast) {
       // 폭죽·필드 클리어: 남의 색도 +1만, 견제 페널티·표적·반격·강탈 없음
       res.type = 'feverSteal'; pts = P.stealCalm;
+    } else if (owner && owner.reflectLeft > 0 && !isMarked(owner, now)) {
+      // 견제 반사: 원은 주인이 잡은 것으로, 견제한 사람은 0점·콤보 끊김·표적 (반격은 반사하지 않음)
+      owner.reflectLeft--;
+      res.type = 'steal'; res.reflectedTo = owner.id;
+      res.reflected = resolveClaim(owner, kind, players, now, G, opts);
+      breakCombo(claimer, m, now);
+      const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
+      if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
+      return res;
     } else {
       if (owner && isMarked(owner, now)) {
         res.type = 'counter'; pts = P.counter + m.counterPro;

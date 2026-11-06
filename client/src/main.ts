@@ -381,6 +381,16 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
   const who = players.find((p) => p.id === by);
   if (!who) return;
+  // 견제 반사: 원 주인이 반사해서 주인이 잡은 것으로 처리됨
+  if (result.reflectedTo && result.reflected) {
+    const owner = nameOf(result.reflectedTo);
+    if (owner) renderer.burst(x, y, COLORS[owner.color].hex, true);
+    renderer.shockwave(x, y, 70);
+    if (result.reflectedTo === myId()) { sfx.own(); renderer.text(x, y, `반사! +${result.reflected.gained}`, '#4d9bff', 1.1); }
+    else if (by === myId()) { sfx.comboBroken(); renderer.text(x, y, '반사당함! 콤보 끊김', '#ff5d73', 1); if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9); }
+    else if (owner) renderer.text(x, y, `${owner.name} 반사!`, COLORS[owner.color].hex, 0.75);
+    return;
+  }
   const mine = by === myId();
   const blasted = result.via === 'blast';
   // 폭죽·필드 클리어: 폭발 중심에서 가까운 원부터 충격파를 따라 차례로 터진다

@@ -6,7 +6,7 @@ import {
   GlassWater, Dices, Axe, MoveUp, Droplet, Bomb, Target, Skull,
   Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
-  Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer,
+  Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId } from '@color-burst/shared';
@@ -17,7 +17,7 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
   hammer: Hammer, hunter: Crosshair, crusher: Pickaxe,
   insurance: Umbrella, calm: Wind, shield: Shield,
   thickSkin: EyeOff, plunder: HandCoins, counterPro: Swords, jammer: RadioTower,
-  jackpot: Coins, wideHand: Hand, magnet: Magnet,
+  jackpot: Coins, wideHand: Hand, magnet: Magnet, reflect: Undo2,
   glassCannon: GlassWater, gambler: Dices, berserker: Axe, oneWay: MoveUp,
   vampire: Droplet, timeBomb: Bomb, selfTarget: Target, devilPact: Skull,
 };

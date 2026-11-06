@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_RULES, PRESETS, RULES, makeWave, nextWaveIn, sanitizeRules, toGameRules } from '../src/index.ts';
+import { DEFAULT_RULES, PRESETS, RULES, WAVE_PATTERNS, makeWave, nextWaveIn, sanitizeRules, toGameRules } from '../src/index.ts';
 
 const G = toGameRules(DEFAULT_RULES);
 const kinds = [0, 1, 2, 3] as const;
@@ -52,4 +52,41 @@ test('방 규칙 waves: 기본 켜짐, 끌 수 있음', () => {
   assert.equal(DEFAULT_RULES.waves, true);
   assert.equal(sanitizeRules(DEFAULT_RULES, { waves: false }).waves, false);
   assert.equal(PRESETS.basic.rules.waves, true);
+});
+
+test('이중 링: 8개 + 0.3초 뒤 엇갈린 8개', () => {
+  const w = makeWave('ring2', 1, 1000, 0, [...kinds], G, () => 0);
+  assert.equal(w.length, 16);
+  assert.ok(w.slice(0, 8).every((c) => c.born === 1000));
+  assert.ok(w.slice(8).every((c) => c.born === 1000 + RULES.waves.ring2GapMs));
+  assert.ok(Math.abs(angleDiff(w[8].angle, w[0].angle) - Math.PI / 8) < 1e-9);
+});
+
+test('쌍나선: 두 갈래가 정반대에서 같은 시각에, 0.1초마다 45°씩', () => {
+  const w = makeWave('twin', 1, 0, 0, [...kinds], G, () => 0);
+  assert.equal(w.length, RULES.waves.twinCount * 2);
+  const [a0, b0, a1] = [w[0], w[1], w[2]];
+  assert.equal(a0.born, b0.born);
+  assert.ok(Math.abs(angleDiff(a0.angle, b0.angle) - Math.PI) < 1e-9);
+  assert.equal(a1.born - a0.born, RULES.waves.spiralGapMs);
+  assert.ok(Math.abs(angleDiff(a1.angle, a0.angle) - Math.PI / 4) < 1e-9);
+});
+
+test('연속 사출: 한 방향으로 0.12초 간격 6개', () => {
+  const w = makeWave('stream', 1, 0, 0, [...kinds], G, () => 0.25);
+  assert.equal(w.length, RULES.waves.streamCount);
+  assert.ok(w.every((c) => c.angle === w[0].angle));
+  w.forEach((c, i) => assert.equal(c.born, i * RULES.waves.streamGapMs));
+});
+
+test('쓸기: 방향이 한쪽(−60°)에서 반대쪽(+60°)으로 쓸며 8개', () => {
+  const w = makeWave('sweep', 1, 0, 0, [...kinds], G, () => 0.5);
+  assert.equal(w.length, RULES.waves.sweepCount);
+  const span = angleDiff(w[0].angle, w[w.length - 1].angle);
+  assert.ok(Math.abs(span - (2 * RULES.waves.sweepDeg * Math.PI) / 180) < 1e-9);
+  w.forEach((c, i) => assert.equal(c.born, i * RULES.waves.sweepGapMs));
+});
+
+test('패턴은 7가지', () => {
+  assert.deepEqual([...WAVE_PATTERNS].sort(), ['burst', 'fan', 'ring2', 'spiral', 'stream', 'sweep', 'twin']);
 });
