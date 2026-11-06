@@ -1,7 +1,7 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
   EVENTS, EVENT_IDS, ITEMS, ITEM_IDS,
-  type BuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
+  type BuffId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
 import { UI, eventIcon, icon, itemIcon } from './icons.ts';
 
@@ -40,9 +40,19 @@ export function showItemPop(host: HTMLElement, sx: number, sy: number, item: Ite
 }
 
 /** 내 버프: 아이콘 + 원형 남은 시간, 끝나기 1초 전 깜빡임. 황금 손은 남은 개수 */
-export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: number, durOf: (id: BuffId) => number) {
+/** 방해 디버프 → 아이콘으로 보여 줄 아이템 */
+const DEBUFF_ITEM: Record<DebuffId, ItemId> = { slow: 'slowCursor', invert: 'invertCursor', blind: 'blind' };
+
+export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: number, durOf: (id: BuffId) => number, debuffMs: number) {
   if (!p) { el.innerHTML = ''; return; }
   const items: string[] = [];
+  // 방해 (붉은 테두리)
+  for (const id of Object.keys(DEBUFF_ITEM) as DebuffId[]) {
+    const left = (p.debuffs[id] ?? 0) - now;
+    if (left <= 0) continue;
+    const it = DEBUFF_ITEM[id];
+    items.push(`<span class="buff debuff${left < 1000 ? ' blink' : ''}" style="--f:${Math.min(1, left / debuffMs)}" title="${ITEMS[it].name}">${itemIcon(it, 18)}</span>`);
+  }
   for (const id of BUFF_IDS) {
     const left = (p.buffs[id] ?? 0) - now;
     if (left <= 0) continue;

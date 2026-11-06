@@ -2,7 +2,13 @@
  * Canvas 그리기. 필드 좌표(1600x900)를 화면 크기에 맞춰 확대해서 그린다.
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
-import { COLORS, FIELD, RULES, YELLOW, bossState, circlePos, isGuarded, type BossType, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
+import { COLORS, FIELD, RULES, YELLOW, auraAt, bossState, circlePos, isGuarded, lensWarp, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
+
+/** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
+function seeded(seed: number) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
 
 /** 보스 종류별 몸통 색 [밝은 곳, 가운데, 가장자리] */
 const BOSS_BODY: Record<BossType, [string, string, string]> = {
@@ -57,6 +63,10 @@ export interface DrawState {
   cursor?: { x: number; y: number; stunned: boolean; reach: number; magnet: number } | null;
   /** 레이저: at 전에는 경고선, at부터 fireMs 동안 빛줄기 */
   laser?: { a: { x: number; y: number }; b: { x: number; y: number }; at: number } | null;
+  /** 시야 방해: 종류·시드·끝나는 시각 */
+  blind?: { kind: BlindKind; seed: number; until: number } | null;
+  /** 내 커서가 이동형 보스 오오라 안 (오오라를 더 진하게) */
+  myAura?: boolean;
   /** 자석에 끌려가는 원: from에서 to(내가 끌면 내 커서, 남이면 null → 제자리에서 작아짐)로 */
   pulls?: Map<number, { from: { x: number; y: number }; to: { x: number; y: number } | null; at: number; ms: number }>;
 }
@@ -70,6 +80,10 @@ export class Renderer {
   private last = performance.now();
   /** 보스 원 id → 마지막으로 맞은 시각 (흔들림 연출) */
   private bossPoked = new Map<number, number>();
+  /** 렌즈 시야 방해 중이면 물체 위치·크기를 휘는 함수 */
+  private warp: ((p: { x: number; y: number }, size: number) => { x: number; y: number; size: number }) | null = null;
+  /** 저격당함: 이 시각까지 붉은 조준선 */
+  private snipeUntil = 0;
   /** 웨이브 예고: 이 시각까지 중앙 원이 밝게 번쩍인다 */
   private warnUntil = 0;
   /** 순서대로 터질 폭발 (폭죽·필드 클리어 연쇄) */
@@ -131,6 +145,8 @@ export class Renderer {
   /** 충격파 (폭죽·필드 클리어). 효과 줄이기여도 링은 그린다 */
   shockwave(x: number, y: number, R: number) { this.add({ type: 'ring', x, y, col: '#fff', t: 0, life: 0.35, r0: 10, r1: R, w: 6 }); }
   flash() { if (!reduceMotion) this.add({ type: 'flash', t: 0, life: 0.12 }); }
+  /** 저격당함: 화면 가운데 붉은 조준선이 좁혀든다 */
+  snipe() { this.snipeUntil = performance.now() + 600; }
   /** 웨이브 예고: 중앙 원이 ms 동안 밝게 (효과 줄이기면 링만) */
   waveWarn(ms: number) {
     this.add({ type: 'ring', x: FIELD.w / 2, y: FIELD.h / 2, col: '#fff', t: 0, life: ms / 1000, r0: 110, r1: 40, w: 4 });
@@ -201,6 +217,13 @@ export class Renderer {
     const base = ctx.globalAlpha;
     // 발사 보호 구역 안의 원은 반투명 (아직 잡을 수 없음)
     const fade = (c: Circle) => { ctx.globalAlpha = isGuarded(c, s.now) ? base * 0.4 : base; };
+    // 렌즈: 원·보스·아이템 원의 위치와 크기만 휜다 (클릭 판정은 그대로)
+    const lens = s.blind?.kind === 'lens' ? s.blind : null;
+    this.warp = lens ? (p, size) => lensWarp(p, size, lens.seed % 2 === 0) : null;
+    for (const c of list) {
+      const a = auraAt(c, s.now);
+      if (a) this.drawAura(a, !!s.myAura, now);
+    }
     for (const c of list) if (c.kind === 'boss') { fade(c); this.drawBoss(c, s.now, now); }
     for (const c of list) {
       if (c.kind === 'boss') continue;
@@ -213,8 +236,9 @@ export class Renderer {
         p = { x: pl.from.x + (to.x - pl.from.x) * e, y: pl.from.y + (to.y - pl.from.y) * e };
         r = c.r * (1 - 0.6 * k);
       }
+      if (this.warp) { const w = this.warp(p, r); p = w; r = w.size; }
       fade(c);
-      if (c.kind === 'item') this.drawItem(c, p.x, p.y, now);
+      if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
     ctx.globalAlpha = base;
@@ -249,6 +273,8 @@ export class Renderer {
       }
       ctx.globalAlpha = 1;
     }
+    if (s.blind && s.blind.kind !== 'lens') this.drawBlind(s.blind, s.now);
+    if (now < this.snipeUntil && !reduceMotion) this.drawSnipe(1 - (this.snipeUntil - now) / 600);
     if (s.cursor) this.drawCursor(s.cursor, now);
     ctx.restore();
   }
@@ -256,9 +282,11 @@ export class Renderer {
   private drawBoss(c: Circle, t: number, frameNow: number) {
     const ctx = this.ctx;
     let { x, y } = circlePos(c, t);
+    let size = c.r;
+    if (this.warp) { const w = this.warp({ x, y }, c.r); x = w.x; y = w.y; size = w.size; }
     const poked = frameNow - (this.bossPoked.get(c.id) ?? -1e9);
     if (poked < 120 && !reduceMotion) { x += (Math.random() - 0.5) * 10; y += (Math.random() - 0.5) * 10; }
-    const r = c.r * (poked < 120 ? 0.96 : 1);
+    const r = size * (poked < 120 ? 0.96 : 1);
     const frac = (c.hp ?? 0) / (c.maxHp ?? 1);
     const low = frac <= 0.2;
     const type = c.boss ?? 'normal';
@@ -372,9 +400,69 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** 이동형 보스 오오라: 보랏빛 고리 (내 커서가 안에 있으면 더 진하게) */
+  private drawAura(a: { x: number; y: number; r: number; inner: number }, mine: boolean, frameNow: number) {
+    const ctx = this.ctx;
+    ctx.save();
+    const g = ctx.createRadialGradient(a.x, a.y, a.inner, a.x, a.y, a.r);
+    g.addColorStop(0, `rgba(178, 108, 255, ${mine ? 0.45 : 0.25})`); g.addColorStop(1, 'rgba(178, 108, 255, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
+    ctx.setLineDash([8, 10]); ctx.lineDashOffset = -frameNow / 40;
+    ctx.strokeStyle = `rgba(195, 155, 255, ${mine ? 0.9 : 0.5})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 시야 방해 (렌즈 제외): 잉크 얼룩·반코트·낙서. 시드로 모양이 정해지고, 끝나기 0.5초 전부터 옅어진다 */
+  private drawBlind(b: NonNullable<DrawState['blind']>, t: number) {
+    const ctx = this.ctx, rnd = seeded(b.seed);
+    const fade = Math.max(0, Math.min(1, (b.until - t) / 500));
+    ctx.save();
+    ctx.globalAlpha = fade;
+    if (b.kind === 'ink') {
+      ctx.fillStyle = '#05060f';
+      const n = 3 + Math.floor(rnd() * 2);
+      for (let i = 0; i < n; i++) {
+        const x = 200 + rnd() * 1200, y = 120 + rnd() * 660, r = 120 + rnd() * 90;
+        ctx.beginPath();
+        for (let k = 0; k <= 12; k++) { const a = (Math.PI * 2 * k) / 12, rr = r * (0.75 + rnd() * 0.4); ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+        ctx.fill();
+      }
+    } else if (b.kind === 'half') {
+      ctx.fillStyle = 'rgba(8, 9, 22, .94)';
+      const side = Math.floor(rnd() * 4);
+      if (side === 0) ctx.fillRect(0, 0, FIELD.w / 2, FIELD.h);
+      else if (side === 1) ctx.fillRect(FIELD.w / 2, 0, FIELD.w / 2, FIELD.h);
+      else if (side === 2) ctx.fillRect(0, 0, FIELD.w, FIELD.h / 2);
+      else ctx.fillRect(0, FIELD.h / 2, FIELD.w, FIELD.h / 2);
+    } else if (b.kind === 'doodle') {
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      const cols = ['#2b2f55', '#3a1f4d', '#1f3d3a', '#4d2a1f'];
+      const n = 5 + Math.floor(rnd() * 2);
+      for (let i = 0; i < n; i++) {
+        ctx.strokeStyle = cols[i % cols.length]; ctx.lineWidth = 26 + rnd() * 20;
+        ctx.beginPath(); ctx.moveTo(rnd() * FIELD.w, rnd() * FIELD.h);
+        for (let k = 0; k < 3; k++) ctx.bezierCurveTo(rnd() * FIELD.w, rnd() * FIELD.h, rnd() * FIELD.w, rnd() * FIELD.h, rnd() * FIELD.w, rnd() * FIELD.h);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** 저격당함: 화면 가운데로 좁혀드는 붉은 조준선 */
+  private drawSnipe(k: number) {
+    const ctx = this.ctx, cx = FIELD.w / 2, cy = FIELD.h / 2, r = 300 - 220 * k;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255, 77, 77, ${1 - k * 0.6})`; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - r - 40, cy); ctx.lineTo(cx + r + 40, cy); ctx.moveTo(cx, cy - r - 40); ctx.lineTo(cx, cy + r + 40); ctx.stroke();
+    ctx.restore();
+  }
+
   /** 아이템 원: 등급색 테두리 + 천천히 흔들리는 ? (전설은 프리즘이 돈다) */
-  private drawItem(c: Circle, x: number, y: number, frameNow: number) {
-    const ctx = this.ctx, r = c.r, tier = c.itemTier ?? 0;
+  private drawItem(c: Circle, x: number, y: number, frameNow: number, r = c.r) {
+    const ctx = this.ctx, tier = c.itemTier ?? 0;
     ctx.save(); ctx.translate(x, y);
     ctx.fillStyle = '#23285a';
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();

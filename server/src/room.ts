@@ -6,6 +6,7 @@ import {
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
   FIELD, isStunned, laserHits, nextLaserIn, pickMagnetTargets, rollLaser, type LaserShot, type Point, type Pull,
+  auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
@@ -96,6 +97,8 @@ export class Room {
   private pulls = new Map<number, Pull>();
   /** 플레이어 id → 최근 1초 안에 끌기 시작한 시각들 */
   private pullLog = new Map<string, number[]>();
+  /** 플레이어 id → 마지막으로 오오라 감점을 받은 시각 */
+  private auraLast = new Map<string, number>();
   // ---------- 발사 패턴 ----------
   /** 다음 웨이브 시점(판 시작 후 ms) */
   private nextWaveAt = 0;
@@ -335,10 +338,42 @@ export class Room {
     }
     // 원을 노리고 눌렀는데 거절된 경우(남이 먼저 가져감 등)는 빈 곳이 아니므로 페널티 없음
     // 보스가 터진 직후의 빈 곳 클릭도 페널티 없음
-    if (!got && d.circleId === null && now - this.bossKilledAt >= RULES.boss.killGraceMs) {
-      resolveMiss(p, now, this.G, this.players);
-      this.emitPlayers();
+    if (!got && d.circleId === null) {
+      // 이동형 보스 오오라를 눌렀으면 헛클릭 대신 감점
+      if (this.auraUnder(d, now)) {
+        const lose = Math.min(p.score, RULES.aura.clickPenalty);
+        p.score -= lose;
+        this.io.to(this.code).emit('aura:hit', { by: p.id, x: d.x, y: d.y, lose });
+        this.emitPlayers();
+      } else if (now - this.bossKilledAt >= RULES.boss.killGraceMs) {
+        resolveMiss(p, now, this.G, this.players);
+        this.emitPlayers();
+      }
     }
+  }
+
+  /** 이 점이 어떤 이동형 보스의 오오라 안인지 */
+  private auraUnder(pt: Point, now: number) {
+    for (const c of this.circles.values()) {
+      const a = auraAt(c, now);
+      if (a && inAura(pt, a)) return true;
+    }
+    return false;
+  }
+
+  /** 오오라: 커서가 이동형 보스 오오라 안이면 tickMs마다 감점 (봇은 커서가 없어 제외) */
+  private updateAura(now: number) {
+    let changed = false;
+    for (const p of this.players) {
+      const cur = this.freshCursor(p.id, now);
+      if (p.bot || !cur || !this.auraUnder(cur, now)) { this.auraLast.delete(p.id); continue; }
+      const last = this.auraLast.get(p.id);
+      if (last !== undefined && now - last < RULES.aura.tickMs) continue;
+      this.auraLast.set(p.id, now);
+      const lose = Math.min(p.score, RULES.aura.touchPenalty);
+      if (lose > 0) { p.score -= lose; changed = true; }
+    }
+    if (changed) this.emitPlayers();
   }
 
   snapshot(): RoomSnapshot {
@@ -491,12 +526,13 @@ export class Room {
     this.zones = [];
     this.rain = null;
     this.freezeUntil = 0;
-    this.nextWaveAt = nextWaveIn();
+    this.nextWaveAt = nextWaveIn(Math.random, this.G.chaos);
     this.laser = null;
-    this.nextLaserAt = nextLaserIn();
+    this.nextLaserAt = nextLaserIn(Math.random, this.G.chaos);
     this.pulls.clear();
     this.pullLog.clear();
     this.cursors.clear();
+    this.auraLast.clear();
     this.spawnQueue = [];
     this.pausedAt = 0;
     this.pausedBy = null;
@@ -530,7 +566,7 @@ export class Room {
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
     // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
-    const eventId = this.G.randomEvents ? rollEvent(this.players, this.eventsUsed) : null;
+    const eventId = this.G.randomEvents ? rollEvent(this.players, this.eventsUsed, Math.random, this.G.chaos ? RULES.chaos.eventChance : undefined) : null;
     const ev = eventId ? applyEvent(eventId, this.players, this.G) : null;
     this.lastEvent = ev;
     let delay = 0;
@@ -653,6 +689,7 @@ export class Room {
     this.spawnWaves(now, kinds);
     this.updateLaser(now);
     this.updatePulls(now);
+    this.updateAura(now);
     while (now >= this.freezeUntil && this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
       this.bossQueue.shift();
       this.spawnBosses(now);
@@ -695,7 +732,7 @@ export class Room {
     const W = RULES.waves;
     if (this.G.waves && now >= this.freezeUntil && now - this.startAt >= this.nextWaveAt) {
       const at = now + W.warnMs;
-      this.nextWaveAt = at - this.startAt + nextWaveIn();
+      this.nextWaveAt = at - this.startAt + nextWaveIn(Math.random, this.G.chaos);
       const pattern = WAVE_PATTERNS[Math.floor(Math.random() * WAVE_PATTERNS.length)];
       const wave = makeWave(pattern, this.nextCircleId, at, at - this.startAt, kinds, this.G, Math.random, this.spawnOpts(now));
       this.nextCircleId += wave.length;
@@ -716,7 +753,7 @@ export class Room {
   /** 보스 등장: 1~3마리(화면에 최대 3마리), 종류는 마리마다 따로, 서로 다른 방향으로 */
   private spawnBosses(now: number) {
     const alive = [...this.circles.values()].filter((c) => c.kind === 'boss').length;
-    const n = rollBossCount(alive, this.theme);
+    const n = rollBossCount(alive, this.theme, Math.random, this.G.chaos);
     const base = Math.random() * Math.PI * 2;
     for (let i = 0; i < n; i++) {
       const b = makeBoss(this.nextCircleId++, now, this.players.length, this.G, Math.random, rollBossType(), base + (Math.PI * 2 * i) / n);
@@ -754,7 +791,7 @@ export class Room {
     if (now < at) return;
     if (now >= at + L.fireMs) {
       this.laser = null;
-      this.nextLaserAt = el + nextLaserIn();
+      this.nextLaserAt = el + nextLaserIn(Math.random, this.G.chaos);
       return;
     }
     let stunned = false;
@@ -815,7 +852,8 @@ export class Room {
   /** 새 원 생성 옵션: 아이템 원 확률, 라운드 테마, 내 색 비 */
   private spawnOpts(now: number): SpawnOpts {
     const T = RULES.themes;
-    const o: SpawnOpts = { itemChance: this.G.items ? RULES.items.chance * (this.theme === 'itemRush' ? T.itemRushMult : 1) : 0 };
+    const chaos = this.G.chaos ? RULES.chaos.itemMult : 1;
+    const o: SpawnOpts = { itemChance: this.G.items ? RULES.items.chance * chaos * (this.theme === 'itemRush' ? T.itemRushMult : 1) : 0 };
     if (this.theme === 'goldRush') o.yellowChance = T.goldRushYellow;
     if (this.theme === 'rainbowRain') o.rainbowChance = T.rainbowRain;
     if (this.theme === 'allYellow') o.forceKind = 'y';
@@ -876,6 +914,12 @@ export class Room {
       case 'rain':
         this.rain = { color: p.color, until: now + I.ms.rain };
         break;
+      case 'snipe': {
+        // 1등 저격: 대상은 applyItem이 스턴했다. 모두에게 알린다
+        const target = 'target' in action ? this.players.find((x) => x.id === action.target) : undefined;
+        if (target) this.io.to(this.code).emit('stun', { playerId: target.id, until: target.stunUntil, by: 'snipe' });
+        break;
+      }
     }
     this.emitPlayers();
   }

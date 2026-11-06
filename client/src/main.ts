@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, cursorActive, holdCircles, isStunned, magnetOf, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserShot, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
@@ -419,6 +420,11 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
 socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
   const who = nameOf(by);
+  // 방해 아이템: 잡은 사람 뺀 모두에게 걸림 (저격은 stun 알림에서)
+  if (ITEMS[item].sabotage && item !== 'snipe' && by !== myId() && who) {
+    sfx.sabotage();
+    renderer.text(800, 300, `${who.name}의 ${ITEMS[item].name}!`, '#ff5d73', 1.3);
+  }
   if (by === myId()) {
     const sp = renderer.toScreen(x, y);
     showItemPop($('itemPops'), sp.x, sp.y, item, tier, !fxOn());
@@ -440,13 +446,23 @@ function setLaser(l: LaserShot | null) {
   if (l && l.at > serverNow()) laserFireTimer = window.setTimeout(() => sfx.laserFire(), l.at - serverNow());
 }
 socket.on('laser:warn', (l) => { setLaser(l); sfx.laserWarn(); });
-socket.on('stun', ({ playerId }) => {
+socket.on('stun', ({ playerId, by }) => {
   const p = nameOf(playerId);
+  const snipe = by === 'snipe';
   if (playerId === myId()) {
-    sfx.stun();
+    if (snipe) { sfx.snipe(); renderer.snipe(); renderer.text(800, 380, '저격당했다!', '#ff5d73', 1.6); }
+    else sfx.stun();
     const c = gameCursor.pos ?? { x: 800, y: 450 };
     renderer.text(c.x, c.y - 40, '스턴!', '#9ca2d6', 1.2);
-  } else if (p) renderer.text(800, 120, `${p.name} 스턴!`, COLORS[p.color].hex, 0.8);
+  } else if (p) {
+    if (snipe) sfx.snipe();
+    renderer.text(800, 120, snipe ? `${p.name} 저격!` : `${p.name} 스턴!`, COLORS[p.color].hex, snipe ? 1.1 : 0.8);
+  }
+});
+socket.on('aura:hit', ({ by, x, y, lose }) => {
+  if (by !== myId()) return;
+  sfx.aura();
+  renderer.text(x, y, lose ? `-${lose} 오오라` : '오오라', '#c39bff', 0.9);
 });
 socket.on('circle:pull', (pl) => { pulls.set(pl.circleId, pl); if (pl.by === myId()) sfx.pull(); });
 // 커서 위치는 게임 중에만 보낸다 (캔버스 밖·탭 전환이면 서버가 판정에서 뺀다)
@@ -487,11 +503,19 @@ socket.on('game:over', (d) => {
 });
 
 // 게임 커서: 진짜 마우스 위치와 이동량으로 움직인다 (1차는 효과 없음 → 마우스 위치 그대로)
+/** 지금 커서 효과: 감도 감소·반대, 오오라 안이면 끌려간 만큼 유지되도록 상대 이동 */
+let cursorMode: CursorMode | null = null;
 const moveCursor = (e: PointerEvent) => {
   const real = renderer.toField(e.clientX, e.clientY);
   const prev = renderer.toField(e.clientX - e.movementX, e.clientY - e.movementY);
-  gameCursor.move(real, { x: real.x - prev.x, y: real.y - prev.y }, null);
+  gameCursor.move(real, { x: real.x - prev.x, y: real.y - prev.y }, cursorMode);
 };
+/** 이 점을 덮는 이동형 보스 오오라 */
+const auraUnder = (pt: { x: number; y: number }, t: number) => {
+  for (const c of circles.values()) { const a = auraAt(c, t); if (a && inAura(pt, a)) return a; }
+  return null;
+};
+let lastFrameAt = performance.now();
 $('cv').addEventListener('pointermove', moveCursor);
 $('cv').addEventListener('pointerleave', () => gameCursor.leave());
 $('cv').addEventListener('pointerdown', (e) => {
@@ -577,7 +601,7 @@ function updateHud(now: number) {
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
   $('combo').textContent = `${m?.combo ?? 0} 콤보`;
-  renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id]);
+  renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id], RULES.sabotage.ms);
   // 점수판의 버프 아이콘은 1초마다 다시 그려 끝난 것을 지운다
   const sec = Math.floor(now / 1000);
   if (playing && sec !== lastBuffSec) { lastBuffSec = sec; renderScores(); }
@@ -613,6 +637,14 @@ function frame() {
   // 자석에 끌려오는 원은 화면 밖으로 나가도 잡힐 때까지 그린다
   for (const [id, c] of circles) if (isOut(c, now) && !pulls.has(id)) { circles.delete(id); pending.delete(id); }
   const m = me();
+  // 커서 효과: 방해 디버프, 오오라 끌림 (효과가 끝나면 진짜 마우스 위치로 미끄러져 돌아옴)
+  const fnow = performance.now(), dt = Math.min(0.05, (fnow - lastFrameAt) / 1000);
+  lastFrameAt = fnow;
+  const live = playing && !picking() && !roundOver && !pausedView;
+  const aura = live && gameCursor.pos ? auraUnder(gameCursor.pos, now) : null;
+  cursorMode = live && m ? cursorModeOf(m, now) ?? (aura ? {} : null) : null;
+  gameCursor.frame(cursorMode);
+  if (aura) gameCursor.pull(aura, RULES.aura.pullSpeed * dt);
   updateHud(now);
   renderer.draw({
     circles: circles.values(),
@@ -628,6 +660,8 @@ function frame() {
       ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now) : 0 }
       : null,
     laser,
+    blind: live && m?.blind && (m.debuffs.blind ?? 0) > now ? { ...m.blind, until: m.debuffs.blind! } : null,
+    myAura: !!aura,
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),
   });
   requestAnimationFrame(frame);

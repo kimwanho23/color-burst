@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { RULES, type Circle } from '../src/index.ts';
+import { RULES, circlePos as circlePosOf, type Circle } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -330,5 +330,71 @@ test('라운드가 시작되면 커서 기록을 지운다', () => {
   room.cursor(me.id, { x: 100, y: 100 });
   (room as unknown as { beginRound(): void }).beginRound();
   assert.equal((room as unknown as { cursors: Map<string, unknown> }).cursors.size, 0);
+  room.destroy();
+});
+
+// ---------- 3단계 2차: 방해·오오라·카오스 ----------
+test('1등 저격 아이템: 대상(1등, 내가 1등이면 2등)이 스턴되고 stun 알림', (t) => {
+  const { room, me, circles } = playingRoom();
+  const other = room.players.find((p) => p.id !== me.id)!;
+  other.score = 30; other.combo = 4;
+  const now = Date.now();
+  circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
+  t.mock.method(Math, 'random', () => 0.99); // 전설 [시간 정지, 필드 클리어, 1등 저격] 중 1등 저격
+  sent.length = 0;
+  room.click(me.id, { circleId: 1, x: 1100, y: 450 });
+  assert.ok(other.stunUntil > now);
+  assert.equal(other.combo, 0);
+  assert.equal(sent.filter((e) => e === 'stun').length, 1);
+  room.destroy();
+});
+
+/** 가운데에서 오른쪽으로 400 떨어져 멈춰 있는 이동형 보스 (반지름 60, 오오라 140) */
+const runnerAt = (now: number): Circle => ({ id: 77, kind: 'boss', boss: 'runner', angle: 0, speed: 0.004, r: 60, born: now - 100_000_000, hp: 10, maxHp: 10 });
+
+test('오오라: 커서가 고리 안이면 0.5초마다 −1, 몸통 안이면 감점 없음', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(77, runnerAt(now));
+  const pos = circlePosOf(circles.get(77)!, now);
+  me.score = 5;
+  const cursors = (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors;
+  const r = room as unknown as { updateAura(now: number): void };
+  cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now });
+  r.updateAura(now);
+  assert.equal(me.score, 4);
+  r.updateAura(now + 200);
+  assert.equal(me.score, 4);
+  cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now + 500 });
+  r.updateAura(now + 500);
+  assert.equal(me.score, 3);
+  cursors.set(me.id, { x: pos.x + 10, y: pos.y, at: now + 1000 });
+  r.updateAura(now + 1000);
+  assert.equal(me.score, 3);
+  room.destroy();
+});
+
+test('오오라를 클릭하면 −2 (헛클릭 아님)', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(77, runnerAt(now));
+  const pos = circlePosOf(circles.get(77)!, now);
+  me.score = 5; me.combo = 3;
+  sent.length = 0;
+  room.click(me.id, { circleId: null, x: pos.x + 100, y: pos.y });
+  assert.deepEqual([me.score, me.combo, me.stats.misses], [3, 3, 0]);
+  assert.ok(sent.includes('aura:hit'));
+  room.destroy();
+});
+
+test('카오스 방: 아이템 원 확률 3배', () => {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.fillBots = false;
+  room.setRules(a.id, { preset: 'chaos' });
+  assert.equal(room.start(a.id), null);
+  const opts = (room as unknown as { spawnOpts(now: number): { itemChance?: number } }).spawnOpts(Date.now());
+  assert.ok(Math.abs(opts.itemChance! - RULES.items.chance * 3) < 1e-12);
   room.destroy();
 });

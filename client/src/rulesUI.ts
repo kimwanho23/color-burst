@@ -4,7 +4,7 @@ import { shapeSVG } from './render.ts';
 import { UI, icon } from './icons.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
-type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'waves' | 'laser' | 'randomEvents';
+type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'waves' | 'laser' | 'sabotage' | 'randomEvents';
 
 const NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] = [
   { key: 'speed', label: '게임 속도', fmt: (v) => `×${v}` },
@@ -24,6 +24,7 @@ const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'items', label: '아이템 원' },
   { key: 'waves', label: '발사 패턴 (웨이브)' },
   { key: 'laser', label: '레이저 (맞으면 스턴)' },
+  { key: 'sabotage', label: '방해 아이템 (감도·반대·시야·저격)' },
 ];
 /** 아케이드에서만 보이는 설정 */
 const ARCADE_BOOL_FIELDS: { key: BoolKey; label: string }[] = [

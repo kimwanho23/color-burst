@@ -114,6 +114,8 @@ export interface ServerToClient {
   'laser:warn': (d: LaserShot) => void;
   /** 스턴: until까지 클릭 불가 */
   stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' }) => void;
+  /** 이동형 보스 오오라를 클릭해 점수를 잃음 */
+  'aura:hit': (d: { by: string; x: number; y: number; lose: number }) => void;
   /** 커서 자석이 원을 끌기 시작함 */
   'circle:pull': (d: Pull) => void;
   /** 발사 패턴 예고: at(서버 시각)에 웨이브가 나온다 */

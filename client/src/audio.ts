@@ -88,6 +88,10 @@ export const sfx = {
   laserFire: () => tone(1400, 0.3, 'sawtooth', 0.06, 0, 0.25),
   stun: () => [523, 440, 392].forEach((f, i) => tone(f, 0.1, 'triangle', 0.09, i * 0.07)),
   pull: () => tone(300, 0.2, 'sine', 0.08, 0, 2.2),
+  /** 방해에 걸림, 저격, 오오라 */
+  sabotage: () => [600, 450, 300].forEach((f, i) => tone(f, 0.12, 'sawtooth', 0.06, i * 0.06)),
+  snipe: () => { tone(2200, 0.05, 'square', 0.08); tone(90, 0.35, 'sawtooth', 0.1, 0.04, 0.5); },
+  aura: () => tone(220, 0.25, 'sine', 0.1, 0, 0.6),
   /** 라운드 종료 */
   roundEnd: () => [784, 659, 523].forEach((f, i) => tone(f, 0.16, 'square', 0.08, i * 0.1)),
   /** 웨이브 예고: 올라가는 휙 소리 */
