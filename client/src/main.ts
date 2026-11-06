@@ -1,12 +1,13 @@
 import { io, type Socket } from 'socket.io-client';
 import {
   COLORS, DEFAULT_RULES, RULES, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut,
-  type ArcadeOffer, type ArcadeState, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { pickChips, renderPick } from './arcadeUI.ts';
+import { UI, icon } from './icons.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
@@ -70,12 +71,14 @@ const canPause = () => !!room && (room.solo || room.hostId === myId());
 let arcade: ArcadeState | null = null;
 let offer: ArcadeOffer | null = null;
 let picked = false;
+/** 방금 끝난 라운드의 저주 결과 */
+let effects: RoundEffect[] = [];
 const picking = () => arcade?.phase === 'pick';
 
 function showPick() {
   if (!arcade || arcade.phase !== 'pick') { $('pickOv').hidden = true; return; }
   picked = !arcade.waiting.includes(myId());
-  renderPick($('pickOv'), { state: arcade, offer, me: me(), players, chosen: picked }, {
+  renderPick($('pickOv'), { state: arcade, offer, me: me(), players, chosen: picked, effects }, {
     choose: (i) => { sfx.pickChoose(); socket.emit('arcade:choose', i); },
     reroll: () => socket.emit('arcade:reroll'),
   });
@@ -87,6 +90,7 @@ socket.on('arcade:pick', (st) => {
   if (opening) { offer = null; stopMusic(); sfx.pickOpen(); circles.clear(); pending.clear(); }
   showPick();
 });
+socket.on('arcade:effects', (e) => { effects = e; if (picking()) showPick(); });
 socket.on('arcade:offer', (o) => {
   offer = o;
   if (o.options.some((x) => x.tier === 3)) sfx.legend();
@@ -161,7 +165,7 @@ function renderLobby() {
   $('leaveBtn').textContent = room.solo ? '처음으로' : '방 나가기';
   $('hostOpts').hidden = !host;
   $<HTMLInputElement>('fillBots').checked = room.fillBots;
-  $('botLevel').innerHTML = LEVELS.map((l, i) => `<button type="button" data-l="${i}" aria-pressed="${room!.botLevel === i}">봇 ${l}</button>`).join('');
+  $('botLevel').innerHTML = LEVELS.map((l, i) => `<button type="button" data-l="${i}" aria-pressed="${room!.botLevel === i}">${i === 0 ? icon(UI.bot, 15) : ''}${i === 0 ? '봇 ' : ''}${l}</button>`).join('');
   $('botLevel').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
     b.onclick = () => socket.emit('lobby:options', { botLevel: Number(b.dataset.l) as BotLevel });
   });
@@ -203,7 +207,7 @@ $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 function applyPlay(d: PlayPayload, fresh: boolean) {
   startAt = d.startAt; endAt = d.endAt; players = d.players; rules = d.rules;
   arcade = d.arcade;
-  if (!picking()) offer = null;
+  if (!picking()) { offer = null; effects = []; }
   circles.clear(); pending.clear();
   if (fresh) lastCount = -1;
   for (const c of d.circles) circles.set(c.id, c);
@@ -237,6 +241,7 @@ function togglePause() {
   if (!playing || !canPause() || picking()) return;
   socket.emit(pausedView ? 'game:resume' : 'game:pause');
 }
+$('pauseBtn').innerHTML = `${icon(UI.pause, 16)}<span class="bt">일시정지</span>`;
 $('pauseBtn').onclick = togglePause;
 $('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
 document.addEventListener('keydown', (e) => {
@@ -351,7 +356,7 @@ function updatePing() {
     const t0 = performance.now();
     socket.emit('time:ping', () => {
       const ms = Math.round(performance.now() - t0);
-      $('ping').textContent = `핑 ${ms}ms`;
+      $('ping').innerHTML = `${icon(UI.ping, 14)} ${ms}ms`;
       $('ping').classList.toggle('bad', ms > 150);
     });
   };
@@ -375,7 +380,8 @@ function updateHud(now: number) {
   const fill = !m ? 0 : fever ? ((m.feverUntil - now) / feverMsOf(m, G)) * 100 : m.fever;
   $('meterFill').style.width = `${Math.max(0, fill)}%`;
   const after = !!m && !fever && now < m.afterUntil;
-  $('flabel').textContent = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
+  const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
+  if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
   $('combo').textContent = `${m?.combo ?? 0} 콤보`;
   $('stage').classList.toggle('feverOn', playing && !picking() && fever);
   document.querySelectorAll<HTMLElement>('.chip').forEach((el) => {
@@ -386,7 +392,7 @@ function updateHud(now: number) {
   });
 
   $('roundTag').hidden = !arcade;
-  if (arcade) $('roundTag').textContent = `라운드 ${arcade.round}/${arcade.rounds}`;
+  if (arcade) $('roundTag').innerHTML = `${icon(UI.arcade, 14)} ${arcade.round}/${arcade.rounds}`;
   const pickLeft = picking() ? Math.max(0, arcade!.pickEndsAt - serverNow()) : 0;
   const pt = document.getElementById('pickTimer');
   if (pt) pt.textContent = `${Math.ceil(pickLeft / 1000)}초`;

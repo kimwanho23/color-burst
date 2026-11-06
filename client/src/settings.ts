@@ -1,6 +1,7 @@
 /** 내 화면에만 적용되는 설정: 음량, 효과 줄이기, 핑 표시. 브라우저에 저장된다 */
 import { setVolume } from './audio.ts';
 import { setReduceFx } from './render.ts';
+import { UI, icon } from './icons.ts';
 
 export interface Settings {
   music: number;
@@ -51,7 +52,8 @@ export function initSettingsPanel() {
     mute.checked = settings.muted; fx.checked = settings.reduceFx; ping.checked = settings.showPing;
     $('setMusicVal').textContent = `${music.value}%`;
     $('setSfxVal').textContent = `${sfx.value}%`;
-    $('settingsBtn').textContent = settings.muted ? '설정 · 음소거' : '설정';
+    $('settingsBtn').innerHTML = `${icon(UI.settings, 16)}<span class="bt">${settings.muted ? '음소거' : '설정'}</span>`;
+    document.documentElement.classList.toggle('reduce-fx', settings.reduceFx);
   };
   onSettingsChange(sync);
 

@@ -1,6 +1,7 @@
 /** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 + 점수표 */
 import { ARCADE, PRESETS, RULES, RULE_CHOICES, matchPreset, type PresetId, type RoomRules } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
+import { UI, icon } from './icons.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
 type BoolKey = 'stealPenalty' | 'comeback' | 'boss';
@@ -35,8 +36,8 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   el.innerHTML = `
     <div class="lbl">모드${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="modes">
-      <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade}" ${dis}><b>클래식</b><span>${rules.roundSec}초 한 판 승부</span></button>
-      <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade}" ${dis}><b>아케이드</b><span>${ARCADE.rounds}라운드, 라운드마다 능력 선택</span></button>
+      <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade}" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b><span>${rules.roundSec}초 한 판 승부</span></button>
+      <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade}" ${dis}>${icon(UI.arcade, 26, 'mi')}<b>아케이드</b><span>${ARCADE.rounds}라운드, 라운드마다 능력 선택</span></button>
     </div>
     ${arcade ? `<label class="adv-row" for="rule-arcadeRoundSec"><span>라운드 시간</span>
       <select id="rule-arcadeRoundSec" data-k="arcadeRoundSec" ${dis}>
@@ -45,7 +46,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <div class="lbl">방 규칙${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="presets">
       ${(Object.entries(PRESETS) as [PresetId, (typeof PRESETS)[PresetId]][]).map(([id, p]) =>
-        `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" ${dis}><b>${p.name}</b><span>${p.desc}</span></button>`).join('')}
+        `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" ${dis}>${icon(UI[id], 20, 'pi')}<b>${p.name}</b><span>${p.desc}</span></button>`).join('')}
     </div>
     ${current ? '' : '<p class="hint">사용자 설정 규칙</p>'}
     <details class="adv">
