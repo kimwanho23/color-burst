@@ -135,6 +135,9 @@ function resetToHome(err = '') {
   renderScores();
   show('home');
 $('ver').textContent = `v${__APP_VERSION__}`;
+// 1.0.0-beta.1 → BETA, 1.0.0-rc.1 → RC
+const pre = __APP_VERSION__.split('-')[1]?.split('.')[0];
+if (pre) { $('stageBadge').textContent = pre.toUpperCase(); $('stageBadge').hidden = false; }
 }
 $('leaveBtn').onclick = () => { socket.emit('room:leave'); store('cb-room', null); resetToHome(); };
 $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
@@ -258,3 +261,6 @@ function frame() {
 requestAnimationFrame(frame);
 show('home');
 $('ver').textContent = `v${__APP_VERSION__}`;
+// 1.0.0-beta.1 → BETA, 1.0.0-rc.1 → RC
+const pre = __APP_VERSION__.split('-')[1]?.split('.')[0];
+if (pre) { $('stageBadge').textContent = pre.toUpperCase(); $('stageBadge').hidden = false; }

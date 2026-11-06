@@ -1,6 +1,6 @@
 # 컬러 버스트
 
-현재 버전: **v1.0.0** · [변경 기록](CHANGELOG.md)
+현재 버전: **v1.0.0-beta.1** (베타) · [변경 기록](CHANGELOG.md)
 
 최대 4인이 각자 컴퓨터에서 접속해, 중앙에서 터져 나오는 색상 원을 동시에 노리는 웹 클릭 게임.
 
@@ -37,12 +37,25 @@ npm start       # 3001 포트 하나로 화면과 서버를 같이 제공
 - `main`에 푸시하면 자동으로 다시 배포된다
 - 무료 플랜은 15분 동안 접속이 없으면 서버가 잠들고, 다음 접속 때 깨어나는 데 1분 정도 걸린다. 게임 중(WebSocket 통신 중)에는 잠들지 않는다
 - 서버가 잠들거나 다시 배포되면 진행 중이던 방은 사라진다
-- 상태 확인: `주소/healthz` → `{"ok":true,"version":"1.0.0",...}`
+- 상태 확인: `주소/healthz` → `{"ok":true,"version":"1.0.0-beta.1",...}`
 
-## 버전 올리는 법
+## 버전과 릴리즈
 
-1. `package.json`의 `version`을 올리고 `CHANGELOG.md`에 변경 내용 추가
-2. 커밋 후 태그: `git tag v1.1.0 && git push origin main --tags`
+| 단계 | 버전 | 의미 |
+|---|---|---|
+| 베타 (현재) | `1.0.0-beta.1`, `beta.2`… | 테스트하며 규칙·밸런스 조정. 바뀔 때마다 숫자 올림 |
+| 출시 후보 | `1.0.0-rc.1`… | 기능 고정, 버그만 수정 |
+| 정식 | `1.0.0` | 정식 출시 |
+| 이후 | `1.0.1` / `1.1.0` / `2.0.0` | 버그 수정 / 새 기능 / 큰 변경 |
+
+새 버전을 낼 때:
+
+1. 모든 `package.json`(루트, shared, server, client)의 `version`을 올리고 `npm install --package-lock-only`
+2. `CHANGELOG.md`에 변경 내용 추가
+3. 커밋 후 태그: `git tag -a v1.0.0-beta.2 -m "설명"` → `git push origin main` → `git push origin v1.0.0-beta.2`
+4. GitHub에서 그 태그로 Release 작성. 베타·rc는 **Set as a pre-release** 체크
+
+버전에 `-`가 들어 있으면(베타, rc) 게임 화면에 BETA / RC 표시가 자동으로 붙는다.
 
 ## 구조
 
