@@ -208,6 +208,54 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .pk.t1 { border-color: var(--t1); color: var(--t1); } .pk.t2 { border-color: var(--t2); color: var(--t2); }
 .pk.t3 { border-color: #ffd43b; color: #ffd43b; } .pk.curse { border-color: var(--curse); color: #ff8095; background: var(--curse-bg); }
 .rank .pk { width: 24px; height: 24px; }
+/* ---------- 능력 선택 연출 ---------- */
+.pickcard.enter { animation: rise .35s ease-out both; }
+@keyframes rise { from { opacity: 0; transform: translateY(24px); } }
+.effects li { animation: pop .4s cubic-bezier(.2, .9, .3, 1.4) both; }
+.effects li:nth-child(2) { animation-delay: .1s; } .effects li:nth-child(3) { animation-delay: .2s; } .effects li:nth-child(4) { animation-delay: .3s; }
+@keyframes pop { from { opacity: 0; transform: scale(.4); } }
+
+/* 카드 나눠 주기: 뒤집히며 순서대로 등장 */
+.acards.deal .acard { animation: deal .55s cubic-bezier(.2, .8, .25, 1.15) both; animation-delay: calc(var(--i) * 130ms); }
+.acards.deal .acard.t3 { animation: deal .7s cubic-bezier(.2, .8, .25, 1.15) both, prism 3s linear infinite; animation-delay: calc(var(--i) * 130ms + 250ms), 0s; }
+.acards.deal .acard.curse { animation: deal .55s cubic-bezier(.2, .8, .25, 1.15) both, quake .45s ease-in-out both; animation-delay: calc(var(--i) * 130ms), calc(var(--i) * 130ms + .55s); }
+@keyframes deal { from { opacity: 0; transform: translateY(70px) rotateY(100deg) scale(.75); } 60% { opacity: 1; } }
+@keyframes quake { 20%, 60% { transform: translateX(-5px) rotate(-1.5deg); } 40%, 80% { transform: translateX(5px) rotate(1.5deg); } }
+
+/* 레전드: 빛이 터지고 반짝임이 지나감 */
+.acard.t3 { overflow: hidden; }
+.acard.t3::before { content: ""; position: absolute; inset: -40%; background: radial-gradient(circle, rgba(255, 236, 160, .9), rgba(255, 212, 59, 0) 60%); opacity: 0; pointer-events: none; }
+.acards.deal .acard.t3::before { animation: burst .9s ease-out both; animation-delay: calc(var(--i) * 130ms + .55s); }
+@keyframes burst { 0% { opacity: 0; transform: scale(.3); } 25% { opacity: 1; } 100% { opacity: 0; transform: scale(1.3); } }
+.acard.t3::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .35), transparent); transform: skewX(-15deg); animation: shine 2.4s ease-in-out infinite 1.2s; pointer-events: none; }
+@keyframes shine { 0% { left: -60%; } 45%, 100% { left: 130%; } }
+
+/* 저주: 금이 간 무늬 */
+.acard.curse::after { content: ""; position: absolute; inset: 0; border-radius: 15px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 140' preserveAspectRatio='none'%3E%3Cpath d='M52 0 L46 22 L58 34 L44 52 L55 66 L40 88 L50 104 L38 140 M46 22 L30 30 M58 34 L76 40 M44 52 L24 60 M55 66 L80 74 M40 88 L22 96' fill='none' stroke='%23ff8095' stroke-width='1.4' stroke-linecap='round' opacity='.75'/%3E%3C/svg%3E") center / 100% 100% no-repeat; opacity: .55; pointer-events: none; }
+.acards.deal .acard.curse::after { animation: crack .5s ease-out both; animation-delay: calc(var(--i) * 130ms + .5s); }
+@keyframes crack { from { opacity: 0; clip-path: inset(0 0 100% 0); } to { opacity: .55; clip-path: inset(0 0 0 0); } }
+
+/* 고르기: 고른 카드는 빛나며 내 능력 쪽으로, 나머지는 떨어짐 */
+.acards.choosing .acard { pointer-events: none; }
+.acards.choosing .acard:not(.picked) { animation: drop .35s ease-in forwards; }
+.acards.choosing .acard.picked { animation: take .65s cubic-bezier(.5, -0.3, .7, 1) forwards; z-index: 2; }
+@keyframes drop { to { opacity: 0; transform: translateY(40px) scale(.9); } }
+@keyframes take { 30% { transform: scale(1.12); box-shadow: 0 0 40px var(--tc, #ffd43b); } 100% { opacity: 0; transform: translateY(180px) scale(.25); } }
+
+/* 다시 뽑기: 뒤집혀 사라짐 */
+.acards.out .acard { animation: flipout .26s ease-in forwards !important; animation-delay: calc(var(--i) * 40ms) !important; }
+@keyframes flipout { to { opacity: 0; transform: rotateY(90deg) scale(.85); } }
+
+/* 새로 얻은 능력 타일 */
+.build li.new .ic { animation: gain .6s cubic-bezier(.2, .9, .3, 1.5) both; }
+@keyframes gain { 0% { transform: scale(0); } 60% { transform: scale(1.2); box-shadow: 0 0 24px var(--yellow); } 100% { transform: scale(1); } }
+
+/* 효과 줄이기 설정, 운영체제 동작 줄이기 */
+.reduce-fx .acard, .reduce-fx .acard::before, .reduce-fx .acard::after, .reduce-fx .pickcard, .reduce-fx .effects li, .reduce-fx .build .ic { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .acard, .acard::before, .acard::after, .pickcard, .effects li, .build .ic, .who-wait { animation: none !important; }
+}
+
 @media (max-width: 560px) {
   .acards { grid-template-columns: 1fr; } .modes { grid-template-columns: 1fr; }
   .acard { flex-direction: row; flex-wrap: wrap; text-align: left; justify-content: flex-start; }

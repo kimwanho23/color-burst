@@ -71,6 +71,10 @@ export interface PickView {
   chosen: boolean;
   /** 이번 라운드 끝에 적용된 저주 결과 */
   effects: RoundEffect[];
+  /** 새 선택지라서 카드 나눠 주기 연출을 할지 */
+  deal: boolean;
+  /** 선택 화면이 처음 열리는 순간인지 */
+  opening: boolean;
 }
 
 /** 능력 선택 화면 그리기 (상태가 바뀔 때만) */
@@ -85,7 +89,7 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
   }).join('');
 
   el.innerHTML = `
-    <div class="card wide pickcard">
+    <div class="card wide pickcard${v.opening ? ' enter' : ''}">
       <div class="pick-head">
         <div class="pick-title">${roundPips(state)}<h2>능력 선택</h2></div>
         <div class="pick-timer" id="pickTimer"></div>
@@ -96,7 +100,7 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
         ? `<div class="waiting">${waiting.length
             ? waiting.map((p) => `<span class="who-wait">${icon(p.bot ? UI.bot : UI.classic, 14)}${esc(p.name)}</span>`).join('') + '<span class="hint">고르는 중…</span>'
             : '<span class="hint">곧 다음 라운드가 시작돼요</span>'}</div>`
-        : `<div class="acards">${offer.options.map((o, i) => card(o, i, me)).join('')}</div>
+        : `<div class="acards${v.deal ? ' deal' : ''}">${offer.options.map((o, i) => card(o, i, me)).join('')}</div>
            <button type="button" class="btn ghost small reroll" id="rerollBtn" ${offer.rerollLeft ? '' : 'disabled'}>
              ${icon(UI.reroll, 16)} 다시 뽑기 ${offer.rerollLeft ? `<em>${offer.rerollLeft}</em>` : ''} <kbd>R</kbd></button>`}
       <div class="lbl">내 능력</div>

@@ -75,12 +75,44 @@ let picked = false;
 let effects: RoundEffect[] = [];
 const picking = () => arcade?.phase === 'pick';
 
+// 카드 연출이 끝날 때까지 다시 그리기를 미룬다
+let animUntil = 0, renderQueued = false, dealtKey = '', renderedSig = '';
+const fxOn = () => !settings.reduceFx && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+function holdRender(ms: number) {
+  if (!fxOn()) return;
+  animUntil = performance.now() + ms;
+  setTimeout(() => { if (renderQueued) { renderQueued = false; showPick(); } }, ms + 20);
+}
+function chooseCard(i: number) {
+  if (picked || !offer?.options[i] || performance.now() < animUntil) return;
+  const cards = $('pickOv').querySelector('.acards');
+  cards?.classList.add('choosing');
+  cards?.querySelectorAll('.acard')[i]?.classList.add('picked');
+  sfx.pickChoose();
+  holdRender(700);
+  socket.emit('arcade:choose', i);
+}
+function rerollCards() {
+  if (picked || !offer?.rerollLeft || performance.now() < animUntil) return;
+  $('pickOv').querySelector('.acards')?.classList.add('out');
+  holdRender(280);
+  socket.emit('arcade:reroll');
+}
 function showPick() {
   if (!arcade || arcade.phase !== 'pick') { $('pickOv').hidden = true; return; }
+  if (performance.now() < animUntil) { renderQueued = true; return; }
   picked = !arcade.waiting.includes(myId());
-  renderPick($('pickOv'), { state: arcade, offer, me: me(), players, chosen: picked, effects }, {
-    choose: (i) => { sfx.pickChoose(); socket.emit('arcade:choose', i); },
-    reroll: () => socket.emit('arcade:reroll'),
+  const key = offer ? JSON.stringify(offer.options) : '';
+  // 내가 고르는 중에는 다른 사람의 선택 현황이 바뀌어도 다시 그리지 않는다 (카드 연출 유지)
+  const sig = JSON.stringify([key, picked, effects.length, offer?.rerollLeft, picked ? arcade.waiting : 0, me()?.picks.length]);
+  if (sig === renderedSig && !$('pickOv').hidden) return;
+  renderedSig = sig;
+  const deal = !!offer && !picked && key !== dealtKey;
+  if (deal) dealtKey = key;
+  const opening = $('pickOv').hidden;
+  renderPick($('pickOv'), { state: arcade, offer, me: me(), players, chosen: picked, effects, deal, opening }, {
+    choose: chooseCard,
+    reroll: rerollCards,
   });
   $('pickOv').hidden = false;
 }
@@ -98,8 +130,8 @@ socket.on('arcade:offer', (o) => {
 });
 document.addEventListener('keydown', (e) => {
   if (!picking() || picked || !offer || isTyping(e)) return;
-  if (['1', '2', '3'].includes(e.key)) { sfx.pickChoose(); socket.emit('arcade:choose', Number(e.key) - 1); }
-  if (e.key === 'r' || e.key === 'R') socket.emit('arcade:reroll');
+  if (['1', '2', '3'].includes(e.key)) chooseCard(Number(e.key) - 1);
+  if (e.key === 'r' || e.key === 'R') rerollCards();
 });
 const myId = () => myPlayerId;
 const me = () => players.find((p) => p.id === myId());
@@ -216,7 +248,9 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   renderScores();
   initAudio();
   if (picking()) { stopMusic(); showPick(); return; }
-  $('pickOv').hidden = true;
+  // 고른 카드 연출이 끝난 뒤에 선택 화면을 닫는다 (카운트다운 3초 동안이라 게임에는 영향 없음)
+  const wait = Math.max(0, animUntil - performance.now());
+  setTimeout(() => { if (!picking()) { $('pickOv').hidden = true; renderedSig = ''; } }, wait);
   setPaused(d.pausedBy);
 }
 socket.on('game:start', (d) => applyPlay(d, true));
