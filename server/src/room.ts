@@ -2,7 +2,7 @@ import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
   COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES,
-  awardTitles, bossMult, bossTimes, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
+  awardTitles, bossHitInfo, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
   type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -186,6 +186,7 @@ export class Room {
     this.startAt = now + RULES.countdownMs;
     this.endAt = this.startAt + this.G.roundMs;
     this.lastSpawn = this.startAt;
+    for (const p of this.players) startRound(p, this.startAt, this.G);
     this.phase = 'play';
     this.io.to(this.code).emit('game:start', this.playPayload());
     this.broadcastState();
@@ -210,6 +211,8 @@ export class Room {
     for (const p of this.players) {
       if (p.feverUntil > this.pausedAt) p.feverUntil += delta;
       if (p.markedUntil > this.pausedAt) p.markedUntil += delta;
+      if (p.afterUntil > this.pausedAt) p.afterUntil += delta;
+      if (p.blurUntil > this.pausedAt) p.blurUntil += delta;
     }
     for (const b of this.bots.values()) b.shift(delta);
     this.pausedAt = 0;
@@ -316,12 +319,14 @@ export class Room {
     const B = RULES.boss;
     const hits = this.bossHits.get(c.id) ?? new Map<string, number>();
     this.bossHits.set(c.id, hits);
-    hits.set(p.id, (hits.get(p.id) ?? 0) + 1);
+    const info = bossHitInfo(p);
+    const dmg = Math.min(info.damage, c.hp ?? 1);
+    hits.set(p.id, (hits.get(p.id) ?? 0) + dmg);
     p.stats.bossHits++;
-    c.hp = Math.max(0, (c.hp ?? 1) - 1);
+    c.hp = Math.max(0, (c.hp ?? 1) - dmg);
 
     const mult = bossMult(p, now, this.G);
-    let gained = B.hit * mult;
+    let gained = Math.round(info.hit * mult);
 
     if (c.hp > 0) {
       p.score += gained;
@@ -333,7 +338,7 @@ export class Room {
     // 막타
     this.circles.delete(c.id);
     this.bossHits.delete(c.id);
-    gained += B.kill * mult;
+    gained += Math.round(info.kill * mult);
     p.score += gained;
     p.stats.bossKills++;
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람

@@ -1,3 +1,5 @@
+import { bossDamage, comboPeriod, modsOf, type Mods, type Pick } from './arcade.ts';
+
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
  * 서버(판정)와 클라이언트(표시)가 같은 파일을 쓴다.
@@ -71,7 +73,14 @@ export interface RoomRules {
   comeback: boolean;
   /** 보스 원 등장 */
   boss: boolean;
+  /** 클래식: 한 판 / 아케이드: 5라운드 + 라운드마다 능력 선택 */
+  mode: 'classic' | 'arcade';
+  /** 아케이드 라운드 시간(초) */
+  arcadeRoundSec: number;
 }
+
+/** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
+export const MODE_KEYS = ['mode', 'arcadeRoundSec'] as const;
 
 /** 각 설정에서 고를 수 있는 값. 화면의 선택지와 서버 검사에 같이 쓴다 */
 export const RULE_CHOICES = {
@@ -83,6 +92,7 @@ export const RULE_CHOICES = {
   feverGain: [0.7, 1, 1.4],
   rainbowPct: [0, 3, 6, 10],
   markSec: [0, 2, 4, 6, 8],
+  arcadeRoundSec: [30, 45, 60, 90],
 } as const satisfies Partial<Record<keyof RoomRules, readonly number[]>>;
 
 export const DEFAULT_RULES: RoomRules = {
@@ -90,6 +100,7 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true,
+  mode: 'classic', arcadeRoundSec: 30,
 };
 
 export const PRESETS = {
@@ -112,7 +123,8 @@ export type PresetId = keyof typeof PRESETS;
 /** 현재 규칙이 어떤 프리셋과 같은지. 다르면 null(사용자 설정) */
 export function matchPreset(r: RoomRules): PresetId | null {
   for (const [id, p] of Object.entries(PRESETS)) {
-    if ((Object.keys(r) as (keyof RoomRules)[]).every((k) => r[k] === p.rules[k])) return id as PresetId;
+    const keys = (Object.keys(r) as (keyof RoomRules)[]).filter((k) => !(MODE_KEYS as readonly string[]).includes(k));
+    if (keys.every((k) => r[k] === p.rules[k])) return id as PresetId;
   }
   return null;
 }
@@ -127,6 +139,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
   for (const k of ['stealPenalty', 'comeback', 'boss'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
+  if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
   return out;
 }
 
@@ -143,11 +156,12 @@ export interface GameRules {
   rainbowChance: number;
   comeback: boolean;
   boss: boolean;
+  arcade: boolean;
 }
 
 export function toGameRules(r: RoomRules): GameRules {
   return {
-    roundMs: r.roundSec * 1000,
+    roundMs: (r.mode === 'arcade' ? r.arcadeRoundSec : r.roundSec) * 1000,
     feverMs: r.feverSec * 1000,
     feverMult: r.feverMult,
     markMs: r.markSec * 1000,
@@ -158,6 +172,7 @@ export function toGameRules(r: RoomRules): GameRules {
     rainbowChance: r.rainbowPct / 100,
     comeback: r.comeback,
     boss: r.boss,
+    arcade: r.mode === 'arcade',
   };
 }
 
@@ -208,6 +223,15 @@ export interface PlayerState {
   feverUntil: number;
   markedUntil: number;
   stats: PlayerStats;
+  /** 아케이드: 고른 능력 */
+  picks: Pick[];
+  /** 여운: 피버가 끝난 뒤 점수 ×1.5가 유지되는 시각 */
+  afterUntil: number;
+  /** 방해 전파를 맞아 내 화면의 원이 흐려지는 시각 */
+  blurUntil: number;
+  /** 이번 라운드에 남은 침착·방패 횟수 */
+  calmLeft: number;
+  shieldLeft: number;
 }
 
 export type ClaimType = 'own' | 'yellow' | 'rainbow' | 'steal' | 'feverSteal' | 'counter';
@@ -221,14 +245,49 @@ export interface ClaimResult {
   brokeComboOf: string | null;
   /** 이 클릭으로 표적이 됐는지 */
   marked: boolean;
+  /** 강탈로 빼앗은 점수 */
+  plundered: number;
+  /** 상대의 방패로 콤보 끊기가 막혔는지 */
+  shielded: boolean;
 }
 
 export function newPlayer(id: string, name: string, color: ColorIndex, bot = false): PlayerState {
-  return { id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats() };
+  return {
+    id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
+    picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
+  };
 }
 
+/** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.stats = emptyStats();
+  p.score = 0; p.stats = emptyStats(); p.picks = [];
+}
+
+/** 라운드 시작(클래식은 판 시작): 라운드 단위 상태 초기화와 능력 적용. 점수는 누적 */
+export function startRound(p: PlayerState, startAt: number, G: GameRules) {
+  const m = modsOf(p.picks);
+  p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
+  p.calmLeft = m.calm; p.shieldLeft = m.shield;
+  p.score += m.headStart;
+  if (m.preheat >= 100) startFever(p, startAt, G, m);
+  else p.fever = m.preheat;
+}
+
+/** 능력을 반영한 피버 시간·배율 */
+export const feverMsOf = (p: PlayerState, G: GameRules) => G.feverMs + modsOf(p.picks).overtime * 1000;
+export const feverMultOf = (p: PlayerState, G: GameRules) => G.feverMult + modsOf(p.picks).frenzy;
+
+function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
+  p.fever = 0;
+  p.feverUntil = now + G.feverMs + m.overtime * 1000;
+  p.afterUntil = m.afterglow ? p.feverUntil + m.afterglow * 1000 : 0;
+}
+
+/** 콤보 끊기 (보험이 있으면 일부 유지). 실제로 줄었으면 true */
+function breakCombo(p: PlayerState, m: Mods) {
+  const before = p.combo;
+  p.combo = Math.floor((p.combo * m.insurance) / 100);
+  return p.combo < before;
 }
 
 export const isFever = (p: PlayerState, now: number) => now < p.feverUntil;
@@ -297,7 +356,13 @@ export function makeBoss(id: number, now: number, playerCount: number, G: GameRu
 
 /** 보스 점수에 붙는 배율 */
 export function bossMult(p: PlayerState, now: number, G: GameRules) {
-  return isFever(p, now) ? Math.min(G.feverMult, RULES.boss.feverMultCap) : 1;
+  return isFever(p, now) ? Math.min(feverMultOf(p, G), RULES.boss.feverMultCap) : 1;
+}
+
+/** 보스를 한 번 때렸을 때: 피해, 타격 점수(배율 전), 막타 점수(배율 전) */
+export function bossHitInfo(p: PlayerState, rand = Math.random) {
+  const m = modsOf(p.picks);
+  return { damage: bossDamage(m, rand), hit: RULES.boss.hit + m.hammer, kill: RULES.boss.kill + m.hunter };
 }
 
 /** 꼴찌인지 (동점이면 모두 꼴찌가 아님) */
@@ -309,11 +374,13 @@ function isLast(p: PlayerState, players: PlayerState[]) {
 /** 피버 게이지 증감. 가득 차면 피버 시작 후 true 반환. 피버 중에는 변화 없음. */
 function addFever(p: PlayerState, amt: number, now: number, G: GameRules, players: PlayerState[]): boolean {
   if (isFever(p, now)) return false;
-  if (amt > 0) amt *= G.feverGain * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1);
+  const m = modsOf(p.picks);
+  if (amt > 0) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1);
   p.fever = Math.max(0, Math.min(100, p.fever + amt));
   if (p.fever >= 100) {
-    p.fever = 0;
-    p.feverUntil = now + G.feverMs;
+    startFever(p, now, G, m);
+    // 방해 전파: 다른 사람 화면의 원을 흐리게
+    if (m.jammer) for (const o of players) if (o !== p) o.blurUntil = Math.max(o.blurUntil, now + m.jammer);
     return true;
   }
   return false;
@@ -327,41 +394,51 @@ function addFever(p: PlayerState, amt: number, now: number, G: GameRules, player
  */
 export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: PlayerState[], now: number, G: GameRules): ClaimResult {
   const fever = isFever(claimer, now);
-  const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false };
+  const after = !fever && now < claimer.afterUntil;
+  const m = modsOf(claimer.picks);
+  const P = RULES.points;
+  const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false };
   let pts = 0;
   let steal = false;
 
   if (kind === 'rainbow') {
-    res.type = 'rainbow'; pts = RULES.points.rainbow; claimer.combo++;
+    res.type = 'rainbow'; pts = P.rainbow + m.rainbowHunt; claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.rainbow, now, G, players);
   } else if (kind === 'y' && fever) {
-    res.type = 'own'; pts = RULES.points.own; claimer.combo++;
+    res.type = 'own'; pts = P.own + m.picky + m.yellowTaste; claimer.combo++;
   } else if (kind === 'y') {
-    res.type = 'yellow'; pts = RULES.points.yellow; claimer.combo++;
+    res.type = 'yellow'; pts = Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.yellow, now, G, players);
   } else if (kind === claimer.color) {
-    res.type = 'own'; pts = RULES.points.own; claimer.combo++;
+    res.type = 'own'; pts = P.own + m.picky; claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.own, now, G, players);
   } else {
     steal = true;
     const owner = players.find((p) => p.color === kind);
     if (owner && isMarked(owner, now)) {
-      res.type = 'counter'; pts = RULES.points.counter;
+      res.type = 'counter'; pts = P.counter + m.counterPro;
     } else if (fever || !G.stealPenalty) {
-      res.type = 'feverSteal'; pts = RULES.points.stealCalm;
+      res.type = 'feverSteal'; pts = P.stealCalm;
     } else {
-      res.type = 'steal'; pts = RULES.points.stealCalm;
-      claimer.combo = 0;
+      res.type = 'steal'; pts = P.stealCalm;
+      breakCombo(claimer, m);
       addFever(claimer, RULES.fever.stealCalm, now, G, players);
-      if (G.markMs > 0) { claimer.markedUntil = now + G.markMs; res.marked = true; }
+      // 철면피: 표적 시간 감소 (99 이상이면 표적 안 됨)
+      const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
+      if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
     }
     if (owner && owner.combo > 0) {
-      owner.combo = 0;
-      res.brokeComboOf = owner.id;
+      if (owner.shieldLeft > 0) { owner.shieldLeft--; res.shielded = true; }
+      else if (breakCombo(owner, modsOf(owner.picks))) res.brokeComboOf = owner.id;
+    }
+    // 강탈: 상대 점수를 빼앗음 (배율 없음)
+    if (owner && m.plunder && res.type !== 'counter') {
+      res.plundered = Math.min(m.plunder, owner.score);
+      owner.score -= res.plundered;
     }
   }
 
-  if (!steal && claimer.combo > 0 && claimer.combo % RULES.comboBonusEvery === 0) {
+  if (!steal && claimer.combo > 0 && claimer.combo % comboPeriod(m.comboArtist) === 0) {
     res.comboBonus = true;
     pts += RULES.comboBonus;
   }
@@ -372,15 +449,18 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
   if (res.feverStarted) st.fevers++;
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준)
-  res.gained = pts * (fever ? G.feverMult : 1);
+  const mult = fever ? G.feverMult + m.frenzy : after ? 1.5 : 1;
+  res.gained = Math.round(pts * mult) + res.plundered;
   claimer.score += res.gained;
   return res;
 }
 
 /** 빈 공간 클릭 */
 export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
-  p.combo = 0;
   p.stats.misses++;
+  // 침착: 라운드당 정해진 횟수만큼 페널티 무시
+  if (p.calmLeft > 0) { p.calmLeft--; return; }
+  breakCombo(p, modsOf(p.picks));
   addFever(p, RULES.fever.miss, now, G, players);
 }
 
