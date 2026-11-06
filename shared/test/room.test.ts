@@ -112,6 +112,43 @@ test('라운드가 끝나면 "라운드 종료"를 먼저 알리고 1.5초 뒤�
   assert.equal(room.players[0].picks.length, 0);
 });
 
+test('방어형 보스: 보호막 중에 때리면 피해·점수 없음, 헛클릭도 아님', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  // 태어난 지 2.5초: 보호막 중 (3초마다 마지막 1초)
+  circles.set(60, { id: 60, kind: 'boss', boss: 'guard', angle: 0, speed: 120, r: 90, born: now - 2500, hp: 5, maxHp: 5 });
+  me.combo = 4;
+  sent.length = 0;
+  room.click(me.id, { circleId: 60, x: 800 + 300, y: 450 });
+  assert.deepEqual([circles.get(60)!.hp, me.score, me.combo, me.stats.misses], [5, 0, 4, 0]);
+  assert.ok(sent.includes('boss:hit'));
+  room.destroy();
+});
+
+test('공격형 보스: 붉을 때 때리면 −2, 다시 때리면 −4, 피해는 없음', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  // 태어난 지 3초: 붉은 상태 (4초마다 마지막 1.5초)
+  circles.set(61, { id: 61, kind: 'boss', boss: 'rage', angle: 0, speed: 100, r: 90, born: now - 3000, hp: 5, maxHp: 5 });
+  me.score = 20;
+  room.click(me.id, { circleId: 61, x: 800 + 300, y: 450 });
+  assert.equal(me.score, 18);
+  room.click(me.id, { circleId: 61, x: 800 + 300, y: 450 });
+  assert.equal(me.score, 14);
+  assert.equal(circles.get(61)!.hp, 5);
+  room.destroy();
+});
+
+test('보스 등장: 한 번에 여러 마리여도 화면에는 최대 3마리', (t) => {
+  const { room, circles } = playingRoom();
+  const r = room as unknown as { spawnBosses(now: number): void };
+  t.mock.method(Math, 'random', () => 0.97); // 3마리
+  r.spawnBosses(Date.now());
+  r.spawnBosses(Date.now());
+  assert.equal([...circles.values()].filter((c) => c.kind === 'boss').length, 3);
+  room.destroy();
+});
+
 test('빈 곳 클릭은 지금처럼 페널티', () => {
   const { room, me } = playingRoom();
   me.combo = 12;

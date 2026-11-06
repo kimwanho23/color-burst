@@ -1,4 +1,4 @@
-import { isFever, isGuarded, isMarked, isOut, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
+import { bossState, isFever, isGuarded, isMarked, isOut, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
 
 /** gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms) */
 const LEVELS = [
@@ -28,7 +28,12 @@ export class Bot {
 
     const weights = cands.map((c) => {
       // 보스는 체력이 낮을수록 막타를 노리고 몰려든다
-      if (c.kind === 'boss') return 4 + (1 - (c.hp ?? 1) / (c.maxHp ?? 1)) * 14;
+      if (c.kind === 'boss') {
+        // 보호막이나 붉은 상태의 보스는 피한다
+        const st = bossState(c, now);
+        if (st.shielded || st.enraged) return 0;
+        return 4 + (1 - (c.hp ?? 1) / (c.maxHp ?? 1)) * 14;
+      }
       if (c.kind === 'item') return 5;
       if (c.kind === 'rainbow') return 6;
       if (c.kind === me.color) return 5;

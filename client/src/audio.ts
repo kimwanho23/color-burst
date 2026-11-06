@@ -65,6 +65,8 @@ export const sfx = {
   comboBroken: () => tone(220, 0.2, 'triangle', 0.1, 0, 0.5),
   bossAppear: () => [110, 147, 196].forEach((f, i) => tone(f, 0.35, 'sawtooth', 0.08, i * 0.12)),
   bossHit: () => tone(180, 0.06, 'square', 0.08, 0, 0.6),
+  /** 방어형 보호막에 막힘: 맑은 금속음 */
+  bossBlock: () => tone(1600, 0.08, 'triangle', 0.08, 0, 0.8),
   bossKill: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.18, 'square', 0.08, i * 0.07)),
   pickOpen: () => [392, 494, 587].forEach((f, i) => tone(f, 0.12, 'triangle', 0.1, i * 0.08)),
   pickChoose: () => { tone(784, 0.08, 'square', 0.08); tone(1175, 0.14, 'square', 0.07, 0.07); },

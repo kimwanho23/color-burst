@@ -60,6 +60,23 @@ export const RULES = {
     lifeSec: 8,
     /** 보스가 터진 뒤 이 시간 동안 빈 곳 클릭 페널티 없음 */
     killGraceMs: 1000,
+    /** 보스 종류 확률(%) */
+    typeOdds: { normal: 40, guard: 20, rage: 20, runner: 20 },
+    /** 동시에 화면에 있을 수 있는 보스 수 */
+    maxAlive: 3,
+    /** 한 번에 나오는 보스 수 확률(%) [1마리, 2마리, 3마리] (보스 러시는 2~3마리) */
+    countOdds: [60, 30, 10],
+    /** 방어형: guardCycleMs마다 마지막 guardOnMs 동안 보호막 (피해·점수 0) */
+    guardCycleMs: 3000,
+    guardOnMs: 1000,
+    /** 공격형: rageCycleMs마다 마지막 rageOnMs 동안 붉어짐. 그때 때리면 라운드 안에서 때린 횟수 × ragePenaltyStep 감점 */
+    rageCycleMs: 4000,
+    rageOnMs: 1500,
+    ragePenaltyStep: 2,
+    /** 이동형: 작고 빠르며 화면 가장자리에서 튕긴다. lifeSec 뒤에 도망 */
+    runnerR: 60,
+    runnerSpeed: 380,
+    runnerHpRate: 0.6,
   },
   /** 아케이드 라운드 테마 (랜덤 이벤트) */
   themes: {
@@ -251,6 +268,8 @@ export function toGameRules(r: RoomRules): GameRules {
 }
 
 export type ColorIndex = 0 | 1 | 2 | 3;
+/** 보스 종류: 일반, 방어형(보호막), 공격형(붉어짐), 이동형(튕김) */
+export type BossType = 'normal' | 'guard' | 'rage' | 'runner';
 /** 아케이드 라운드 테마 */
 export type ThemeId = 'goldRush' | 'bossRush' | 'reverse' | 'rainbowRain' | 'itemRush' | 'allYellow';
 export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item';
@@ -268,6 +287,8 @@ export interface Circle {
   /** 보스 원만: 남은 체력 / 최대 체력 */
   hp?: number;
   maxHp?: number;
+  /** 보스 원만: 종류 (없으면 일반) */
+  boss?: BossType;
   /** 아이템 원만: 등급 (0 흔함, 1 희귀, 2 전설). 무슨 아이템인지는 잡을 때 정해진다 */
   itemTier?: 0 | 1 | 2;
   /** 시간 정지로 멈춘 구간 [시작 서버 시각, 길이 ms] */
@@ -326,6 +347,8 @@ export interface PlayerState {
   buffs: Partial<Record<BuffId, number>>;
   /** 황금 손: 점수 2배가 남은 원 수 */
   goldLeft: number;
+  /** 이번 라운드에 붉은 공격형 보스를 때린 횟수 (감점이 커진다) */
+  rageHits: number;
 }
 
 /** 시간 제한이 있는 아이템 효과 */
@@ -391,7 +414,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
-    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0,
+    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0,
   };
 }
 
@@ -412,7 +435,7 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
   p.calmLeft = m.calm; p.shieldLeft = m.shield;
   p.buffs = {}; p.goldLeft = 0;
-  p.roundStart = p.score; p.roundMaxCombo = 0;
+  p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.score += m.headStart;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
   // 표적 자처: 라운드 내내 표적
@@ -475,7 +498,17 @@ export const isMarked = (p: PlayerState, now: number) => now < p.markedUntil;
 export function circlePos(c: Circle, t: number) {
   // 역발사: 같은 방향의 화면 가장자리에서 출발해 중앙으로
   const d = c.rev ? edgeDist(c) - traveled(c, t) : traveled(c, t);
-  return { x: FIELD.w / 2 + Math.cos(c.angle) * d, y: FIELD.h / 2 + Math.sin(c.angle) * d };
+  const x = FIELD.w / 2 + Math.cos(c.angle) * d, y = FIELD.h / 2 + Math.sin(c.angle) * d;
+  // 이동형 보스: 화면 가장자리에서 튕긴다 (직선 경로를 화면 안으로 접어서 계산)
+  if (c.boss === 'runner') return { x: fold(x, c.r, FIELD.w - c.r), y: fold(y, c.r, FIELD.h - c.r) };
+  return { x, y };
+}
+
+/** v를 [lo, hi] 사이에서 벽에 튕기는 것처럼 접는다 */
+function fold(v: number, lo: number, hi: number) {
+  const L = hi - lo;
+  const u = (((v - lo) % (2 * L)) + 2 * L) % (2 * L);
+  return lo + (u <= L ? u : 2 * L - u);
 }
 
 /** 출발 후 움직인 거리 */
@@ -495,6 +528,8 @@ function edgeDist(c: Circle) {
 export function isOut(c: Circle, t: number) {
   // 역발사 원은 중앙에 닿으면 사라진다
   if (c.rev) return traveled(c, t) >= edgeDist(c);
+  // 이동형 보스는 튕기므로 화면 밖으로 안 나간다: 정해진 시간만큼 움직이면 도망
+  if (c.boss === 'runner') return traveled(c, t) >= c.speed * RULES.boss.lifeSec;
   const p = circlePos(c, t);
   return p.x < -c.r || p.x > FIELD.w + c.r || p.y < -c.r || p.y > FIELD.h + c.r;
 }
@@ -601,14 +636,55 @@ export function bossTimes(G: GameRules, theme?: ThemeId | null): number[] {
   return L >= 60_000 ? [L * 0.3, L * 0.62, last] : [last];
 }
 
-export function makeBoss(id: number, now: number, playerCount: number, G: GameRules, rand = Math.random): Circle {
+/** angle: 여러 마리가 함께 나올 때 서로 다른 방향으로 보내려고 지정 */
+export function makeBoss(id: number, now: number, playerCount: number, G: GameRules, rand = Math.random, type: BossType = 'normal', angle = rand() * Math.PI * 2): Circle {
   const B = RULES.boss;
-  const angle = rand() * Math.PI * 2;
+  if (type === 'runner') {
+    const hp = Math.ceil(B.hpPerPlayer * playerCount * B.runnerHpRate);
+    return { id, kind: 'boss', boss: type, angle, speed: B.runnerSpeed * G.speed, r: B.runnerR, born: now, hp, maxHp: hp };
+  }
   // 어느 방향으로 가도 lifeSec 만에 화면 밖으로 나가도록 속도를 맞춘다
   const c = Math.abs(Math.cos(angle)), s = Math.abs(Math.sin(angle));
   const dist = Math.min(c ? (FIELD.w / 2 + B.r) / c : Infinity, s ? (FIELD.h / 2 + B.r) / s : Infinity);
   const hp = B.hpPerPlayer * playerCount;
-  return { id, kind: 'boss', angle, speed: (dist / B.lifeSec) * G.speed, r: B.r, born: now, hp, maxHp: hp };
+  return { id, kind: 'boss', boss: type, angle, speed: (dist / B.lifeSec) * G.speed, r: B.r, born: now, hp, maxHp: hp };
+}
+
+export function rollBossType(rand = Math.random): BossType {
+  const odds = Object.entries(RULES.boss.typeOdds) as [BossType, number][];
+  let r = rand() * odds.reduce((a, [, w]) => a + w, 0);
+  for (const [type, w] of odds) { r -= w; if (r < 0) return type; }
+  return 'normal';
+}
+
+/** 이번에 나올 보스 수. alive: 이미 화면에 있는 보스 수 (합쳐서 maxAlive를 넘지 않음) */
+export function rollBossCount(alive: number, theme: ThemeId | null | undefined, rand = Math.random) {
+  const room = RULES.boss.maxAlive - alive;
+  if (room <= 0) return 0;
+  let n: number;
+  if (theme === 'bossRush') n = rand() < 0.5 ? 2 : 3;
+  else {
+    let r = rand() * 100;
+    n = 1;
+    for (let i = 0; i < RULES.boss.countOdds.length; i++) { r -= RULES.boss.countOdds[i]; if (r < 0) { n = i + 1; break; } }
+  }
+  return Math.min(n, room);
+}
+
+/** 보스의 지금 상태: 방어형 보호막, 공격형 붉어짐 (태어난 뒤 시간으로 정해져 서버·화면이 같다) */
+export function bossState(c: Circle, t: number) {
+  const B = RULES.boss;
+  const el = Math.max(0, t - c.born);
+  return {
+    shielded: c.boss === 'guard' && el % B.guardCycleMs >= B.guardCycleMs - B.guardOnMs,
+    enraged: c.boss === 'rage' && el % B.rageCycleMs >= B.rageCycleMs - B.rageOnMs,
+  };
+}
+
+/** 붉은 공격형 보스를 때렸을 때 잃는 점수 (라운드 안에서 때릴수록 커짐) */
+export function ragePenalty(p: PlayerState) {
+  p.rageHits++;
+  return RULES.boss.ragePenaltyStep * p.rageHits;
 }
 
 /** 보스 점수에 붙는 배율 */

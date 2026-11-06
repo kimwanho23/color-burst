@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
@@ -404,6 +404,20 @@ export class Room {
 
   private hitBoss(p: PlayerState, c: Circle, now: number) {
     const B = RULES.boss;
+    const st = bossState(c, now);
+    // 방어형 보호막: 피해·점수 없음 (헛클릭도 아님)
+    if (st.shielded) {
+      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: 0, jackpot: 1, blocked: true });
+      return;
+    }
+    // 붉은 공격형: 피해 없이 점수를 잃는다 (라운드 안에서 때릴수록 커짐)
+    if (st.enraged) {
+      const lose = Math.min(p.score, ragePenalty(p));
+      p.score -= lose;
+      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: -lose, jackpot: 1, enraged: true });
+      this.emitPlayers();
+      return;
+    }
     const hits = this.bossHits.get(c.id) ?? new Map<string, number>();
     this.bossHits.set(c.id, hits);
     const info = bossHitInfo(p);
@@ -626,9 +640,7 @@ export class Room {
     this.spawnWaves(now, kinds);
     while (now >= this.freezeUntil && this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
       this.bossQueue.shift();
-      const b = makeBoss(this.nextCircleId++, now, this.players.length, this.G);
-      this.circles.set(b.id, b);
-      this.io.to(this.code).emit('circle:spawn', b);
+      this.spawnBosses(now);
     }
     for (const [id, c] of this.circles) {
       if (!isOut(c, now - LAG_WINDOW_MS)) continue;
@@ -682,6 +694,18 @@ export class Room {
     for (const c of due) {
       this.circles.set(c.id, c);
       this.io.to(this.code).emit('circle:spawn', c);
+    }
+  }
+
+  /** 보스 등장: 1~3마리(화면에 최대 3마리), 종류는 마리마다 따로, 서로 다른 방향으로 */
+  private spawnBosses(now: number) {
+    const alive = [...this.circles.values()].filter((c) => c.kind === 'boss').length;
+    const n = rollBossCount(alive, this.theme);
+    const base = Math.random() * Math.PI * 2;
+    for (let i = 0; i < n; i++) {
+      const b = makeBoss(this.nextCircleId++, now, this.players.length, this.G, Math.random, rollBossType(), base + (Math.PI * 2 * i) / n);
+      this.circles.set(b.id, b);
+      this.io.to(this.code).emit('circle:spawn', b);
     }
   }
 

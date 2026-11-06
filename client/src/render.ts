@@ -2,7 +2,16 @@
  * Canvas 그리기. 필드 좌표(1600x900)를 화면 크기에 맞춰 확대해서 그린다.
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
-import { COLORS, FIELD, RULES, YELLOW, circlePos, isGuarded, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
+import { COLORS, FIELD, RULES, YELLOW, bossState, circlePos, isGuarded, type BossType, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
+
+/** 보스 종류별 몸통 색 [밝은 곳, 가운데, 가장자리] */
+const BOSS_BODY: Record<BossType, [string, string, string]> = {
+  normal: ['#fff7cf', '#ffc23a', '#c47a00'],
+  guard: ['#e8f4ff', '#6fa8dc', '#2b5c8a'],
+  rage: ['#fff0d6', '#ff9f43', '#b35400'],
+  runner: ['#d6fff6', '#2ec4b6', '#0b6e66'],
+};
+const RAGE_BODY: [string, string, string] = ['#ffd0d0', '#ff4d4d', '#8a0000'];
 
 type BasicKind = Exclude<CircleKind, 'boss' | 'item'>;
 
@@ -241,23 +250,21 @@ export class Renderer {
     const r = c.r * (poked < 120 ? 0.96 : 1);
     const frac = (c.hp ?? 0) / (c.maxHp ?? 1);
     const low = frac <= 0.2;
+    const type = c.boss ?? 'normal';
+    const st = bossState(c, t);
 
     ctx.save();
     ctx.translate(x, y);
-    // 몸통
+    // 몸통 (붉은 공격형은 빨갛게)
+    const [c0, c1, c2] = st.enraged ? RAGE_BODY : BOSS_BODY[type];
     const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
-    g.addColorStop(0, '#fff7cf'); g.addColorStop(0.55, '#ffc23a'); g.addColorStop(1, '#c47a00');
+    g.addColorStop(0, c0); g.addColorStop(0.55, c1); g.addColorStop(1, c2);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.stroke();
-    // 왕관 무늬
-    ctx.fillStyle = 'rgba(80,45,0,.55)';
-    ctx.beginPath();
-    const w = r * 0.55, h = r * 0.32, top = -r * 0.62;
-    ctx.moveTo(-w, top + h); ctx.lineTo(-w, top); ctx.lineTo(-w / 2, top + h * 0.55); ctx.lineTo(0, top - h * 0.1);
-    ctx.lineTo(w / 2, top + h * 0.55); ctx.lineTo(w, top); ctx.lineTo(w, top + h); ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = st.enraged ? '#ff4d4d' : '#fff'; ctx.stroke();
+    this.bossEmblem(type, r, st.enraged);
     // 체력 숫자
-    ctx.fillStyle = '#3a2200'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(30,20,10,.85)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `${Math.round(r * 0.55)}px 'Black Han Sans', sans-serif`;
     ctx.fillText(String(c.hp ?? 0), 0, r * 0.12);
     // 체력 링
@@ -268,7 +275,43 @@ export class Renderer {
     ctx.globalAlpha = pulse;
     ctx.strokeStyle = low ? '#ff5d73' : '#fff';
     ctx.beginPath(); ctx.arc(0, 0, r + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+    ctx.globalAlpha = 1;
+    // 방어형 보호막: 밝은 하늘색 육각 테두리 (이때는 피해가 안 들어감)
+    if (st.shielded) {
+      ctx.lineWidth = 6; ctx.strokeStyle = `rgba(127, 211, 255, ${0.6 + 0.4 * Math.abs(Math.sin(frameNow / 120))})`;
+      ctx.beginPath();
+      for (let i = 0; i <= 6; i++) { const a = (Math.PI / 3) * i + frameNow / 900; ctx.lineTo(Math.cos(a) * (r + 26), Math.sin(a) * (r + 26)); }
+      ctx.stroke();
+    }
     ctx.restore();
+  }
+
+  /** 보스 종류 무늬: 일반 왕관, 방어형 방패, 공격형 성난 눈, 이동형 화살표 */
+  private bossEmblem(type: BossType, r: number, enraged: boolean) {
+    const ctx = this.ctx;
+    ctx.fillStyle = 'rgba(30,20,10,.5)'; ctx.strokeStyle = 'rgba(30,20,10,.55)';
+    ctx.beginPath();
+    const top = -r * 0.62;
+    if (type === 'normal') {
+      const w = r * 0.55, h = r * 0.32;
+      ctx.moveTo(-w, top + h); ctx.lineTo(-w, top); ctx.lineTo(-w / 2, top + h * 0.55); ctx.lineTo(0, top - h * 0.1);
+      ctx.lineTo(w / 2, top + h * 0.55); ctx.lineTo(w, top); ctx.lineTo(w, top + h); ctx.closePath(); ctx.fill();
+    } else if (type === 'guard') {
+      const w = r * 0.32, h = r * 0.42;
+      ctx.moveTo(-w, top); ctx.lineTo(w, top); ctx.lineTo(w, top + h * 0.5); ctx.quadraticCurveTo(w, top + h, 0, top + h * 1.15);
+      ctx.quadraticCurveTo(-w, top + h, -w, top + h * 0.5); ctx.closePath(); ctx.fill();
+    } else if (type === 'rage') {
+      // 성난 눈썹 두 개 (붉으면 더 진하게)
+      ctx.lineWidth = r * 0.1; ctx.lineCap = 'round';
+      if (enraged) ctx.strokeStyle = 'rgba(60,0,0,.85)';
+      ctx.moveTo(-r * 0.45, top); ctx.lineTo(-r * 0.12, top + r * 0.2);
+      ctx.moveTo(r * 0.45, top); ctx.lineTo(r * 0.12, top + r * 0.2); ctx.stroke();
+    } else {
+      // 겹화살표
+      ctx.lineWidth = r * 0.1; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const dx of [-r * 0.18, r * 0.12]) { ctx.moveTo(dx - r * 0.12, top - r * 0.05); ctx.lineTo(dx + r * 0.08, top + r * 0.12); ctx.lineTo(dx - r * 0.12, top + r * 0.29); }
+      ctx.stroke();
+    }
   }
 
   /** 아이템 원: 등급색 테두리 + 천천히 흔들리는 ? (전설은 프리즘이 돈다) */

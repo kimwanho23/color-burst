@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, holdCircles, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
+  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, bossState, holdCircles, assistTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, magnetOf, reachOf,
   type Zone, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
@@ -323,17 +323,34 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && playing && room?.solo && !pausedView) socket.emit('game:pause');
 });
+const BOSS_NAME = { normal: '보스', guard: '방어형 보스', rage: '공격형 보스', runner: '이동형 보스' } as const;
+/** 같은 틱에 여러 마리가 나오면 알림을 한 번만 */
+let bossAnnouncedAt = 0;
 socket.on('circle:spawn', (c) => {
   circles.set(c.id, c);
-  if (c.kind === 'boss') { sfx.bossAppear(); renderer.text(800, 300, '보스 등장!', '#ffc23a', 1.8); }
+  if (c.kind !== 'boss') return;
+  const now = performance.now();
+  if (now - bossAnnouncedAt < 300) return;
+  bossAnnouncedAt = now;
+  sfx.bossAppear();
+  const n = [...circles.values()].filter((x) => x.kind === 'boss' && serverNow() - x.born < 300).length;
+  renderer.text(800, 300, n > 1 ? `보스 ${n}마리 등장!` : `${BOSS_NAME[c.boss ?? 'normal']} 등장!`, '#ffc23a', 1.8);
 });
 const nameOf = (id: string | null) => players.find((p) => p.id === id);
 const GOLD = '#ffd166';
 /** 잭팟 숫자는 배율이 클수록 크게 */
 const jackpotSize = (mult: number, base = 1) => base * (1 + (mult - 1) * 0.5);
-socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot }) => {
+socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged }) => {
   const c = circles.get(circleId);
   if (c) c.hp = hp;
+  if (by === myId() && c && (blocked || enraged)) {
+    const p = circlePos(c, serverNow());
+    // 방어형 보호막에 막힘 / 붉은 공격형을 때려 감점
+    if (blocked) { sfx.bossBlock(); renderer.text(p.x + 60, p.y - 70, '막힘!', '#7fd3ff', 0.9); }
+    else { sfx.comboBroken(); renderer.text(p.x + 60, p.y - 70, `${gained}`, '#ff5d73', 1.1); }
+    return;
+  }
+  if (blocked || enraged) return;
   renderer.bossPoke(circleId);
   if (by === myId() && c) {
     const p = circlePos(c, serverNow());
@@ -446,7 +463,9 @@ $('cv').addEventListener('pointerdown', (e) => {
   const hit = list.find((c) => c.kind !== 'boss' && !pending.has(c.id) && isHit(c, now, x, y))
     ?? list.find((c) => c.kind === 'boss' && isHit(c, now, x, y));
   if (hit?.kind === 'boss') {
-    renderer.bossPoke(hit.id); sfx.bossHit();
+    // 보호막·붉은 상태면 서버 응답(막힘·감점)으로만 연출한다
+    const st = bossState(hit, now);
+    if (!st.shielded && !st.enraged) { renderer.bossPoke(hit.id); sfx.bossHit(); }
     socket.emit('game:click', { circleId: hit.id, x, y });
   } else if (hit) {
     pending.add(hit.id);
