@@ -4,7 +4,7 @@ import {
   ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
-  RANDOM_EVENT, applyEvent, payTax, rollEvent, type ThemeId,
+  RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type ThemeId,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
@@ -15,7 +15,7 @@ type IO = Server<ClientToServer, ServerToClient>;
 
 const TICK_MS = 50;
 /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 */
-const LAG_WINDOW_MS = 250;
+const LAG_WINDOW_MS = RULES.lagWindowMs;
 /** 대기실에서 연결이 끊긴 사람의 자리를 비워 두는 시간(새로고침 대비) */
 const LOBBY_GRACE_MS = 15_000;
 /** 접속한 사람이 아무도 없을 때 방을 지우기까지 기다리는 시간 */
@@ -731,8 +731,7 @@ export class Room {
   }
 
   private hitWithLag(c: Circle, now: number, x: number, y: number, pad: number = RULES.hitPad) {
-    for (let t = now; t >= now - LAG_WINDOW_MS; t -= 25) if (isHit(c, t, x, y, pad)) return true;
-    return false;
+    return hitWithin(c, now, x, y, pad, LAG_WINDOW_MS);
   }
 
   private end() {

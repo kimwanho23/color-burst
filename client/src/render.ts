@@ -44,6 +44,8 @@ export interface DrawState {
   zones?: { x: number; y: number; r: number; until: number; color: ColorIndex }[];
   /** 시간 정지 중 */
   frozen?: boolean;
+  /** 넓은 손: 커서 둘레 범위 표시 */
+  reachRing?: { x: number; y: number; r: number } | null;
 }
 
 export class Renderer {
@@ -171,6 +173,10 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
 
     for (const z of s.zones ?? []) this.drawZone(z, s.now);
+    if (s.reachRing) {
+      ctx.strokeStyle = 'rgba(127, 211, 255, .55)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.reachRing.x, s.reachRing.y, s.reachRing.r, 0, Math.PI * 2); ctx.stroke();
+    }
 
     // 방해 전파: 원을 흐리고 옅게 / 시간 정지: 채도를 낮춘다
     const filters = [s.blurred ? 'blur(7px)' : '', s.frozen ? 'saturate(0.25)' : ''].filter(Boolean);

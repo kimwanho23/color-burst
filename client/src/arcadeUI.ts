@@ -37,6 +37,15 @@ export function buildSummary(picks: readonly Pick[], newest?: Pick) {
   }).join('')}</ul>`;
 }
 
+/** 라운드 끝에 적용된 저주·세금 결과 목록 (li들) */
+export function effectItems(effects: readonly RoundEffect[], players: readonly PlayerState[], meId: string | undefined) {
+  return effects.map((e) => {
+    const who = players.find((p) => p.id === e.playerId);
+    const [ic, name] = e.id === 'tax' ? [icon(UI.tax, 15), '세금 수령'] : [abilityIcon(e.id, 15), ABILITY[e.id].name];
+    return `<li class="${e.delta >= 0 ? 'plus' : 'minus'}">${ic}<span>${esc(who?.id === meId ? '나' : who?.name ?? '')} · ${name}</span><b>${e.delta >= 0 ? '+' : ''}${e.delta}</b></li>`;
+  }).join('');
+}
+
 /** 라운드 진행 표시 (점 5개) */
 function roundPips(state: ArcadeState) {
   return `<span class="pips" aria-label="라운드 ${state.round} / ${state.rounds}">${Array.from({ length: state.rounds }, (_, i) =>
@@ -83,11 +92,7 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
   const waiting = state.waiting
     .map((id) => v.players.find((p) => p.id === id))
     .filter((p): p is PlayerState => !!p && p.id !== me?.id);
-  const effects = v.effects.map((e) => {
-    const who = v.players.find((p) => p.id === e.playerId);
-    const [ic, name] = e.id === 'tax' ? [icon(UI.tax, 15), '세금 수령'] : [abilityIcon(e.id, 15), ABILITY[e.id].name];
-    return `<li class="${e.delta >= 0 ? 'plus' : 'minus'}">${ic}<span>${esc(who?.id === me?.id ? '나' : who?.name ?? '')} · ${name}</span><b>${e.delta >= 0 ? '+' : ''}${e.delta}</b></li>`;
-  }).join('');
+  const effects = effectItems(v.effects, v.players, me?.id);
 
   el.innerHTML = `
     <div class="card wide pickcard${v.opening ? ' enter' : ''}">

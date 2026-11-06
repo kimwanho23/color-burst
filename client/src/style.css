@@ -319,3 +319,4 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .eresult li { display: flex; gap: 6px; font-size: 14px; } .eresult li.plus b { color: var(--gain); } .eresult li.minus b { color: var(--red); }
 @media (max-width: 560px) { .acards.four { grid-template-columns: 1fr; } .ewheel { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .eventcard, .eventov, .eventov.done .eresult { animation: none; } }
+.settle { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }

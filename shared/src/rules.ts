@@ -31,6 +31,8 @@ export const RULES = {
   comebackGain: 1.25,
   /** 클릭 판정 여유(필드 단위) */
   hitPad: 12,
+  /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 (서버 판정과 화면 예측 공통) */
+  lagWindowMs: 250,
   /** 매크로 방지: 1인 초당 최대 클릭 */
   maxClicksPerSec: 15,
   boss: {
@@ -493,25 +495,31 @@ export function isHit(c: Circle, t: number, x: number, y: number, pad: number = 
   return (p.x - x) ** 2 + (p.y - y) ** 2 <= rr * rr;
 }
 
+/** 지금부터 lagMs 전까지 25ms 간격으로 살펴 한 번이라도 맞았는지 (지연 보정) */
+export function hitWithin(c: Circle, now: number, x: number, y: number, pad: number, lagMs: number) {
+  for (let t = now; t >= now - lagMs; t -= 25) if (isHit(c, t, x, y, pad)) return true;
+  return false;
+}
+
 /** 내 원: 내 색, 노란색, 무지개. 넓은 손·자석·장판은 내 원만 잡는다 */
 export function isMine(kind: CircleKind, color: ColorIndex) {
   return typeof kind === 'number' ? kind === color : kind === 'y' || kind === 'rainbow';
 }
 
 /**
- * 직접 맞은 원이 없을 때(또는 그 밖에) 넓은 손·자석으로 같이 잡히는 원.
+ * 직접 맞은 원이 없을 때(또는 그 밖에) 넓은 손·자석으로 같이 잡히는 원. lagMs: 지연 보정 (서버와 같게 하려면 RULES.lagWindowMs)
  * range: 클릭 둘레 reach 안의 내 원 전부 / magnet: range가 비었을 때 magnet 거리 안에서 가장 가까운 내 원
  */
 export function assistTargets(
   circles: Iterable<Circle>, color: ColorIndex, x: number, y: number, t: number,
-  reach: number, magnet: number, skip?: ReadonlySet<number>,
+  reach: number, magnet: number, skip?: ReadonlySet<number>, lagMs = 0,
 ): { range: Circle[]; magnet: Circle | null } {
   const mine = [...circles].filter((c) => isMine(c.kind, color) && !skip?.has(c.id));
-  const range = reach > 0 ? mine.filter((c) => isHit(c, t, x, y, RULES.hitPad + reach)) : [];
+  const range = reach > 0 ? mine.filter((c) => hitWithin(c, t, x, y, RULES.hitPad + reach, lagMs)) : [];
   if (range.length || magnet <= 0) return { range, magnet: null };
   let best: Circle | null = null, bd = Infinity;
   for (const c of mine) {
-    if (!isHit(c, t, x, y, RULES.hitPad + magnet)) continue;
+    if (!hitWithin(c, t, x, y, RULES.hitPad + magnet, lagMs)) continue;
     const p = circlePos(c, t);
     const d = Math.hypot(p.x - x, p.y - y) - c.r;
     if (d < bd) { bd = d; best = c; }

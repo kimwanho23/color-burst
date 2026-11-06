@@ -395,7 +395,7 @@ socket.on('game:over', (d) => {
   $('stage').classList.remove('feverOn');
   const pos = ranking.findIndex((p) => p.id === myId()) + 1;
   $('resTitle').textContent = pos === 1 ? '1등!' : `${pos}등`;
-  const r = renderResult(d, myId());
+  const r = renderResult(d, myId(), effects);
   $('rank').innerHTML = r.rank;
   $('titleList').innerHTML = r.titles;
   $('graphBox').innerHTML = r.graph;
@@ -408,6 +408,10 @@ socket.on('game:over', (d) => {
   show('result');
 });
 
+// 넓은 손이 걸려 있으면 커서 둘레에 범위를 얇게 보여 준다
+let cursor: { x: number; y: number } | null = null;
+$('cv').addEventListener('pointermove', (e) => { cursor = renderer.toField(e.clientX, e.clientY); });
+$('cv').addEventListener('pointerleave', () => { cursor = null; });
 $('cv').addEventListener('pointerdown', (e) => {
   if (!playing || pausedView || picking()) return;
   ensureMusic();
@@ -430,7 +434,7 @@ $('cv').addEventListener('pointerdown', (e) => {
     socket.emit('game:click', { circleId: hit.id, x, y });
   } else {
     // 넓은 손·자석으로 잡힐 원이 있으면 빗나간 표시를 하지 않는다 (서버가 잡아서 알려 준다)
-    const assist = m ? assistTargets(circles.values(), m.color, x, y, now, reach, magnetOf(m, now), pending) : null;
+    const assist = m ? assistTargets(circles.values(), m.color, x, y, now, reach, magnetOf(m, now), pending, RULES.lagWindowMs) : null;
     const saved = !!assist && (assist.range.length > 0 || !!assist.magnet);
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
     if (!saved) {
@@ -525,6 +529,7 @@ function frame() {
     blurred: !!m && now < m.blurUntil,
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
+    reachRing: cursor && m && playing && !picking() && reachOf(m, now) > 0 ? { ...cursor, r: reachOf(m, now) + RULES.hitPad } : null,
   });
   requestAnimationFrame(frame);
 }
