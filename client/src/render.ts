@@ -4,6 +4,8 @@
  */
 import { COLORS, FIELD, YELLOW, circlePos, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
 
+type BasicKind = Exclude<CircleKind, 'boss'>;
+
 type Fx =
   | { type: 'ring'; x: number; y: number; col: string; t: number; life: number }
   | { type: 'spark'; x: number; y: number; vx: number; vy: number; col: string; t: number; life: number }
@@ -29,6 +31,8 @@ export class Renderer {
   private fx: Fx[] = [];
   private shake = 0;
   private last = performance.now();
+  /** 보스 원 id → 마지막으로 맞은 시각 (흔들림 연출) */
+  private bossPoked = new Map<number, number>();
 
   constructor(private cv: HTMLCanvasElement, stage: HTMLElement) {
     this.ctx = cv.getContext('2d')!;
@@ -61,6 +65,8 @@ export class Renderer {
       this.fx.push({ type: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, col, t: 0, life: 0.4 + Math.random() * 0.2 });
     }
   }
+  bossPoke(id: number) { this.bossPoked.set(id, performance.now()); }
+
   text(x: number, y: number, txt: string, col: string, size = 1) { this.fx.push({ type: 'text', x, y, txt, col, size, t: 0, life: 0.8 }); }
   miss(x: number, y: number) {
     this.fx.push({ type: 'miss', x, y, t: 0, life: 0.35 });
@@ -88,8 +94,11 @@ export class Renderer {
     ctx.strokeStyle = s.myFever ? 'rgba(255,159,28,.8)' : 'rgba(255,255,255,.18)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
 
-    for (const c of s.circles) {
-      if (s.hidden.has(c.id)) continue;
+    // 보스를 먼저 그려서 작은 원이 위에 보이게
+    const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
+    for (const c of list) if (c.kind === 'boss') this.drawBoss(c, s.now, now);
+    for (const c of list) {
+      if (c.kind === 'boss') continue;
       const p = circlePos(c, s.now);
       this.drawCircle(c.kind, p.x, p.y, c.r, (s.now - c.born) / 700 + c.id, s);
     }
@@ -110,7 +119,45 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawCircle(kind: CircleKind, x: number, y: number, r: number, rot: number, s: DrawState) {
+  private drawBoss(c: Circle, t: number, frameNow: number) {
+    const ctx = this.ctx;
+    let { x, y } = circlePos(c, t);
+    const poked = frameNow - (this.bossPoked.get(c.id) ?? -1e9);
+    if (poked < 120 && !reduceMotion) { x += (Math.random() - 0.5) * 10; y += (Math.random() - 0.5) * 10; }
+    const r = c.r * (poked < 120 ? 0.96 : 1);
+    const frac = (c.hp ?? 0) / (c.maxHp ?? 1);
+    const low = frac <= 0.2;
+
+    ctx.save();
+    ctx.translate(x, y);
+    // 몸통
+    const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
+    g.addColorStop(0, '#fff7cf'); g.addColorStop(0.55, '#ffc23a'); g.addColorStop(1, '#c47a00');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.stroke();
+    // 왕관 무늬
+    ctx.fillStyle = 'rgba(80,45,0,.55)';
+    ctx.beginPath();
+    const w = r * 0.55, h = r * 0.32, top = -r * 0.62;
+    ctx.moveTo(-w, top + h); ctx.lineTo(-w, top); ctx.lineTo(-w / 2, top + h * 0.55); ctx.lineTo(0, top - h * 0.1);
+    ctx.lineTo(w / 2, top + h * 0.55); ctx.lineTo(w, top); ctx.lineTo(w, top + h); ctx.closePath(); ctx.fill();
+    // 체력 숫자
+    ctx.fillStyle = '#3a2200'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(r * 0.55)}px 'Black Han Sans', sans-serif`;
+    ctx.fillText(String(c.hp ?? 0), 0, r * 0.12);
+    // 체력 링
+    ctx.lineWidth = 10; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,.18)';
+    ctx.beginPath(); ctx.arc(0, 0, r + 14, 0, Math.PI * 2); ctx.stroke();
+    const pulse = low ? 0.55 + 0.45 * Math.abs(Math.sin(frameNow / 90)) : 1;
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = low ? '#ff5d73' : '#fff';
+    ctx.beginPath(); ctx.arc(0, 0, r + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawCircle(kind: BasicKind, x: number, y: number, r: number, rot: number, s: DrawState) {
     const ctx = this.ctx;
     ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
     if (kind === 'rainbow') {
@@ -141,8 +188,9 @@ export class Renderer {
 }
 
 /** 점수판, 버튼 등에 쓰는 작은 SVG 아이콘 */
-export function shapeSVG(color: ColorIndex | 'y' | 'rainbow', size = 22) {
+export function shapeSVG(color: CircleKind, size = 22) {
   const s = size, h = s / 2;
+  if (color === 'boss') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h - 1}" fill="#ffc23a" stroke="#fff" stroke-width="1.5"/><path d="M${s * .28} ${s * .62}V${s * .36}L${s * .39} ${s * .5}L${h} ${s * .3}L${s * .61} ${s * .5}L${s * .72} ${s * .36}V${s * .62}Z" fill="#502d00" fill-opacity=".6"/></svg>`;
   if (color === 'rainbow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><defs><linearGradient id="rg${s}" x1="0" x2="1"><stop offset="0" stop-color="#ff5d73"/><stop offset=".5" stop-color="#ffd43b"/><stop offset="1" stop-color="#4dabf7"/></linearGradient></defs><circle cx="${h}" cy="${h}" r="${h - 1}" fill="url(#rg${s})"/></svg>`;
   const fill = color === 'y' ? YELLOW : COLORS[color].hex;
   const shape = color === 'y' ? 'dot' : COLORS[color].shape;

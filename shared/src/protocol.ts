@@ -26,6 +26,11 @@ export interface ServerToClient {
   'circle:spawn': (c: Circle) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;
+  /** 보스를 때림 (hp: 남은 체력) */
+  'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number }) => void;
+  /** 보스 처치: by가 막타, mvp가 최다 타격 */
+  'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number }) => void;
+  'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
   'game:over': (d: { ranking: PlayerState[] }) => void;
 }

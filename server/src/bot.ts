@@ -24,6 +24,8 @@ export class Bot {
     if (!cands.length) return null;
 
     const weights = cands.map((c) => {
+      // 보스는 체력이 낮을수록 막타를 노리고 몰려든다
+      if (c.kind === 'boss') return 4 + (1 - (c.hp ?? 1) / (c.maxHp ?? 1)) * 14;
       if (c.kind === 'rainbow') return 6;
       if (c.kind === me.color) return 5;
       if (c.kind === 'y') return fever ? 5 : 3;

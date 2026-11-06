@@ -31,6 +31,21 @@ export const RULES = {
   hitPad: 12,
   /** 매크로 방지: 1인 초당 최대 클릭 */
   maxClicksPerSec: 15,
+  boss: {
+    /** 때릴 때마다 */
+    hit: 1,
+    /** 막타 */
+    kill: 20,
+    /** 가장 많이 때린 사람 */
+    mvp: 5,
+    /** 보스 점수에 붙는 피버 배율 상한 */
+    feverMultCap: 2,
+    /** 체력 = 참가 인원 × 이 값 */
+    hpPerPlayer: 6,
+    r: 90,
+    /** 화면 밖으로 나가기까지 걸리는 시간(초, 속도 ×1 기준) */
+    lifeSec: 8,
+  },
 } as const;
 
 // ---------- 방 규칙 (방장이 대기실에서 설정) ----------
@@ -147,7 +162,7 @@ export function toGameRules(r: RoomRules): GameRules {
 }
 
 export type ColorIndex = 0 | 1 | 2 | 3;
-export type CircleKind = ColorIndex | 'y' | 'rainbow';
+export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss';
 
 export interface Circle {
   id: number;
@@ -159,6 +174,9 @@ export interface Circle {
   r: number;
   /** 서버 시각(ms) */
   born: number;
+  /** 보스 원만: 남은 체력 / 최대 체력 */
+  hp?: number;
+  maxHp?: number;
 }
 
 export interface PlayerState {
@@ -241,6 +259,28 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
     r: 40 * (0.85 + rand() * 0.3),
     born: now,
   };
+}
+
+/** 보스가 나오는 시점(판 시작 후 ms). 마지막 10초에 한 번은 꼭 나온다 */
+export function bossTimes(G: GameRules): number[] {
+  if (!G.boss) return [];
+  const L = G.roundMs, last = L - 9_000;
+  return L >= 60_000 ? [L * 0.3, L * 0.62, last] : [last];
+}
+
+export function makeBoss(id: number, now: number, playerCount: number, G: GameRules, rand = Math.random): Circle {
+  const B = RULES.boss;
+  const angle = rand() * Math.PI * 2;
+  // 어느 방향으로 가도 lifeSec 만에 화면 밖으로 나가도록 속도를 맞춘다
+  const c = Math.abs(Math.cos(angle)), s = Math.abs(Math.sin(angle));
+  const dist = Math.min(c ? (FIELD.w / 2 + B.r) / c : Infinity, s ? (FIELD.h / 2 + B.r) / s : Infinity);
+  const hp = B.hpPerPlayer * playerCount;
+  return { id, kind: 'boss', angle, speed: (dist / B.lifeSec) * G.speed, r: B.r, born: now, hp, maxHp: hp };
+}
+
+/** 보스 점수에 붙는 배율 */
+export function bossMult(p: PlayerState, now: number, G: GameRules) {
+  return isFever(p, now) ? Math.min(G.feverMult, RULES.boss.feverMultCap) : 1;
 }
 
 /** 꼴찌인지 (동점이면 모두 꼴찌가 아님) */

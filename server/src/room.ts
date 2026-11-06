@@ -2,7 +2,7 @@ import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
   COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES,
-  circlePos, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
+  bossMult, bossTimes, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
   type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -35,6 +35,12 @@ export class Room {
   private lastSpawn = 0;
   private loop: NodeJS.Timeout | null = null;
   private bots = new Map<string, Bot>();
+  /** 보스 원 id → (플레이어 id → 때린 횟수) */
+  private bossHits = new Map<number, Map<string, number>>();
+  /** 아직 안 나온 보스 등장 시점(판 시작 후 ms) */
+  private bossQueue: number[] = [];
+  /** 클릭 속도 제한용: 플레이어 id → 최근 1초 클릭 시각 */
+  private clickLog = new Map<string, number[]>();
   /** 비밀 키 → 플레이어 id */
   private keyToId = new Map<string, string>();
   /** 플레이어 id → 현재 소켓 id */
@@ -156,6 +162,9 @@ export class Room {
     this.players.forEach(resetForRound);
     this.G = toGameRules(this.rules);
     this.circles.clear();
+    this.bossHits.clear();
+    this.clickLog.clear();
+    this.bossQueue = bossTimes(this.G);
     const now = Date.now();
     this.startAt = now + RULES.countdownMs;
     this.endAt = this.startAt + this.G.roundMs;
@@ -172,6 +181,10 @@ export class Room {
     if (this.phase !== 'play' || now < this.startAt) return;
     const p = this.players.find((x) => x.id === id);
     if (!p) return;
+    if (!this.allowClick(id, now)) {
+      if (d.circleId !== null) this.rejectTo(id, d.circleId);
+      return;
+    }
 
     if (d.circleId === null) {
       resolveMiss(p, now, this.G, this.players);
@@ -181,11 +194,11 @@ export class Room {
     const c = this.circles.get(d.circleId);
     // 이미 누가 가져갔거나, 위치가 맞지 않으면 거절
     if (!c || !this.hitWithLag(c, now, d.x, d.y)) {
-      const sid = this.socketOf.get(id);
-      if (sid) this.io.to(sid).emit('click:rejected', { circleId: d.circleId });
+      this.rejectTo(id, d.circleId);
       return;
     }
-    this.claim(p, c, now);
+    if (c.kind === 'boss') this.hitBoss(p, c, now);
+    else this.claim(p, c, now);
   }
 
   snapshot(): RoomSnapshot {
@@ -238,6 +251,52 @@ export class Room {
     this.emptyTimer = setTimeout(() => { this.destroy(); this.onEmpty(); }, EMPTY_ROOM_MS);
   }
 
+  private rejectTo(id: string, circleId: number) {
+    const sid = this.socketOf.get(id);
+    if (sid) this.io.to(sid).emit('click:rejected', { circleId });
+  }
+
+  /** 매크로 방지: 최근 1초 클릭 수 제한 */
+  private allowClick(id: string, now: number) {
+    const log = (this.clickLog.get(id) ?? []).filter((t) => now - t < 1000);
+    if (log.length >= RULES.maxClicksPerSec) { this.clickLog.set(id, log); return false; }
+    log.push(now);
+    this.clickLog.set(id, log);
+    return true;
+  }
+
+  private hitBoss(p: PlayerState, c: Circle, now: number) {
+    const B = RULES.boss;
+    const hits = this.bossHits.get(c.id) ?? new Map<string, number>();
+    this.bossHits.set(c.id, hits);
+    hits.set(p.id, (hits.get(p.id) ?? 0) + 1);
+    c.hp = Math.max(0, (c.hp ?? 1) - 1);
+
+    const mult = bossMult(p, now, this.G);
+    let gained = B.hit * mult;
+
+    if (c.hp > 0) {
+      p.score += gained;
+      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp, gained });
+      this.emitPlayers();
+      return;
+    }
+
+    // 막타
+    this.circles.delete(c.id);
+    this.bossHits.delete(c.id);
+    gained += B.kill * mult;
+    p.score += gained;
+    // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
+    let mvp: string | null = null, best = 0;
+    for (const [pid, n] of hits) if (n > best || (n === best && pid === p.id)) { best = n; mvp = pid; }
+    const mvpP = this.players.find((x) => x.id === mvp);
+    if (mvpP) mvpP.score += B.mvp;
+    const { x, y } = circlePos(c, now);
+    this.io.to(this.code).emit('boss:killed', { circleId: c.id, by: p.id, gained, mvp, mvpGained: mvpP ? B.mvp : 0, x, y });
+    this.emitPlayers();
+  }
+
   private playPayload() {
     return { startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()], rules: this.rules };
   }
@@ -254,13 +313,25 @@ export class Room {
       this.circles.set(c.id, c);
       this.io.to(this.code).emit('circle:spawn', c);
     }
-    for (const [id, c] of this.circles) if (isOut(c, now - LAG_WINDOW_MS)) this.circles.delete(id);
+    while (this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
+      this.bossQueue.shift();
+      const b = makeBoss(this.nextCircleId++, now, this.players.length, this.G);
+      this.circles.set(b.id, b);
+      this.io.to(this.code).emit('circle:spawn', b);
+    }
+    for (const [id, c] of this.circles) {
+      if (!isOut(c, now - LAG_WINDOW_MS)) continue;
+      this.circles.delete(id);
+      if (c.kind === 'boss') { this.bossHits.delete(id); this.io.to(this.code).emit('boss:escaped', { circleId: id }); }
+    }
 
     for (const p of this.players) {
       const bot = this.bots.get(p.id);
       if (!bot) continue;
       const target = bot.think(p, [...this.circles.values()], this.players, now);
-      if (target) this.claim(p, target, now);
+      if (!target) continue;
+      if (target.kind === 'boss') this.hitBoss(p, target, now);
+      else this.claim(p, target, now);
     }
   }
 

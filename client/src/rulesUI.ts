@@ -78,6 +78,7 @@ export function scoreTable(r: RoomRules) {
     ${r.rainbowPct ? `<tr><td>${shapeSVG('rainbow', 16)} 무지개</td><td>+${P.rainbow}</td><td>+${P.rainbow * m}</td></tr>` : ''}
     <tr><td>남의 색 (견제)</td><td>${steal}</td><td>+${P.stealCalm * m}, 페널티 없음</td></tr>
     ${r.stealPenalty && r.markSec ? `<tr><td>표적의 색 (반격)</td><td>+${P.counter}</td><td>+${P.counter * m}</td></tr>` : ''}
+    ${r.boss ? `<tr><td>${shapeSVG('boss', 16)} 보스 원</td><td>때릴 때 +${RULES.boss.hit}, 막타 +${RULES.boss.kill}, 최다 타격 +${RULES.boss.mvp}</td><td>배율 최대 ×${Math.min(m, RULES.boss.feverMultCap)}</td></tr>` : ''}
     <tr><td>빈 공간</td><td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td></tr>
   </table>`;
 }

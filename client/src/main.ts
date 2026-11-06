@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, RULES, isFever, isHit, isMarked, isOut,
+  COLORS, DEFAULT_RULES, RULES, circlePos, isFever, isHit, isMarked, isOut,
   type BotLevel, type Circle, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
@@ -164,7 +164,29 @@ socket.on('game:start', (d) => {
   initAudio();
   startMusic(() => { const m = me(); return !!m && isFever(m, serverNow()); });
 });
-socket.on('circle:spawn', (c) => circles.set(c.id, c));
+socket.on('circle:spawn', (c) => {
+  circles.set(c.id, c);
+  if (c.kind === 'boss') { sfx.bossAppear(); renderer.text(800, 300, '보스 등장!', '#ffc23a', 1.8); }
+});
+const nameOf = (id: string | null) => players.find((p) => p.id === id);
+socket.on('boss:hit', ({ circleId, by, hp, gained }) => {
+  const c = circles.get(circleId);
+  if (c) c.hp = hp;
+  renderer.bossPoke(circleId);
+  if (by === myId() && c) { const p = circlePos(c, serverNow()); renderer.text(p.x + 60, p.y - 70, `+${gained}`, '#fff', 0.7); }
+});
+socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y }) => {
+  circles.delete(circleId);
+  const killer = nameOf(by), mvpP = nameOf(mvp);
+  renderer.burst(x, y, '#ffc23a', true); renderer.burst(x, y, '#fff', true);
+  sfx.bossKill();
+  if (killer) renderer.text(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, by === myId() ? '#ffc23a' : COLORS[killer.color].hex, 1.3);
+  if (mvpP && mvpGained) renderer.text(x, y + 50, `최다 타격 ${mvp === myId() ? '나' : mvpP.name} +${mvpGained}`, '#fff', 0.85);
+});
+socket.on('boss:escaped', ({ circleId }) => {
+  circles.delete(circleId);
+  renderer.text(800, 300, '보스가 도망갔어요', '#9ca2d6', 1.1);
+});
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => { players = p; renderScores(); });
 socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
@@ -201,9 +223,14 @@ $('cv').addEventListener('pointerdown', (e) => {
   const now = serverNow();
   if (now < startAt) return;
   const { x, y } = renderer.toField(e.clientX, e.clientY);
-  // 위에 그려진(나중에 나온) 원부터 판정
-  const hit = [...circles.values()].reverse().find((c) => !pending.has(c.id) && isHit(c, now, x, y));
-  if (hit) {
+  // 위에 그려진(나중에 나온) 원부터, 보스는 맨 마지막에 판정
+  const list = [...circles.values()].reverse();
+  const hit = list.find((c) => c.kind !== 'boss' && !pending.has(c.id) && isHit(c, now, x, y))
+    ?? list.find((c) => c.kind === 'boss' && isHit(c, now, x, y));
+  if (hit?.kind === 'boss') {
+    renderer.bossPoke(hit.id); sfx.bossHit();
+    socket.emit('game:click', { circleId: hit.id, x, y });
+  } else if (hit) {
     pending.add(hit.id);
     socket.emit('game:click', { circleId: hit.id, x, y });
   } else {
