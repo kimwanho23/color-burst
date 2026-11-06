@@ -5,6 +5,7 @@ import {
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isMine, itemMult, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, rollEvent, type ThemeId,
+  WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
@@ -79,6 +80,11 @@ export class Room {
   private rain: { color: ColorIndex; until: number } | null = null;
   /** 시간 정지: 이 시각까지 새 원이 나오지 않는다 */
   private freezeUntil = 0;
+  // ---------- 발사 패턴 ----------
+  /** 다음 웨이브 시점(판 시작 후 ms) */
+  private nextWaveAt = 0;
+  /** 아직 안 내보낸 웨이브 원 (born이 되면 내보낸다) */
+  private spawnQueue: Circle[] = [];
 
   constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false) {
     if (solo) this.fillBots = true;
@@ -233,7 +239,7 @@ export class Room {
     // 멈춰 있던 시간만큼 모든 시각을 뒤로 민다
     this.startAt += delta; this.endAt += delta; this.lastSpawn += delta;
     // 원의 정지 구간도 출발 시각과 같이 민다 (상대 위치가 그대로여야 한다)
-    for (const c of this.circles.values()) { c.born += delta; for (const h of c.holds ?? []) h[0] += delta; }
+    for (const c of [...this.circles.values(), ...this.spawnQueue]) { c.born += delta; for (const h of c.holds ?? []) h[0] += delta; }
     for (const p of this.players) shiftTimes(p, this.pausedAt, delta);
     for (const z of this.zones) z.until += delta;
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
@@ -456,6 +462,8 @@ export class Room {
     this.zones = [];
     this.rain = null;
     this.freezeUntil = 0;
+    this.nextWaveAt = nextWaveIn();
+    this.spawnQueue = [];
     this.pausedAt = 0;
     this.pausedBy = null;
     this.nextSample = HISTORY_STEP_MS;
@@ -596,6 +604,7 @@ export class Room {
       this.circles.set(c.id, c);
       this.io.to(this.code).emit('circle:spawn', c);
     }
+    this.spawnWaves(now, kinds);
     while (now >= this.freezeUntil && this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
       this.bossQueue.shift();
       const b = makeBoss(this.nextCircleId++, now, this.players.length, this.G);
@@ -632,6 +641,29 @@ export class Room {
   }
 
   /** 새 원 생성 옵션: 아이템 원 확률, 내 색 비 */
+  /** 발사 패턴: 때가 되면 예고를 보내고 웨이브를 예약, 예약된 원은 born이 되면 내보낸다 */
+  private spawnWaves(now: number, kinds: ColorIndex[]) {
+    const W = RULES.waves;
+    if (this.G.waves && now >= this.freezeUntil && now - this.startAt >= this.nextWaveAt) {
+      const at = now + W.warnMs;
+      this.nextWaveAt = at - this.startAt + nextWaveIn();
+      const pattern = WAVE_PATTERNS[Math.floor(Math.random() * WAVE_PATTERNS.length)];
+      const wave = makeWave(pattern, this.nextCircleId, at, at - this.startAt, kinds, this.G, Math.random, this.spawnOpts(now));
+      this.nextCircleId += wave.length;
+      if (this.theme === 'reverse') for (const c of wave) c.rev = true;
+      this.spawnQueue.push(...wave);
+      this.io.to(this.code).emit('wave:warn', { pattern, at });
+    }
+    if (now < this.freezeUntil) return;
+    const due = this.spawnQueue.filter((c) => c.born <= now);
+    if (!due.length) return;
+    this.spawnQueue = this.spawnQueue.filter((c) => c.born > now);
+    for (const c of due) {
+      this.circles.set(c.id, c);
+      this.io.to(this.code).emit('circle:spawn', c);
+    }
+  }
+
   /** 새 원 생성 옵션: 아이템 원 확률, 라운드 테마, 내 색 비 */
   private spawnOpts(now: number): SpawnOpts {
     const T = RULES.themes;
@@ -682,6 +714,8 @@ export class Room {
       case 'timeStop': {
         const ids = holdCircles(this.circles.values(), now, I.freezeMs);
         this.freezeUntil = now + I.freezeMs;
+        // 예약된 웨이브 원도 정지가 끝난 뒤로 미룬다 (나선 간격은 유지)
+        for (const q of this.spawnQueue) q.born += I.freezeMs;
         this.io.to(this.code).emit('circles:hold', { ids, at: now, ms: I.freezeMs });
         break;
       }

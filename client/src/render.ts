@@ -55,6 +55,8 @@ export class Renderer {
   private last = performance.now();
   /** 보스 원 id → 마지막으로 맞은 시각 (흔들림 연출) */
   private bossPoked = new Map<number, number>();
+  /** 웨이브 예고: 이 시각까지 중앙 원이 밝게 번쩍인다 */
+  private warnUntil = 0;
   /** 순서대로 터질 폭발 (폭죽·필드 클리어 연쇄) */
   private delayed: { at: number; x: number; y: number; col: string }[] = [];
 
@@ -114,6 +116,11 @@ export class Renderer {
   /** 충격파 (폭죽·필드 클리어). 효과 줄이기여도 링은 그린다 */
   shockwave(x: number, y: number, R: number) { this.add({ type: 'ring', x, y, col: '#fff', t: 0, life: 0.35, r0: 10, r1: R, w: 6 }); }
   flash() { if (!reduceMotion) this.add({ type: 'flash', t: 0, life: 0.12 }); }
+  /** 웨이브 예고: 중앙 원이 ms 동안 밝게 (효과 줄이기면 링만) */
+  waveWarn(ms: number) {
+    this.add({ type: 'ring', x: FIELD.w / 2, y: FIELD.h / 2, col: '#fff', t: 0, life: ms / 1000, r0: 110, r1: 40, w: 4 });
+    if (!reduceMotion) this.warnUntil = performance.now() + ms;
+  }
   /** 잭팟: 배율이 클수록 크게, 보스면 한 단계 더 */
   jackpot(x: number, y: number, mult: number, boss: boolean) {
     const k = boss ? 1.5 : 1;
@@ -157,8 +164,9 @@ export class Renderer {
 
     const cx = FIELD.w / 2, cy = FIELD.h / 2;
     const pulse = 1 + Math.sin(now / 180) * 0.08;
-    ctx.fillStyle = 'rgba(255,255,255,.06)';
-    ctx.beginPath(); ctx.arc(cx, cy, 70 * pulse, 0, Math.PI * 2); ctx.fill();
+    const warn = Math.max(0, (this.warnUntil - now) / RULES.waves.warnMs);
+    ctx.fillStyle = `rgba(255,255,255,${0.06 + 0.4 * warn * Math.abs(Math.sin(now / 60))})`;
+    ctx.beginPath(); ctx.arc(cx, cy, 70 * pulse * (1 + warn * 0.3), 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = s.myFever ? 'rgba(255,159,28,.8)' : 'rgba(255,255,255,.18)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
 

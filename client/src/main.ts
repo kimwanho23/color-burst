@@ -377,6 +377,7 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
   if (item === 'fieldClear') { blast = { x: 800, y: 450, R: 1000 }; renderer.flash(); renderer.shockwave(800, 450, 1000); sfx.clear(); }
 });
 socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); });
+socket.on('wave:warn', ({ at }) => { renderer.waveWarn(Math.max(100, at - serverNow())); sfx.wave(); });
 socket.on('circles:hold', ({ ids, at, ms }) => {
   // 서버와 같은 방식으로 붙인다 (정지 중 또 정지하면 이어 붙임)
   holdCircles(ids.map((id) => circles.get(id)).filter((c): c is Circle => !!c), at, ms);

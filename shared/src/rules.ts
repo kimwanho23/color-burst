@@ -79,6 +79,20 @@ export const RULES = {
     /** 꼴찌 보정이 켜진 방에서 꼴찌가 잡은 아이템 효과 시간 배율 */
     comebackDur: 1.5,
   },
+  /** 발사 패턴 (웨이브) */
+  waves: {
+    /** 다음 웨이브까지 걸리는 시간(ms) 범위 */
+    everyMin: 12_000,
+    everyMax: 18_000,
+    /** 웨이브 직전 예고(중앙 번쩍임) 시간 */
+    warnMs: 400,
+    fanCount: 5,
+    /** 부채꼴: 가운데 방향에서 양쪽으로 벌어지는 각도 */
+    fanSpreadDeg: 30,
+    burstCount: 8,
+    spiralCount: 8,
+    spiralGapMs: 100,
+  },
 } as const;
 
 // ---------- 방 규칙 (방장이 대기실에서 설정) ----------
@@ -112,6 +126,8 @@ export interface RoomRules {
   arcadeRoundSec: number;
   /** 아이템 원 등장 */
   items: boolean;
+  /** 발사 패턴(부채꼴·동시 다발·나선 웨이브) */
+  waves: boolean;
   /** 아케이드: 라운드 사이 랜덤 이벤트 */
   randomEvents: boolean;
 }
@@ -137,7 +153,7 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
-  mode: 'classic', arcadeRoundSec: 30, items: true, randomEvents: true,
+  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, randomEvents: true,
 };
 
 export const PRESETS = {
@@ -173,7 +189,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'randomEvents'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'randomEvents'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
@@ -196,6 +212,7 @@ export interface GameRules {
   missPenalty: boolean;
   arcade: boolean;
   items: boolean;
+  waves: boolean;
   randomEvents: boolean;
 }
 
@@ -215,6 +232,7 @@ export function toGameRules(r: RoomRules): GameRules {
     missPenalty: r.missPenalty,
     arcade: r.mode === 'arcade',
     items: r.items,
+    waves: r.waves,
     randomEvents: r.randomEvents,
   };
 }

@@ -6,6 +6,7 @@ import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules,
 import type { Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
+import type { WavePattern } from './waves.ts';
 import type { ThemeId } from './rules.ts';
 
 /** 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다 */
@@ -96,6 +97,8 @@ export interface ServerToClient {
   /** 아이템 원을 잡음. 블라스트(폭죽·필드 클리어)면 이 이벤트가 먼저 오고 circle:claimed가 이어진다 */
   'item:got': (d: { circleId: number; by: string; item: ItemId; tier: ItemTier; x: number; y: number }) => void;
   'zone:add': (z: Zone) => void;
+  /** 발사 패턴 예고: at(서버 시각)에 웨이브가 나온다 */
+  'wave:warn': (d: { pattern: WavePattern; at: number }) => void;
   /** 시간 정지: 해당 원들에 정지 구간 [at, at + ms] */
   'circles:hold': (d: { ids: number[]; at: number; ms: number }) => void;
   /** 보스를 때림 (hp: 남은 체력) */

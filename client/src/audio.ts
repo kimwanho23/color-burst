@@ -81,6 +81,8 @@ export const sfx = {
   clear: () => [262, 392, 523, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.06, i * 0.04)),
   freeze: () => tone(1800, 0.4, 'sine', 0.08, 0, 0.3),
   zone: () => tone(440, 0.25, 'triangle', 0.1, 0, 1.5),
+  /** 웨이브 예고: 올라가는 휙 소리 */
+  wave: () => tone(260, 0.35, 'sawtooth', 0.05, 0, 3),
   /** 랜덤 이벤트: 등장음, 룰렛이 한 칸 넘어갈 때마다 틱, 결과음 */
   event: () => [523, 659, 784].forEach((f, i) => tone(f, 0.08, 'square', 0.07, i * 0.05)),
   eventTick: () => tone(1400, 0.025, 'square', 0.04),
