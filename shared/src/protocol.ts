@@ -2,7 +2,7 @@
  * 클라이언트와 서버가 주고받는 메시지 형식.
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
-import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules } from './rules.ts';
+import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
 
 export type Phase = 'lobby' | 'play';
 export type BotLevel = 0 | 1 | 2;
@@ -17,6 +17,16 @@ export interface RoomSnapshot {
   rules: RoomRules;
   /** 혼자 하기 방 (다른 사람 입장 불가, 빈 자리는 항상 봇) */
   solo: boolean;
+  /** 이 방에서의 누적 승수 (사람만) */
+  wins: Record<string, number>;
+}
+
+export interface GameOver {
+  ranking: PlayerState[];
+  titles: Title[];
+  /** stepMs 간격으로 기록한 플레이어별 점수 */
+  history: { stepMs: number; scores: Record<string, number[]> };
+  wins: Record<string, number>;
 }
 
 export interface PlayPayload {
@@ -47,7 +57,7 @@ export interface ServerToClient {
   'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number }) => void;
   'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
-  'game:over': (d: { ranking: PlayerState[] }) => void;
+  'game:over': (d: GameOver) => void;
 }
 
 export interface ClientToServer {

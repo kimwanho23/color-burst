@@ -2,7 +2,7 @@ import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
   COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES,
-  bossMult, bossTimes, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
+  awardTitles, bossMult, bossTimes, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
   type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -17,6 +17,8 @@ const LAG_WINDOW_MS = 250;
 const LOBBY_GRACE_MS = 15_000;
 /** 접속한 사람이 아무도 없을 때 방을 지우기까지 기다리는 시간 */
 const EMPTY_ROOM_MS = 30_000;
+/** 점수 그래프 기록 간격 */
+const HISTORY_STEP_MS = 1_000;
 
 export class Room {
   hostId = '';
@@ -47,6 +49,10 @@ export class Room {
   private socketOf = new Map<string, string>();
   private dropTimers = new Map<string, NodeJS.Timeout>();
   private emptyTimer: NodeJS.Timeout | null = null;
+  private wins = new Map<string, number>();
+  /** 점수 그래프용 기록 */
+  private history: Record<string, number[]> = {};
+  private nextSample = 0;
   private pausedAt = 0;
   private pausedBy: string | null = null;
 
@@ -174,6 +180,8 @@ export class Room {
     this.bossQueue = bossTimes(this.G);
     this.pausedAt = 0;
     this.pausedBy = null;
+    this.history = Object.fromEntries(this.players.map((p) => [p.id, [0]]));
+    this.nextSample = HISTORY_STEP_MS;
     const now = Date.now();
     this.startAt = now + RULES.countdownMs;
     this.endAt = this.startAt + this.G.roundMs;
@@ -241,7 +249,7 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo };
+    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo, wins: Object.fromEntries(this.wins) };
   }
 
   destroy() {
@@ -309,6 +317,7 @@ export class Room {
     const hits = this.bossHits.get(c.id) ?? new Map<string, number>();
     this.bossHits.set(c.id, hits);
     hits.set(p.id, (hits.get(p.id) ?? 0) + 1);
+    p.stats.bossHits++;
     c.hp = Math.max(0, (c.hp ?? 1) - 1);
 
     const mult = bossMult(p, now, this.G);
@@ -326,6 +335,7 @@ export class Room {
     this.bossHits.delete(c.id);
     gained += B.kill * mult;
     p.score += gained;
+    p.stats.bossKills++;
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
     let mvp: string | null = null, best = 0;
     for (const [pid, n] of hits) if (n > best || (n === best && pid === p.id)) { best = n; mvp = pid; }
@@ -345,6 +355,10 @@ export class Room {
     const now = Date.now();
     if (now < this.startAt) return;
     if (now >= this.endAt) return this.end();
+    while (now - this.startAt >= this.nextSample) {
+      for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
+      this.nextSample += HISTORY_STEP_MS;
+    }
 
     const kinds = this.players.map((p) => p.color);
     while (now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt, this.G)) {
@@ -390,7 +404,17 @@ export class Room {
 
   private end() {
     this.stop();
-    this.io.to(this.code).emit('game:over', { ranking: ranking(this.players) });
+    for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
+    const rank = ranking(this.players);
+    const top = rank[0]?.score ?? 0;
+    // 공동 1등은 모두 1승 (사람만 기록)
+    for (const p of rank) if (p.score === top && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
+    this.io.to(this.code).emit('game:over', {
+      ranking: rank,
+      titles: awardTitles(this.players),
+      history: { stepMs: HISTORY_STEP_MS, scores: this.history },
+      wins: Object.fromEntries(this.wins),
+    });
     this.players = this.players.filter((p) => !p.bot);
     this.bots.clear();
     this.phase = 'lobby';

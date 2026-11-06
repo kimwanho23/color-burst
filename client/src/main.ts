@@ -5,6 +5,7 @@ import {
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
+import { renderResult } from './results.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
@@ -251,7 +252,8 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   }
   if (result.brokeComboOf === myId()) { sfx.comboBroken(); renderer.text(x, y - 45, '콤보 끊김!', '#ff5d73', 1.1); }
 });
-socket.on('game:over', ({ ranking }) => {
+socket.on('game:over', (d) => {
+  const { ranking } = d;
   playing = false;
   pausedView = 0;
   $('pauseOv').hidden = true;
@@ -259,7 +261,11 @@ socket.on('game:over', ({ ranking }) => {
   $('stage').classList.remove('feverOn');
   const pos = ranking.findIndex((p) => p.id === myId()) + 1;
   $('resTitle').textContent = pos === 1 ? '1등!' : `${pos}등`;
-  $('rank').innerHTML = ranking.map((p, i) => `<div><span class="pos">${i + 1}</span>${shapeSVG(p.color, 24)}<span>${esc(p.name)}${p.id === myId() ? ' (나)' : ''}</span><span class="v">${p.score}</span></div>`).join('');
+  const r = renderResult(d, myId());
+  $('rank').innerHTML = r.rank;
+  $('titleList').innerHTML = r.titles;
+  $('graphBox').innerHTML = r.graph;
+  if (room) room.wins = d.wins;
   (pos === 1 ? sfx.win : sfx.lose)();
   const again = canPause();
   $<HTMLButtonElement>('rematchBtn').hidden = !again;
@@ -318,7 +324,7 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
-  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span></div>`).join('');
+  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span></div>`).join('');
 }
 
 function updateHud(now: number) {

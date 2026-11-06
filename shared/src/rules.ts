@@ -179,6 +179,22 @@ export interface Circle {
   maxHp?: number;
 }
 
+/** 결과 화면 칭호 계산용 기록 (한 판 단위) */
+export interface PlayerStats {
+  /** 가져간 원 수 (보스 제외) */
+  hits: number;
+  misses: number;
+  /** 남의 색을 가져간 횟수 (반격 제외) */
+  steals: number;
+  counters: number;
+  fevers: number;
+  maxCombo: number;
+  bossHits: number;
+  bossKills: number;
+}
+
+export const emptyStats = (): PlayerStats => ({ hits: 0, misses: 0, steals: 0, counters: 0, fevers: 0, maxCombo: 0, bossHits: 0, bossKills: 0 });
+
 export interface PlayerState {
   id: string;
   name: string;
@@ -191,6 +207,7 @@ export interface PlayerState {
   fever: number;
   feverUntil: number;
   markedUntil: number;
+  stats: PlayerStats;
 }
 
 export type ClaimType = 'own' | 'yellow' | 'rainbow' | 'steal' | 'feverSteal' | 'counter';
@@ -207,11 +224,11 @@ export interface ClaimResult {
 }
 
 export function newPlayer(id: string, name: string, color: ColorIndex, bot = false): PlayerState {
-  return { id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0 };
+  return { id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats() };
 }
 
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0;
+  p.score = 0; p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.stats = emptyStats();
 }
 
 export const isFever = (p: PlayerState, now: number) => now < p.feverUntil;
@@ -348,6 +365,12 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
     res.comboBonus = true;
     pts += RULES.comboBonus;
   }
+  const st = claimer.stats;
+  st.hits++;
+  if (res.type === 'steal' || res.type === 'feverSteal') st.steals++;
+  if (res.type === 'counter') st.counters++;
+  if (res.feverStarted) st.fevers++;
+  st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준)
   res.gained = pts * (fever ? G.feverMult : 1);
   claimer.score += res.gained;
@@ -357,9 +380,43 @@ export function resolveClaim(claimer: PlayerState, kind: CircleKind, players: Pl
 /** 빈 공간 클릭 */
 export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
   p.combo = 0;
+  p.stats.misses++;
   addFever(p, RULES.fever.miss, now, G, players);
 }
 
 export function ranking(players: PlayerState[]) {
   return [...players].sort((a, b) => b.score - a.score);
+}
+
+// ---------- 결과 화면 칭호 ----------
+
+export interface Title {
+  playerId: string;
+  name: string;
+  desc: string;
+}
+
+/**
+ * 한 판 기록으로 칭호를 준다. 칭호마다 한 명(동점이면 점수가 높은 사람).
+ * 조건을 넘는 사람이 없으면 그 칭호는 없다.
+ */
+export function awardTitles(players: PlayerState[]): Title[] {
+  const out: Title[] = [];
+  const pick = (name: string, value: (p: PlayerState) => number, min: number, desc: (v: number) => string) => {
+    let best: PlayerState | null = null, bv = -Infinity;
+    for (const p of players) {
+      const v = value(p);
+      if (v >= min && (v > bv || (v === bv && best && p.score > best.score))) { best = p; bv = v; }
+    }
+    if (best) out.push({ playerId: best.id, name, desc: desc(bv) });
+  };
+  pick('막타 장인', (p) => p.stats.bossKills, 1, (v) => `보스 막타 ${v}번`);
+  pick('견제왕', (p) => p.stats.steals + p.stats.counters, 3, (v) => `견제·반격 ${v}번`);
+  pick('피버 머신', (p) => p.stats.fevers, 2, (v) => `피버 ${v}번`);
+  pick('콤보 마스터', (p) => p.stats.maxCombo, 10, (v) => `최대 ${v}콤보`);
+  pick('정밀 사격', (p) => (p.stats.hits >= 15 ? Math.round((p.stats.hits / (p.stats.hits + p.stats.misses)) * 100) : -1), 85, (v) => `명중률 ${v}%`);
+  // 평화주의자: 견제 0번이면서 열심히 한 사람
+  const peace = players.filter((p) => p.stats.steals + p.stats.counters === 0 && p.stats.hits >= 10).sort((a, b) => b.score - a.score)[0];
+  if (peace) out.push({ playerId: peace.id, name: '평화주의자', desc: '견제 0번' });
+  return out;
 }
