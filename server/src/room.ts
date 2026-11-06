@@ -1,10 +1,10 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES,
+  ARCADE, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   awardTitles, bossHitInfo, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, spawnInterval,
   type BotLevel, type Circle, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
-  type RoomSnapshot, type ServerToClient,
+  type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
 
@@ -55,6 +55,13 @@ export class Room {
   private nextSample = 0;
   private pausedAt = 0;
   private pausedBy: string | null = null;
+  // ---------- 아케이드 ----------
+  private round = 0;
+  private roundPhase: 'play' | 'pick' = 'play';
+  private pickEndsAt = 0;
+  private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean }>();
+  private pickTimer: NodeJS.Timeout | null = null;
+  private botPickTimers: NodeJS.Timeout[] = [];
 
   constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false) {
     if (solo) this.fillBots = true;
@@ -71,7 +78,10 @@ export class Room {
     const p = existing ? this.players.find((x) => x.id === existing) : undefined;
     if (p) {
       this.attach(p, socketId);
-      if (this.phase === 'play') this.io.to(socketId).emit('game:sync', this.playPayload());
+      if (this.phase === 'play') {
+        this.io.to(socketId).emit('game:sync', this.playPayload());
+        if (this.roundPhase === 'pick') this.sendOffer(p.id);
+      }
       this.broadcastState();
       return { id: p.id };
     }
@@ -100,7 +110,7 @@ export class Room {
     if (!p) return;
     p.connected = false;
     // 혼자 하기에서 연결이 끊기면(새로고침 등) 자동으로 멈춰 둔다
-    if (this.solo && this.phase === 'play' && !this.pausedAt) this.doPause(playerId);
+    if (this.solo && this.phase === 'play' && this.roundPhase === 'play' && !this.pausedAt) this.doPause(playerId);
     if (this.phase === 'lobby') {
       this.dropTimers.set(playerId, setTimeout(() => this.remove(playerId), LOBBY_GRACE_MS));
     }
@@ -144,7 +154,10 @@ export class Room {
   setRules(id: string, d: { preset?: PresetId; rules?: Partial<RoomRules> }) {
     if (id !== this.hostId || this.phase !== 'lobby') return;
     let base = this.rules;
-    if (d.preset && d.preset in PRESETS) base = { ...PRESETS[d.preset].rules };
+    // 프리셋은 점수·속도 규칙만 바꾸고 모드 설정은 유지
+    if (d.preset && d.preset in PRESETS) {
+      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec };
+    }
     this.rules = sanitizeRules(base, d.rules ?? {});
     this.broadcastState();
   }
@@ -174,21 +187,11 @@ export class Room {
 
     this.players.forEach(resetForRound);
     this.G = toGameRules(this.rules);
-    this.circles.clear();
-    this.bossHits.clear();
-    this.clickLog.clear();
-    this.bossQueue = bossTimes(this.G);
-    this.pausedAt = 0;
-    this.pausedBy = null;
     this.history = Object.fromEntries(this.players.map((p) => [p.id, [0]]));
-    this.nextSample = HISTORY_STEP_MS;
-    const now = Date.now();
-    this.startAt = now + RULES.countdownMs;
-    this.endAt = this.startAt + this.G.roundMs;
-    this.lastSpawn = this.startAt;
-    for (const p of this.players) startRound(p, this.startAt, this.G);
+    this.round = 1;
+    this.roundPhase = 'play';
     this.phase = 'play';
-    this.io.to(this.code).emit('game:start', this.playPayload());
+    this.beginRound();
     this.broadcastState();
     this.loop = setInterval(() => this.tick(), TICK_MS);
     return null;
@@ -198,7 +201,8 @@ export class Room {
   canPause(id: string) { return this.solo ? this.players.some((p) => p.id === id) : id === this.hostId; }
 
   pause(id: string) {
-    if (this.phase !== 'play' || this.pausedAt || !this.canPause(id)) return;
+    // 능력 선택 중에는 제한 시간이 있어서 멈출 수 없다
+    if (this.phase !== 'play' || this.roundPhase !== 'play' || this.pausedAt || !this.canPause(id)) return;
     this.doPause(id);
   }
 
@@ -226,9 +230,33 @@ export class Room {
     this.io.to(this.code).emit('game:pause', { by: id });
   }
 
+  /** 아케이드: 능력 고르기 */
+  choose(id: string, index: number) {
+    if (this.phase !== 'play' || this.roundPhase !== 'pick') return;
+    const o = this.offers.get(id);
+    const p = this.players.find((x) => x.id === id);
+    const pick = o?.options[index];
+    if (!o || !p || o.chosen || !pick) return;
+    p.picks.push(pick);
+    o.chosen = true;
+    this.emitPlayers();
+    this.emitArcade();
+    if ([...this.offers.values()].every((x) => x.chosen)) this.finishPick();
+  }
+
+  /** 아케이드: 선택지 다시 뽑기 */
+  reroll(id: string) {
+    if (this.phase !== 'play' || this.roundPhase !== 'pick') return;
+    const o = this.offers.get(id);
+    if (!o || o.chosen || o.rerolls <= 0) return;
+    o.rerolls--;
+    o.options = rollOptions(this.round - 1, o.last);
+    this.sendOffer(id);
+  }
+
   click(id: string, d: { circleId: number | null; x: number; y: number }) {
     const now = Date.now();
-    if (this.phase !== 'play' || this.pausedAt || now < this.startAt) return;
+    if (this.phase !== 'play' || this.roundPhase !== 'play' || this.pausedAt || now < this.startAt) return;
     const p = this.players.find((x) => x.id === id);
     if (!p) return;
     if (!this.allowClick(id, now)) {
@@ -257,6 +285,7 @@ export class Room {
 
   destroy() {
     this.stop();
+    this.clearPickTimers();
     for (const t of this.dropTimers.values()) clearTimeout(t);
     if (this.emptyTimer) clearTimeout(this.emptyTimer);
   }
@@ -352,14 +381,105 @@ export class Room {
   }
 
   private playPayload() {
-    return { startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()], rules: this.rules, pausedBy: this.pausedBy };
+    return {
+      startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
+      rules: this.rules, pausedBy: this.pausedBy, arcade: this.arcadeState(),
+    };
+  }
+
+  private arcadeState(): ArcadeState | null {
+    if (!this.G.arcade) return null;
+    return {
+      round: this.round, rounds: ARCADE.rounds, phase: this.roundPhase, pickEndsAt: this.pickEndsAt,
+      waiting: this.roundPhase === 'pick' ? [...this.offers].filter(([, o]) => !o.chosen).map(([id]) => id) : [],
+    };
+  }
+
+  /** 라운드(클래식은 한 판) 시작: 판 위를 비우고 카운트다운 후 시작 */
+  private beginRound() {
+    this.circles.clear();
+    this.bossHits.clear();
+    this.clickLog.clear();
+    this.bossQueue = bossTimes(this.G);
+    this.pausedAt = 0;
+    this.pausedBy = null;
+    this.nextSample = HISTORY_STEP_MS;
+    const now = Date.now();
+    this.startAt = now + RULES.countdownMs;
+    this.endAt = this.startAt + this.G.roundMs;
+    this.lastSpawn = this.startAt;
+    for (const p of this.players) startRound(p, this.startAt, this.G);
+    this.io.to(this.code).emit('game:start', this.playPayload());
+  }
+
+  /** 아케이드: 라운드 종료 → 능력 선택 */
+  private endRound() {
+    this.roundPhase = 'pick';
+    this.circles.clear();
+    this.bossHits.clear();
+    for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
+    this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
+
+    const scores = this.players.map((p) => p.score);
+    const min = Math.min(...scores);
+    const tied = scores.every((v) => v === min);
+    this.offers.clear();
+    for (const p of this.players) {
+      const last = !tied && p.score === min;
+      this.offers.set(p.id, { options: rollOptions(this.round - 1, last), rerolls: ARCADE.rerollsPerPick, chosen: false, last });
+    }
+    this.emitArcade();
+    for (const p of this.players) {
+      if (!p.bot) { this.sendOffer(p.id); continue; }
+      // 봇은 1~3초 고민하다가 가장 높은 등급을 고른다
+      const opts = this.offers.get(p.id)!.options;
+      const best = opts.reduce((bi, o, i) => (o.tier > opts[bi].tier || (o.tier === opts[bi].tier && Math.random() < 0.5) ? i : bi), 0);
+      this.botPickTimers.push(setTimeout(() => this.choose(p.id, best), 1000 + Math.random() * 2000));
+    }
+    this.pickTimer = setTimeout(() => this.finishPick(), ARCADE.pickSec * 1000);
+  }
+
+  /** 선택 마감: 안 고른 사람은 무작위로 정하고 다음 라운드 */
+  private finishPick() {
+    if (this.roundPhase !== 'pick') return;
+    this.clearPickTimers();
+    for (const [id, o] of this.offers) {
+      if (o.chosen) continue;
+      const p = this.players.find((x) => x.id === id);
+      if (p) p.picks.push(o.options[Math.floor(Math.random() * o.options.length)]);
+      o.chosen = true;
+    }
+    this.offers.clear();
+    this.round++;
+    this.roundPhase = 'play';
+    this.emitPlayers();
+    this.beginRound();
+  }
+
+  private sendOffer(id: string) {
+    const o = this.offers.get(id);
+    const sid = this.socketOf.get(id);
+    if (!o || o.chosen || !sid) return;
+    this.io.to(sid).emit('arcade:offer', { options: o.options, rerollLeft: o.rerolls, pickEndsAt: this.pickEndsAt, lastPlace: o.last });
+  }
+
+  private emitArcade() {
+    const st = this.arcadeState();
+    if (st) this.io.to(this.code).emit('arcade:pick', st);
+  }
+
+  private clearPickTimers() {
+    if (this.pickTimer) clearTimeout(this.pickTimer);
+    this.pickTimer = null;
+    this.botPickTimers.forEach(clearTimeout);
+    this.botPickTimers = [];
   }
 
   private tick() {
-    if (this.pausedAt) return;
+    if (this.pausedAt || this.roundPhase === 'pick') return;
     const now = Date.now();
     if (now < this.startAt) return;
-    if (now >= this.endAt) return this.end();
+    if (now >= this.endAt) return this.G.arcade && this.round < ARCADE.rounds ? this.endRound() : this.end();
     while (now - this.startAt >= this.nextSample) {
       for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
       this.nextSample += HISTORY_STEP_MS;
@@ -409,6 +529,9 @@ export class Room {
 
   private end() {
     this.stop();
+    this.clearPickTimers();
+    this.offers.clear();
+    this.roundPhase = 'play';
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
     const rank = ranking(this.players);
     const top = rank[0]?.score ?? 0;

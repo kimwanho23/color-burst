@@ -111,6 +111,8 @@ io.on('connection', (socket) => {
   });
   socket.on('game:pause', () => { const s = here(); if (s) s.room.pause(s.id); });
   socket.on('game:resume', () => { const s = here(); if (s) s.room.resume(s.id); });
+  socket.on('arcade:choose', (i) => { const s = here(); if (s && Number.isInteger(i)) s.room.choose(s.id, i); });
+  socket.on('arcade:reroll', () => { const s = here(); if (s) s.room.reroll(s.id); });
   socket.on('game:click', (d) => {
     const s = here();
     if (!s || !d || typeof d.x !== 'number' || typeof d.y !== 'number') return;

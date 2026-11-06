@@ -3,6 +3,27 @@
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
+import type { Pick } from './arcade.ts';
+
+/** 아케이드 진행 상태 */
+export interface ArcadeState {
+  /** 현재 라운드 (1부터) */
+  round: number;
+  rounds: number;
+  /** play: 라운드 진행 중 / pick: 라운드가 끝나고 능력 고르는 중 */
+  phase: 'play' | 'pick';
+  pickEndsAt: number;
+  /** 아직 능력을 안 고른 플레이어 id */
+  waiting: string[];
+}
+
+export interface ArcadeOffer {
+  options: Pick[];
+  rerollLeft: number;
+  pickEndsAt: number;
+  /** 꼴찌라서 상위 등급 확률이 올라간 선택지인지 */
+  lastPlace: boolean;
+}
 
 export type Phase = 'lobby' | 'play';
 export type BotLevel = 0 | 1 | 2;
@@ -37,6 +58,8 @@ export interface PlayPayload {
   rules: RoomRules;
   /** 일시정지 중이면 멈춘 사람 id */
   pausedBy: string | null;
+  /** 아케이드 모드가 아니면 null */
+  arcade: ArcadeState | null;
 }
 
 export type Ack<T = {}> = (r: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -48,6 +71,10 @@ export interface ServerToClient {
   /** 진행 중인 판 상태 전체 (재접속, 일시정지 해제 때) */
   'game:sync': (d: PlayPayload) => void;
   'game:pause': (d: { by: string }) => void;
+  /** 아케이드: 라운드가 끝나 능력 선택 시작, 또는 선택 현황이 바뀜 */
+  'arcade:pick': (d: ArcadeState) => void;
+  /** 아케이드: 나에게만 보내는 능력 선택지 */
+  'arcade:offer': (d: ArcadeOffer) => void;
   'circle:spawn': (c: Circle) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;
@@ -78,6 +105,10 @@ export interface ClientToServer {
   /** 혼자 하기는 본인, 멀티는 방장만 */
   'game:pause': () => void;
   'game:resume': () => void;
+  /** 아케이드: 선택지 중 index번째 능력 고르기 */
+  'arcade:choose': (index: number) => void;
+  /** 아케이드: 선택지 다시 뽑기 (고를 때마다 1번) */
+  'arcade:reroll': () => void;
   /** circleId가 null이면 빈 공간 클릭. x, y는 필드 좌표 */
   'game:click': (d: { circleId: number | null; x: number; y: number }) => void;
   /** 서버 시각 맞추기 */
