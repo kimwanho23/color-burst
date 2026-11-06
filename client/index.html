@@ -15,7 +15,8 @@
     <div class="brand">컬러 <b>버스트</b><span class="badge" id="stageBadge" hidden></span></div>
     <span class="roomtag" id="roomTag" hidden></span>
     <button class="iconbtn" id="pauseBtn" type="button" hidden>일시정지</button>
-    <button class="iconbtn" id="musicBtn" type="button">음악 켜짐</button>
+    <span class="ping" id="ping" hidden></span>
+    <button class="iconbtn" id="settingsBtn" type="button" aria-controls="settingsPanel">설정</button>
     <div class="timer" id="timer">60</div>
   </div>
   <div class="scores" id="scores"></div>
@@ -77,6 +78,15 @@
     </div>
 
     <div class="countdown" id="countdown" hidden></div>
+    <div class="settings" id="settingsPanel" role="dialog" aria-label="설정" hidden>
+      <div class="set-head"><b>설정</b><button class="link" id="settingsClose" type="button">닫기</button></div>
+      <label class="set-row" for="setMusic"><span>배경음악</span><input type="range" id="setMusic" min="0" max="100" step="5"><em id="setMusicVal"></em></label>
+      <label class="set-row" for="setSfx"><span>효과음</span><input type="range" id="setSfx" min="0" max="100" step="5"><em id="setSfxVal"></em></label>
+      <label class="set-row check" for="setMute"><span>전체 음소거 <kbd>M</kbd></span><input type="checkbox" id="setMute"></label>
+      <label class="set-row check" for="setFx"><span>화면 효과 줄이기</span><input type="checkbox" id="setFx"></label>
+      <label class="set-row check" for="setPing"><span>핑(지연) 표시</span><input type="checkbox" id="setPing"></label>
+      <button class="btn ghost small" id="setFullscreen" type="button">전체 화면</button>
+    </div>
     <div class="overlay" id="pauseOv" hidden>
       <div class="card center">
         <h1>일시정지</h1>

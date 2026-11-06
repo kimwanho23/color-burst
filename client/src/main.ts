@@ -5,7 +5,8 @@ import {
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
-import { ensureMusic, initAudio, sfx, startMusic, stopMusic, toggleMusic } from './audio.ts';
+import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
+import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const socket: Socket<ServerToClient, ClientToServer> = io();
@@ -201,7 +202,8 @@ function togglePause() {
 $('pauseBtn').onclick = togglePause;
 $('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
 document.addEventListener('keydown', (e) => {
-  if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && !(e.target instanceof HTMLInputElement)) togglePause();
+  if (e.key === 'Escape' && !$('settingsPanel').hidden) return; // Esc는 설정 창 닫기가 먼저
+  if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && !isTyping(e)) togglePause();
 });
 // 혼자 하기: 다른 탭으로 가면 자동으로 멈춤
 document.addEventListener('visibilitychange', () => {
@@ -288,7 +290,29 @@ $('cv').addEventListener('pointerdown', (e) => {
   }
 });
 
-$('musicBtn').onclick = () => { $('musicBtn').textContent = toggleMusic(playing) ? '음악 켜짐' : '음악 꺼짐'; };
+initSettingsPanel();
+
+// 핑 표시: 3초마다 서버 왕복 시간 측정
+let pingTimer: number | null = null;
+function updatePing() {
+  if (pingTimer !== null) clearInterval(pingTimer);
+  pingTimer = null;
+  $('ping').hidden = !settings.showPing;
+  if (!settings.showPing) return;
+  const measure = () => {
+    if (!socket.connected) { $('ping').textContent = '연결 끊김'; return; }
+    const t0 = performance.now();
+    socket.emit('time:ping', () => {
+      const ms = Math.round(performance.now() - t0);
+      $('ping').textContent = `핑 ${ms}ms`;
+      $('ping').classList.toggle('bad', ms > 150);
+    });
+  };
+  measure();
+  pingTimer = window.setInterval(measure, 3000);
+}
+onSettingsChange(updatePing);
+updatePing();
 
 // ---------- HUD ----------
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }

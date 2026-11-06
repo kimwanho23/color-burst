@@ -4,26 +4,45 @@
  */
 let ac: AudioContext | null = null;
 let master: GainNode | null = null;
+let musicBus: GainNode | null = null;
+let sfxBus: GainNode | null = null;
 let timer: number | null = null;
 let nextNote = 0;
 let step = 0;
 let fast = () => false;
-export let musicOn = true;
+/** 음량 0~1, muted면 전체 무음 */
+const vol = { music: 0.6, sfx: 0.8, muted: false };
 
 export function initAudio() {
   if (!ac) {
     try {
       ac = new AudioContext();
       master = ac.createGain();
-      master.gain.value = 0.5;
+      musicBus = ac.createGain();
+      sfxBus = ac.createGain();
+      musicBus.connect(master); sfxBus.connect(master);
       master.connect(ac.destination);
+      applyVolume();
     } catch { ac = null; }
   }
   if (ac?.state === 'suspended') ac.resume();
 }
 
-function tone(freq: number, dur: number, type: OscillatorType = 'square', vol = 0.12, when = 0, slide = 0) {
-  if (!ac || !master) return;
+function applyVolume() {
+  if (!master || !musicBus || !sfxBus) return;
+  master.gain.value = vol.muted ? 0 : 0.5;
+  musicBus.gain.value = vol.music;
+  sfxBus.gain.value = vol.sfx;
+}
+
+export function setVolume(v: Partial<typeof vol>) {
+  Object.assign(vol, v);
+  applyVolume();
+}
+
+function tone(freq: number, dur: number, type: OscillatorType = 'square', vol = 0.12, when = 0, slide = 0, bus: 'sfx' | 'music' = 'sfx') {
+  const out = bus === 'music' ? musicBus : sfxBus;
+  if (!ac || !out) return;
   const t = ac.currentTime + when;
   const o = ac.createOscillator();
   const g = ac.createGain();
@@ -32,7 +51,7 @@ function tone(freq: number, dur: number, type: OscillatorType = 'square', vol = 
   if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq * slide), t + dur);
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); g.connect(master);
+  o.connect(g); g.connect(out);
   o.start(t); o.stop(t + dur + 0.02);
 }
 
@@ -56,15 +75,15 @@ const BASS = [110, 110, 87.31, 87.31, 130.81, 130.81, 98, 98];
 const ARP = [[440, 523.25, 659.25, 523.25], [349.23, 440, 523.25, 440], [523.25, 659.25, 783.99, 659.25], [392, 493.88, 587.33, 493.88]];
 
 function schedule() {
-  if (!ac || !musicOn) return;
+  if (!ac) return;
   const f = fast();
   const eighth = 60 / (f ? 156 : 128) / 2;
   while (nextNote < ac.currentTime + 0.12) {
     const when = nextNote - ac.currentTime;
     const bar = Math.floor(step / 8) % 4, i = step % 8;
-    if (i % 2 === 0) tone(BASS[(bar * 2 + (i >> 2)) % 8], eighth * 1.8, 'triangle', 0.16, when);
-    tone(ARP[bar][i % 4] * (f ? 2 : 1), eighth * 0.8, 'square', 0.035, when);
-    if (i % 4 === 2) tone(2400, 0.03, 'sawtooth', 0.015, when);
+    if (i % 2 === 0) tone(BASS[(bar * 2 + (i >> 2)) % 8], eighth * 1.8, 'triangle', 0.16, when, 0, 'music');
+    tone(ARP[bar][i % 4] * (f ? 2 : 1), eighth * 0.8, 'square', 0.035, when, 0, 'music');
+    if (i % 4 === 2) tone(2400, 0.03, 'sawtooth', 0.015, when, 0, 'music');
     nextNote += eighth; step++;
   }
 }
@@ -72,7 +91,7 @@ function schedule() {
 /** isFast: 피버 중일 때 true를 돌려주면 템포가 빨라진다 */
 export function startMusic(isFast: () => boolean) {
   fast = isFast;
-  if (!ac || !musicOn) return;
+  if (!ac) return;
   nextNote = ac.currentTime + 0.05;
   stopMusic();
   timer = window.setInterval(schedule, 25);
@@ -81,16 +100,10 @@ export function startMusic(isFast: () => boolean) {
 /** 새로고침 후 첫 클릭처럼, 음악이 아직 안 나오고 있으면 시작 */
 export function ensureMusic() {
   initAudio();
-  if (timer === null && musicOn && ac) startMusic(fast);
+  if (timer === null && ac) startMusic(fast);
 }
 
 export function stopMusic() {
   if (timer !== null) clearInterval(timer);
   timer = null;
-}
-
-export function toggleMusic(playing: boolean) {
-  musicOn = !musicOn;
-  if (musicOn && playing) { initAudio(); startMusic(fast); } else stopMusic();
-  return musicOn;
 }

@@ -12,7 +12,10 @@ type Fx =
   | { type: 'miss'; x: number; y: number; t: number; life: number }
   | { type: 'text'; x: number; y: number; txt: string; col: string; size: number; t: number; life: number };
 
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let reduceMotion = prefersReduced;
+/** 설정의 '화면 효과 줄이기' (흔들림, 파티클 끔). 운영체제 설정이 켜져 있으면 항상 줄인다 */
+export function setReduceFx(on: boolean) { reduceMotion = prefersReduced || on; }
 
 export interface DrawState {
   circles: Iterable<Circle>;
