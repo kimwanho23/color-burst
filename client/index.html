@@ -14,6 +14,7 @@
   <div class="top">
     <div class="brand">컬러 <b>버스트</b><span class="badge" id="stageBadge" hidden></span></div>
     <span class="roomtag" id="roomTag" hidden></span>
+    <button class="iconbtn" id="pauseBtn" type="button" hidden>일시정지</button>
     <button class="iconbtn" id="musicBtn" type="button">음악 켜짐</button>
     <div class="timer" id="timer">60</div>
   </div>
@@ -29,7 +30,10 @@
         <p>중앙에서 터져 나오는 원을 친구들과 동시에 노리는 4인 클릭 게임이에요. 방을 만들어 코드를 공유하거나, 받은 코드로 들어가세요.</p>
         <label class="lbl" for="nameInput">닉네임</label>
         <input class="field" id="nameInput" maxlength="12" placeholder="예: 반가워" autocomplete="nickname">
-        <button class="btn" id="createBtn" type="button">방 만들기</button>
+        <div class="row">
+          <button class="btn grow" id="createBtn" type="button">방 만들기</button>
+          <button class="btn ghost grow" id="soloBtn" type="button">혼자 하기</button>
+        </div>
         <div class="row">
           <input class="field code" id="codeInput" maxlength="4" placeholder="방 코드" autocomplete="off">
           <button class="btn ghost" id="joinBtn" type="button">입장</button>
@@ -42,12 +46,15 @@
     <!-- 2. 대기실 -->
     <div class="overlay" id="lobby" hidden>
       <div class="card">
-        <div class="lbl">방 코드 (친구에게 알려 주세요)</div>
-        <div class="bigcode" id="lobbyCode">----</div>
+        <div id="codeBlock">
+          <div class="lbl">방 코드 (친구에게 알려 주세요)</div>
+          <div class="bigcode" id="lobbyCode">----</div>
+        </div>
+        <h1 id="soloTitle" hidden>혼자 <span>하기</span></h1>
         <div class="lbl">내 색상</div>
         <div class="picks" id="picks"></div>
         <div id="hostOpts" class="opts">
-          <label class="check"><input type="checkbox" id="fillBots" checked> 빈 자리는 봇으로 채우기</label>
+          <label class="check" id="fillBotsRow"><input type="checkbox" id="fillBots" checked> 빈 자리는 봇으로 채우기</label>
           <div class="seg" id="botLevel"></div>
         </div>
         <div id="rulesBox" class="rulesbox"></div>
@@ -63,11 +70,21 @@
       <div class="card">
         <h1 id="resTitle">결과</h1>
         <div class="rank" id="rank"></div>
-        <button class="btn" id="toLobbyBtn" type="button">대기실로</button>
+        <button class="btn" id="rematchBtn" type="button">한 판 더</button>
+        <button class="btn ghost" id="toLobbyBtn" type="button">대기실로</button>
+        <p class="hint" id="resultHint"></p>
       </div>
     </div>
 
     <div class="countdown" id="countdown" hidden></div>
+    <div class="overlay" id="pauseOv" hidden>
+      <div class="card center">
+        <h1>일시정지</h1>
+        <p id="pauseWho"></p>
+        <button class="btn" id="resumeBtn" type="button">계속하기</button>
+        <p class="hint">Esc 또는 P 키로도 멈추고 다시 할 수 있어요</p>
+      </div>
+    </div>
     <div class="netbanner" id="netBanner" role="status" hidden>연결이 끊겼어요. 다시 연결하는 중…</div>
   </div>
 

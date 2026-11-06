@@ -47,8 +47,12 @@ export class Room {
   private socketOf = new Map<string, string>();
   private dropTimers = new Map<string, NodeJS.Timeout>();
   private emptyTimer: NodeJS.Timeout | null = null;
+  private pausedAt = 0;
+  private pausedBy: string | null = null;
 
-  constructor(private io: IO, readonly code: string, private onEmpty: () => void) {}
+  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false) {
+    if (solo) this.fillBots = true;
+  }
 
   get humans() { return this.players.filter((p) => !p.bot); }
 
@@ -61,11 +65,12 @@ export class Room {
     const p = existing ? this.players.find((x) => x.id === existing) : undefined;
     if (p) {
       this.attach(p, socketId);
-      if (this.phase === 'play') this.io.to(socketId).emit('game:start', this.playPayload());
+      if (this.phase === 'play') this.io.to(socketId).emit('game:sync', this.playPayload());
       this.broadcastState();
       return { id: p.id };
     }
 
+    if (this.solo && this.humans.length) return { error: '혼자 하기 방에는 들어갈 수 없어요.' };
     if (this.phase !== 'lobby') return { error: '이미 게임이 진행 중이에요. 끝나면 다시 들어와 주세요.' };
     this.players = this.players.filter((x) => !x.bot);
     if (this.humans.length >= MAX_PLAYERS) return { error: '방이 가득 찼어요.' };
@@ -88,6 +93,8 @@ export class Room {
     const p = this.players.find((x) => x.id === playerId);
     if (!p) return;
     p.connected = false;
+    // 혼자 하기에서 연결이 끊기면(새로고침 등) 자동으로 멈춰 둔다
+    if (this.solo && this.phase === 'play' && !this.pausedAt) this.doPause(playerId);
     if (this.phase === 'lobby') {
       this.dropTimers.set(playerId, setTimeout(() => this.remove(playerId), LOBBY_GRACE_MS));
     }
@@ -123,7 +130,7 @@ export class Room {
 
   setOptions(id: string, o: { fillBots?: boolean; botLevel?: BotLevel }) {
     if (id !== this.hostId || this.phase !== 'lobby') return;
-    if (typeof o.fillBots === 'boolean') this.fillBots = o.fillBots;
+    if (typeof o.fillBots === 'boolean' && !this.solo) this.fillBots = o.fillBots;
     if (o.botLevel === 0 || o.botLevel === 1 || o.botLevel === 2) this.botLevel = o.botLevel;
     this.broadcastState();
   }
@@ -165,6 +172,8 @@ export class Room {
     this.bossHits.clear();
     this.clickLog.clear();
     this.bossQueue = bossTimes(this.G);
+    this.pausedAt = 0;
+    this.pausedBy = null;
     const now = Date.now();
     this.startAt = now + RULES.countdownMs;
     this.endAt = this.startAt + this.G.roundMs;
@@ -176,9 +185,39 @@ export class Room {
     return null;
   }
 
+  /** 일시정지 권한: 혼자 하기는 본인, 멀티는 방장 */
+  canPause(id: string) { return this.solo ? this.players.some((p) => p.id === id) : id === this.hostId; }
+
+  pause(id: string) {
+    if (this.phase !== 'play' || this.pausedAt || !this.canPause(id)) return;
+    this.doPause(id);
+  }
+
+  resume(id: string) {
+    if (this.phase !== 'play' || !this.pausedAt || !this.canPause(id)) return;
+    const delta = Date.now() - this.pausedAt;
+    // 멈춰 있던 시간만큼 모든 시각을 뒤로 민다
+    this.startAt += delta; this.endAt += delta; this.lastSpawn += delta;
+    for (const c of this.circles.values()) c.born += delta;
+    for (const p of this.players) {
+      if (p.feverUntil > this.pausedAt) p.feverUntil += delta;
+      if (p.markedUntil > this.pausedAt) p.markedUntil += delta;
+    }
+    for (const b of this.bots.values()) b.shift(delta);
+    this.pausedAt = 0;
+    this.pausedBy = null;
+    this.io.to(this.code).emit('game:sync', this.playPayload());
+  }
+
+  private doPause(id: string) {
+    this.pausedAt = Date.now();
+    this.pausedBy = id;
+    this.io.to(this.code).emit('game:pause', { by: id });
+  }
+
   click(id: string, d: { circleId: number | null; x: number; y: number }) {
     const now = Date.now();
-    if (this.phase !== 'play' || now < this.startAt) return;
+    if (this.phase !== 'play' || this.pausedAt || now < this.startAt) return;
     const p = this.players.find((x) => x.id === id);
     if (!p) return;
     if (!this.allowClick(id, now)) {
@@ -202,7 +241,7 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules };
+    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo };
   }
 
   destroy() {
@@ -298,10 +337,11 @@ export class Room {
   }
 
   private playPayload() {
-    return { startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()], rules: this.rules };
+    return { startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()], rules: this.rules, pausedBy: this.pausedBy };
   }
 
   private tick() {
+    if (this.pausedAt) return;
     const now = Date.now();
     if (now < this.startAt) return;
     if (now >= this.endAt) return this.end();

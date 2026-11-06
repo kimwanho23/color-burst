@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import {
   COLORS, DEFAULT_RULES, RULES, circlePos, isFever, isHit, isMarked, isOut,
-  type BotLevel, type Circle, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
@@ -57,6 +57,11 @@ const pending = new Set<number>();
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
 /** 지금 판(또는 대기실)의 방 규칙 */
 let rules: RoomRules = DEFAULT_RULES;
+/** 일시정지 중이면 멈춘 순간의 서버 시각. 화면은 이 시각에 멈춰 있다 */
+let pausedView = 0;
+const viewNow = () => (pausedView || serverNow());
+/** 혼자 하기는 본인, 멀티는 방장만 일시정지 가능 */
+const canPause = () => !!room && (room.solo || room.hostId === myId());
 const myId = () => myPlayerId;
 const me = () => players.find((p) => p.id === myId());
 
@@ -81,6 +86,7 @@ const entered = (r: { ok: true; code: string; you: string } | { ok: false; error
   if (r.ok) { myPlayerId = r.you; store('cb-room', r.code); renderScores(); renderLobby(); }
 };
 $('createBtn').onclick = () => socket.emit('room:create', { name: getName(), key: KEY }, entered);
+$('soloBtn').onclick = () => { initAudio(); socket.emit('room:solo', { name: getName(), key: KEY }, entered); };
 const join = () => socket.emit('room:join', { code: codeInput.value, name: getName(), key: KEY }, entered);
 $('joinBtn').onclick = join;
 codeInput.onkeydown = (e) => { if (e.key === 'Enter') join(); };
@@ -94,8 +100,8 @@ socket.on('room:state', (s) => {
   if (!playing) rules = s.rules;
   if (!playing) players = s.players;
   $('roomTag').hidden = false;
-  $('roomTag').textContent = `방 ${s.code}`;
-  history.replaceState(null, '', `#${s.code}`);
+  $('roomTag').textContent = s.solo ? '혼자 하기' : `방 ${s.code}`;
+  history.replaceState(null, '', s.solo ? location.pathname : `#${s.code}`);
   renderScores();
   renderLobby();
   if (s.phase === 'lobby' && !playing && $('result').hidden) show('lobby');
@@ -114,6 +120,10 @@ function renderLobby() {
     b.onclick = () => socket.emit('lobby:color', Number(b.dataset.c) as ColorIndex);
   });
 
+  $('codeBlock').hidden = room.solo;
+  $('soloTitle').hidden = !room.solo;
+  $('fillBotsRow').hidden = room.solo;
+  $('leaveBtn').textContent = room.solo ? '처음으로' : '방 나가기';
   $('hostOpts').hidden = !host;
   $<HTMLInputElement>('fillBots').checked = room.fillBots;
   $('botLevel').innerHTML = LEVELS.map((l, i) => `<button type="button" data-l="${i}" aria-pressed="${room!.botLevel === i}">봇 ${l}</button>`).join('');
@@ -128,7 +138,7 @@ function renderLobby() {
 
   const humans = room.players.filter((p) => !p.bot).length;
   $<HTMLButtonElement>('startBtn').hidden = !host;
-  $('lobbyHint').textContent = host
+  $('lobbyHint').textContent = room.solo ? '봇 3명과 대결해요' : host
     ? `참가자 ${humans}명${room.fillBots ? ` · 빈 자리 ${4 - humans}개는 봇` : ''}`
     : `방장이 시작하기를 기다리는 중 · 참가자 ${humans}명`;
 }
@@ -149,20 +159,53 @@ const pre = __APP_VERSION__.split('-')[1]?.split('.')[0];
 if (pre) { $('stageBadge').textContent = pre.toUpperCase(); $('stageBadge').hidden = false; }
 }
 $('leaveBtn').onclick = () => { socket.emit('room:leave'); store('cb-room', null); resetToHome(); };
+$('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
 $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 
 
 
 // ---------- 게임 ----------
-socket.on('game:start', (d) => {
+function applyPlay(d: PlayPayload, fresh: boolean) {
   startAt = d.startAt; endAt = d.endAt; players = d.players; rules = d.rules;
-  circles.clear(); pending.clear(); lastCount = -1;
+  circles.clear(); pending.clear();
+  if (fresh) lastCount = -1;
   for (const c of d.circles) circles.set(c.id, c);
   playing = true;
   show(null);
   renderScores();
   initAudio();
-  startMusic(() => { const m = me(); return !!m && isFever(m, serverNow()); });
+  setPaused(d.pausedBy);
+}
+socket.on('game:start', (d) => applyPlay(d, true));
+socket.on('game:sync', (d) => applyPlay(d, false));
+socket.on('game:pause', ({ by }) => setPaused(by));
+
+function setPaused(by: string | null) {
+  if (by) {
+    if (!pausedView) pausedView = serverNow();
+    stopMusic();
+    const who = players.find((p) => p.id === by);
+    $('pauseWho').textContent = room?.solo ? '' : `${by === myId() ? '내가' : `${who?.name ?? '방장'}님이`} 멈췄어요`;
+    $<HTMLButtonElement>('resumeBtn').hidden = !canPause();
+    $('pauseOv').hidden = false;
+  } else {
+    pausedView = 0;
+    $('pauseOv').hidden = true;
+    startMusic(() => { const m = me(); return !!m && isFever(m, serverNow()); });
+  }
+}
+function togglePause() {
+  if (!playing || !canPause()) return;
+  socket.emit(pausedView ? 'game:resume' : 'game:pause');
+}
+$('pauseBtn').onclick = togglePause;
+$('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && !(e.target instanceof HTMLInputElement)) togglePause();
+});
+// 혼자 하기: 다른 탭으로 가면 자동으로 멈춤
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && playing && room?.solo && !pausedView) socket.emit('game:pause');
 });
 socket.on('circle:spawn', (c) => {
   circles.set(c.id, c);
@@ -208,17 +251,23 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
 });
 socket.on('game:over', ({ ranking }) => {
   playing = false;
+  pausedView = 0;
+  $('pauseOv').hidden = true;
   stopMusic();
   $('stage').classList.remove('feverOn');
   const pos = ranking.findIndex((p) => p.id === myId()) + 1;
   $('resTitle').textContent = pos === 1 ? '1등!' : `${pos}등`;
   $('rank').innerHTML = ranking.map((p, i) => `<div><span class="pos">${i + 1}</span>${shapeSVG(p.color, 24)}<span>${esc(p.name)}${p.id === myId() ? ' (나)' : ''}</span><span class="v">${p.score}</span></div>`).join('');
   (pos === 1 ? sfx.win : sfx.lose)();
+  const again = canPause();
+  $<HTMLButtonElement>('rematchBtn').hidden = !again;
+  $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
+  $('resultHint').textContent = again ? '' : '방장이 한 판 더를 누르면 바로 시작해요';
   show('result');
 });
 
 $('cv').addEventListener('pointerdown', (e) => {
-  if (!playing) return;
+  if (!playing || pausedView) return;
   ensureMusic();
   const now = serverNow();
   if (now < startAt) return;
@@ -273,7 +322,8 @@ function updateHud(now: number) {
 }
 
 function frame() {
-  const now = serverNow();
+  const now = viewNow();
+  $('pauseBtn').hidden = !(playing && canPause());
   for (const [id, c] of circles) if (isOut(c, now)) { circles.delete(id); pending.delete(id); }
   const m = me();
   updateHud(now);

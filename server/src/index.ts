@@ -82,6 +82,16 @@ io.on('connection', (socket) => {
     ack('error' in r ? { ok: false, error: r.error } : { ok: true, code, you: r.id });
   });
 
+  socket.on('room:solo', ({ name, key }, ack) => {
+    if (!validKey(key)) return ack({ ok: false, error: '접속 정보가 올바르지 않아요. 새로고침해 주세요.' });
+    leaveCurrent();
+    const code = makeCode();
+    const room = new Room(io, code, () => rooms.delete(code), true);
+    rooms.set(code, room);
+    const r = enter(room, key, String(name ?? ''));
+    ack('error' in r ? { ok: false, error: r.error } : { ok: true, code, you: r.id });
+  });
+
   socket.on('room:join', ({ code, name, key }, ack) => {
     if (!validKey(key)) return ack({ ok: false, error: '접속 정보가 올바르지 않아요. 새로고침해 주세요.' });
     const room = rooms.get(String(code ?? '').toUpperCase().trim());
@@ -99,6 +109,8 @@ io.on('connection', (socket) => {
     const err = s ? s.room.start(s.id) : '방에 들어가 있지 않아요.';
     if (typeof ack === 'function') ack(err ? { ok: false, error: err } : { ok: true });
   });
+  socket.on('game:pause', () => { const s = here(); if (s) s.room.pause(s.id); });
+  socket.on('game:resume', () => { const s = here(); if (s) s.room.resume(s.id); });
   socket.on('game:click', (d) => {
     const s = here();
     if (!s || !d || typeof d.x !== 'number' || typeof d.y !== 'number') return;

@@ -12,6 +12,9 @@ export class Bot {
   private skill = 0.8 + Math.random() * 0.3;
   constructor(private level: BotLevel) {}
 
+  /** 일시정지가 풀리면 멈춰 있던 만큼 미룬다 */
+  shift(ms: number) { if (this.next) this.next += ms; }
+
   /** 이번 틱에 가져갈 원을 고른다. 없으면 null */
   think(me: PlayerState, circles: Circle[], players: PlayerState[], now: number): Circle | null {
     const L = LEVELS[this.level];

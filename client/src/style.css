@@ -61,6 +61,8 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 .field { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font: 600 16px var(--body); }
 .field.code { text-transform: uppercase; letter-spacing: .3em; font-family: var(--display); }
 .btn { background: var(--yellow); color: #1b1500; border: 0; border-radius: 14px; padding: 14px 18px; font: 400 20px var(--display); cursor: pointer; }
+.btn.grow { flex: 1; min-width: 0; }
+.card.center { text-align: center; align-items: center; }
 .btn.ghost { background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .link { background: none; border: 0; color: var(--muted); font: 600 13px var(--body); cursor: pointer; text-decoration: underline; align-self: center; }
