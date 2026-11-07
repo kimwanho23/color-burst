@@ -434,7 +434,12 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     // 점수 글자는 특별한 순간일수록 높은 단계 (0점이면 글자 없음)
     const tier = scoreTier({ jackpot: result.jackpot, fever: isFever(who, serverNow()), special: result.comboBonus || result.type === 'counter' });
     if (result.gained > 0) renderer.scoreText(x, y, `+${result.gained}${label}${result.comboBonus ? ' 콤보!' : ''}`, tier);
-    if (!blasted) ({ own: sfx.own, yellow: sfx.yellow, rainbow: sfx.rainbow, steal: sfx.steal, feverSteal: sfx.steal, counter: sfx.rainbow })[result.type]();
+    // 소리: 견제는 그대로, 나머지는 점수 단계 소리(콤보가 쌓일수록 높아짐). 잭팟은 잭팟 소리가 따로 난다
+    if (!blasted) {
+      if (result.type === 'steal' || result.type === 'feverSteal') sfx.steal();
+      else if (result.jackpot <= 1) sfx.hit(tier, (me()?.combo ?? 0) + 1);
+      if (result.type === 'rainbow') sfx.rainbow();
+    }
     if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
     if (result.feverStarted) { sfx.fever(); renderer.text(800, 400, 'FEVER!', '#ff9f1c', 2); }
   } else {
@@ -447,7 +452,7 @@ socket.on('gold:got', ({ circleId, by, gained, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
   const who = nameOf(by);
   renderer.burst(x, y, GOLD, true, 2); renderer.burst(x, y, '#fff', false);
-  if (by === myId()) { sfx.jackpot(2); renderer.scoreText(x, y, `+${gained} 황금!`, scoreTier({ gold: true })); }
+  if (by === myId()) { sfx.hit(4); renderer.scoreText(x, y, `+${gained} 황금!`, scoreTier({ gold: true })); }
   else if (who) {
     renderer.text(x, y, `${who.name} 황금`, COLORS[who.color].hex, 0.75);
     pushFeed($('feed'), icon(UI.gold, 18), `${who.name}: 황금 원 +${gained}`, COLORS[who.color].hex);

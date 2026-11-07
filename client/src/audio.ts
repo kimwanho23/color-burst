@@ -55,19 +55,64 @@ function tone(freq: number, dur: number, type: OscillatorType = 'square', vol = 
   o.start(t); o.stop(t + dur + 0.02);
 }
 
+/** 짧은 잡음 (때리는 순간의 "탁" 소리). filter: 이 주파수 위(highpass)나 아래(lowpass)만 */
+let noiseBuf: AudioBuffer | null = null;
+function noise(dur: number, vol = 0.1, when = 0, freq = 2000, type: BiquadFilterType = 'highpass') {
+  if (!ac || !sfxBus) return;
+  if (!noiseBuf) {
+    noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.5), ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const t = ac.currentTime + when;
+  const src = ac.createBufferSource();
+  const f = ac.createBiquadFilter();
+  const g = ac.createGain();
+  src.buffer = noiseBuf; f.type = type; f.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(sfxBus);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+
+/** 콤보가 쌓일수록 음이 올라간다: 2콤보마다 반음, 최대 한 옥타브 */
+const comboPitch = (combo: number) => 2 ** (Math.min(24, Math.max(0, combo)) / 24);
+
 export const sfx = {
+  /**
+   * 원 잡기: 점수 글자 단계(1 평소, 2 콤보 보너스·반격, 3 피버, 4 잭팟·황금 원, 5 최고)에 맞춘 소리.
+   * 콤보가 쌓일수록 음이 올라간다
+   */
+  hit: (tier: 1 | 2 | 3 | 4 | 5, combo = 0) => {
+    const k = comboPitch(combo);
+    noise(0.03, 0.12, 0, 2500);
+    if (tier >= 4) {
+      tone(1568, 0.07, 'square', 0.06); tone(2093, 0.16, 'square', 0.06, 0.06);
+      if (tier === 5) { tone(90, 0.3, 'sine', 0.25, 0, 0.5); [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.12, 'triangle', 0.07, 0.05 + i * 0.04)); }
+      return;
+    }
+    tone(660 * k, 0.07, 'triangle', 0.12);
+    if (tier === 2) tone(1320 * k, 0.09, 'square', 0.05, 0.04);
+    if (tier === 3) [830, 990].forEach((f, i) => tone(f * k, 0.09, 'triangle', 0.07, 0.03 + i * 0.03));
+  },
   own: () => { tone(880, 0.08, 'square', 0.09); tone(1320, 0.1, 'square', 0.07, 0.05); },
   yellow: () => tone(660, 0.09, 'triangle', 0.14),
   steal: () => tone(300, 0.12, 'sawtooth', 0.06, 0, 0.7),
-  miss: () => tone(160, 0.12, 'sine', 0.12, 0, 0.6),
+  /** 빈 곳: 낮고 짧은 "툭" */
+  miss: () => { noise(0.04, 0.08, 0, 400, 'lowpass'); tone(120, 0.06, 'sine', 0.08, 0, 0.7); },
   rainbow: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.12, 'square', 0.07, i * 0.05)),
   fever: () => [392, 523, 659, 784, 1047].forEach((f, i) => tone(f, 0.14, 'square', 0.08, i * 0.06)),
   comboBroken: () => tone(220, 0.2, 'triangle', 0.1, 0, 0.5),
   bossAppear: () => [110, 147, 196].forEach((f, i) => tone(f, 0.35, 'sawtooth', 0.08, i * 0.12)),
-  bossHit: () => tone(180, 0.06, 'square', 0.08, 0, 0.6),
+  /** 보스 타격: 둔탁한 "퍽" */
+  bossHit: () => { noise(0.06, 0.14, 0, 900, 'lowpass'); tone(140, 0.08, 'square', 0.08, 0, 0.6); },
   /** 방어형 보호막에 막힘: 맑은 금속음 */
   bossBlock: () => tone(1600, 0.08, 'triangle', 0.08, 0, 0.8),
-  bossKill: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.18, 'square', 0.08, i * 0.07)),
+  /** 보스 막타: 저음 "쿵" + 폭발 잡음 + 올라가는 화음 */
+  bossKill: () => {
+    tone(70, 0.45, 'sine', 0.3, 0, 0.5); noise(0.35, 0.18, 0, 700, 'lowpass');
+    [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.18, 'square', 0.07, 0.08 + i * 0.06));
+  },
   pickOpen: () => [392, 494, 587].forEach((f, i) => tone(f, 0.12, 'triangle', 0.1, i * 0.08)),
   pickChoose: () => { tone(784, 0.08, 'square', 0.08); tone(1175, 0.14, 'square', 0.07, 0.07); },
   legend: () => [784, 988, 1175, 1568, 1976, 2349].forEach((f, i) => tone(f, 0.22, 'triangle', 0.07, i * 0.06)),
