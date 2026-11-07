@@ -349,6 +349,20 @@ socket.on('circle:spawn', (c) => {
 const nameOf = (id: string | null) => players.find((p) => p.id === id);
 const GOLD = '#ffd166';
 /** 잭팟 숫자는 배율이 클수록 크게 */
+/** 아래쪽 큰 콤보 숫자: 오르면 살짝 커졌다 돌아오고, 끊기면 빨갛게 흔들림. 색은 콤보 크기 등급 */
+let shownCombo = 0;
+function renderCombo(n: number) {
+  if (n === shownCombo) return;
+  const el = $('combo'), num = el.querySelector('b')!;
+  num.textContent = String(n);
+  const tier = n >= 50 ? 5 : n >= 30 ? 4 : n >= 20 ? 3 : n >= 10 ? 2 : 1;
+  el.className = `combo c${tier}`;
+  const anim = n > shownCombo ? 'bump' : shownCombo > 0 ? 'broke' : '';
+  shownCombo = n;
+  if (!anim) return;
+  void el.offsetWidth; // 같은 애니메이션을 다시 시작
+  el.classList.add(anim);
+}
 /** 점수 글자 단계: 잭팟 ×3·보스 막타 5, 잭팟·황금 원 4, 피버 3, 콤보 보너스·반격 2, 평소 1 */
 const scoreTier = (o: { jackpot?: number; fever?: boolean; special?: boolean; kill?: boolean; gold?: boolean }): ScoreTier =>
   o.kill || (o.jackpot ?? 1) >= 3 ? 5 : o.gold || (o.jackpot ?? 1) > 1 ? 4 : o.fever ? 3 : o.special ? 2 : 1;
@@ -638,7 +652,7 @@ function updateHud(now: number) {
   const after = !!m && !fever && now < m.afterUntil;
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
-  $('combo').textContent = `${m?.combo ?? 0} 콤보`;
+  renderCombo(m?.combo ?? 0);
   renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id], RULES.sabotage.ms);
   // 점수판의 버프 아이콘은 1초마다 다시 그려 끝난 것을 지운다
   const sec = Math.floor(now / 1000);
