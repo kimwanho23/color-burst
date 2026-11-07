@@ -35,7 +35,7 @@ export class Bot {
         return 4 + (1 - (c.hp ?? 1) / (c.maxHp ?? 1)) * 14;
       }
       if (c.kind === 'item') return 5;
-      if (c.kind === 'rainbow') return 6;
+      if (c.kind === 'rainbow' || c.kind === 'gold') return 6;
       if (c.kind === me.color) return 5;
       if (c.kind === 'y') return fever ? 5 : 3;
       const owner = players.find((p) => p.color === c.kind);

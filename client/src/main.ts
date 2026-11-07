@@ -427,6 +427,17 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   if (result.brokeComboOf === myId()) { sfx.comboBroken(); renderer.text(x, y - 45, '콤보 끊김!', '#ff5d73', 1.1); }
   if (result.shielded && claimedKind === me()?.color) renderer.text(x, y - 45, '방패!', '#4d9bff', 1.1);
 });
+socket.on('gold:got', ({ circleId, by, gained, x, y }) => {
+  circles.delete(circleId); pending.delete(circleId);
+  const who = nameOf(by);
+  renderer.burst(x, y, GOLD, true, 2); renderer.burst(x, y, '#fff', false);
+  if (by === myId()) { sfx.jackpot(2); renderer.text(x, y, `+${gained} 황금!`, GOLD, 1.5); }
+  else if (who) {
+    renderer.text(x, y, `${who.name} 황금`, COLORS[who.color].hex, 0.75);
+    pushFeed($('feed'), icon(UI.gold, 18), `${who.name}: 황금 원 +${gained}`, COLORS[who.color].hex);
+  }
+  popOnChip($('scores'), by, icon(UI.gold, 22));
+});
 socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
   const who = nameOf(by);

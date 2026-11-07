@@ -7,7 +7,7 @@ import {
   Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
-  Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2,
+  Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId } from '@color-burst/shared';
 
@@ -39,6 +39,7 @@ export const EVENT_ICON: Record<EventId, IconNode> = {
 };
 
 export const UI = {
+  gold: CircleDollarSign,
   pause: Pause, settings: Settings, reroll: RefreshCw, classic: Gamepad2, arcade: Layers,
   basic: Gauge, party: PartyPopper, hardcore: Zap, chill: Coffee, chaos: Tornado, ping: Wifi, bot: Bot,
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,

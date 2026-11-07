@@ -59,6 +59,11 @@ export const RULES = {
    * e < bounds[0] 중앙, e < bounds[1] 사이, 그 밖은 가장자리. 일반 원 점수에 mult를 곱한다
    */
   zones: { bounds: [0.35, 0.7], mult: [1, 2, 3] },
+  /**
+   * 황금 원: 작고 빠르며 벽에서 튕기고 lifeSec 뒤 사라진다. 직접 클릭으로만 잡고 고정 points점 (배율 없음).
+   * 한 판에 1/2/3번 확률 countOdds, 판 시작 startMs 뒤 ~ 끝나기 endMs 전 사이
+   */
+  gold: { r: 22, speed: 520, lifeSec: 5, points: 20, countOdds: [25, 50, 25], startMs: 3_000, endMs: 6_000 },
   /** 카오스 모드 배율. 레이저는 laserEveryMs마다, laserQuickChance 확률로 laserQuickMs 뒤 한 번 더 (겹쳐 나옴) */
   chaos: { itemMult: 3, waveIntervalMult: 0.5, laserEveryMs: 2_000, laserQuickChance: 0.35, laserQuickMs: 600, bossCountOdds: [20, 40, 40], eventChance: 0.3 },
   /** 아케이드: 라운드가 끝나고 능력 선택 화면이 열리기까지 ("라운드 종료!" 표시) */
@@ -327,7 +332,7 @@ export type ColorIndex = 0 | 1 | 2 | 3;
 export type BossType = 'normal' | 'guard' | 'rage' | 'runner';
 /** 아케이드 라운드 테마 */
 export type ThemeId = 'goldRush' | 'bossRush' | 'reverse' | 'rainbowRain' | 'itemRush' | 'allYellow';
-export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item';
+export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold';
 
 export interface Circle {
   id: number;
@@ -595,8 +600,8 @@ export function circlePos(c: Circle, t: number) {
   // 역발사: 같은 방향의 화면 가장자리에서 출발해 중앙으로
   const d = c.rev ? edgeDist(c) - traveled(c, t) : traveled(c, t);
   const x = FIELD.w / 2 + Math.cos(c.angle) * d, y = FIELD.h / 2 + Math.sin(c.angle) * d;
-  // 이동형 보스: 화면 가장자리에서 튕긴다 (직선 경로를 화면 안으로 접어서 계산)
-  if (c.boss === 'runner') return { x: fold(x, c.r, FIELD.w - c.r), y: fold(y, c.r, FIELD.h - c.r) };
+  // 이동형 보스·황금 원: 화면 가장자리에서 튕긴다 (직선 경로를 화면 안으로 접어서 계산)
+  if (c.boss === 'runner' || c.kind === 'gold') return { x: fold(x, c.r, FIELD.w - c.r), y: fold(y, c.r, FIELD.h - c.r) };
   return { x, y };
 }
 
@@ -626,6 +631,8 @@ export function isOut(c: Circle, t: number) {
   if (c.rev) return traveled(c, t) >= edgeDist(c);
   // 이동형 보스는 튕기므로 화면 밖으로 안 나간다: 정해진 시간만큼 움직이면 도망
   if (c.boss === 'runner') return traveled(c, t) >= c.speed * RULES.boss.lifeSec;
+  // 황금 원도 튕기므로 정해진 시간만큼 움직이면 사라진다 (시간 정지만큼 늘어남)
+  if (c.kind === 'gold') return traveled(c, t) >= c.speed * RULES.gold.lifeSec;
   const p = circlePos(c, t);
   return p.x < -c.r || p.x > FIELD.w + c.r || p.y < -c.r || p.y > FIELD.h + c.r;
 }
@@ -704,6 +711,20 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
   };
   if (item) { c.r = RULES.items.r; c.itemTier = rollItemTier(rand); }
   return c;
+}
+
+/** 황금 원: 중앙에서 무작위 방향으로 (게임 속도 배율 안 받음) */
+export function makeGold(id: number, now: number, rand = Math.random): Circle {
+  return { id, kind: 'gold', angle: rand() * Math.PI * 2, speed: RULES.gold.speed, r: RULES.gold.r, born: now };
+}
+
+/** 이번 판 황금 원이 나오는 시점(판 시작 후 ms), 오름차순 */
+export function goldTimes(roundMs: number, rand = Math.random): number[] {
+  const G = RULES.gold;
+  let r = rand() * G.countOdds.reduce((a, b) => a + b, 0), n = G.countOdds.length;
+  for (let i = 0; i < G.countOdds.length; i++) { r -= G.countOdds[i]; if (r < 0) { n = i + 1; break; } }
+  const lo = G.startMs, hi = Math.max(lo, roundMs - G.endMs);
+  return Array.from({ length: n }, () => lo + rand() * (hi - lo)).sort((a, b) => a - b);
 }
 
 function rollItemTier(rand: () => number): 0 | 1 | 2 {

@@ -28,6 +28,7 @@ export const FEVER_BURST = 1.5;
 const BANNER_Y = 230, BANNER_LIFE = 1.2;
 
 type BasicKind = Exclude<CircleKind, 'boss' | 'item'>;
+const GOLD_TRAIL = [40, 80, 120];
 
 type Fx =
   /** r0 → r1로 퍼지는 링 (기본 28 → 73) */
@@ -276,6 +277,7 @@ export class Renderer {
       }
       if (this.warp) { const w = this.warp(p, r); p = w; r = w.size; }
       fade(c);
+      if (c.kind === 'gold' && !this.warp) this.drawGoldTrail(c, s.now);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
@@ -555,8 +557,36 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** 황금 원 잔상: 조금 전 위치들을 옅게 */
+  private drawGoldTrail(c: Circle, t: number) {
+    const ctx = this.ctx;
+    ctx.save();
+    GOLD_TRAIL.forEach((ms, i) => {
+      if (t - ms < c.born) return;
+      const q = circlePos(c, t - ms);
+      ctx.globalAlpha = 0.28 - i * 0.08; ctx.fillStyle = GOLD;
+      ctx.beginPath(); ctx.arc(q.x, q.y, c.r * (0.9 - i * 0.15), 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
+  }
+
   private drawCircle(kind: BasicKind, x: number, y: number, r: number, rot: number, s: DrawState) {
     const ctx = this.ctx;
+    if (kind === 'gold') {
+      // 황금 원: 금빛 그라데이션 + 빛 테두리 + 도는 반짝임
+      ctx.save(); ctx.translate(x, y);
+      ctx.shadowColor = 'rgba(255, 209, 102, .9)'; ctx.shadowBlur = 18;
+      const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r);
+      g.addColorStop(0, '#fffbe6'); g.addColorStop(0.45, '#ffd166'); g.addColorStop(1, '#c98a00');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.lineWidth = 3; ctx.strokeStyle = '#fff3c4'; ctx.stroke();
+      ctx.rotate(rot * 2); ctx.fillStyle = '#fff';
+      const k = r * 0.55;
+      ctx.beginPath(); ctx.moveTo(0, -k); ctx.lineTo(k * 0.18, -k * 0.18); ctx.lineTo(k, 0); ctx.lineTo(k * 0.18, k * 0.18);
+      ctx.lineTo(0, k); ctx.lineTo(-k * 0.18, k * 0.18); ctx.lineTo(-k, 0); ctx.lineTo(-k * 0.18, -k * 0.18); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      return;
+    }
     ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
     if (kind === 'rainbow') {
       const g = ctx.createLinearGradient(-r, 0, r, 0);
@@ -586,7 +616,7 @@ export class Renderer {
 }
 
 /** 점수판, 버튼 등에 쓰는 작은 SVG 아이콘 */
-export function shapeSVG(color: Exclude<CircleKind, 'item'>, size = 22) {
+export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold'>, size = 22) {
   const s = size, h = s / 2;
   if (color === 'boss') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h - 1}" fill="#ffc23a" stroke="#fff" stroke-width="1.5"/><path d="M${s * .28} ${s * .62}V${s * .36}L${s * .39} ${s * .5}L${h} ${s * .3}L${s * .61} ${s * .5}L${s * .72} ${s * .36}V${s * .62}Z" fill="#502d00" fill-opacity=".6"/></svg>`;
   if (color === 'rainbow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><defs><linearGradient id="rg${s}" x1="0" x2="1"><stop offset="0" stop-color="#ff5d73"/><stop offset=".5" stop-color="#ffd43b"/><stop offset="1" stop-color="#4dabf7"/></linearGradient></defs><circle cx="${h}" cy="${h}" r="${h - 1}" fill="url(#rg${s})"/></svg>`;

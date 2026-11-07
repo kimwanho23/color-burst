@@ -106,6 +106,8 @@ export interface ServerToClient {
   /** 아케이드: 라운드가 끝남 (잠시 뒤 능력 선택이 열린다) */
   'round:end': (d: { round: number }) => void;
   'circle:spawn': (c: Circle) => void;
+  /** 황금 원을 잡음 (고정 점수) */
+  'gold:got': (d: { circleId: number; by: string; gained: number; x: number; y: number }) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;
   /** 아이템 원을 잡음. 블라스트(폭죽·필드 클리어)면 이 이벤트가 먼저 오고 circle:claimed가 이어진다 */

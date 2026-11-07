@@ -473,3 +473,27 @@ test('잡는 방법과 상관없이 원 위치로 구역', () => {
   assert.equal(me.score, 21, '폭죽도 가장자리 3×3');
   room.destroy();
 });
+
+test('황금 원은 직접 클릭으로만, +20 고정', (t) => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  const gold = (id: number): Circle => ({ id, kind: 'gold', angle: 0, speed: 7000, r: 22, born: now - 100 }); // 지금 (1500, 450)
+  me.feverUntil = now + 5000; me.buffs.double = now + 5000; me.combo = 4; me.fever = 30;
+  circles.set(91, gold(91));
+  sent.length = 0;
+  room.click(me.id, { circleId: 91, x: 1500, y: 450 });
+  assert.deepEqual([me.score, me.combo, me.fever, circles.has(91)], [20, 4, 30, false]);
+  assert.ok(sent.includes('gold:got'));
+  // 넓은 손 범위 안이어도 안 잡힘
+  circles.set(92, gold(92));
+  me.buffs.wideHand = now + 5000;
+  room.click(me.id, { circleId: null, x: 1490, y: 450 });
+  assert.equal(circles.has(92), true);
+  // 필드 클리어로도 안 잡힘
+  circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
+  t.mock.method(Math, 'random', () => 0.5); // 전설 중 필드 클리어
+  room.click(me.id, { circleId: 1, x: 1100, y: 450 });
+  assert.equal(circles.has(92), true);
+  assert.equal(me.score, 20);
+  room.destroy();
+});

@@ -5,7 +5,7 @@ import {
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
-  FIELD, zoneOf, canLaserStun, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
+  FIELD, zoneOf, goldTimes, makeGold, canLaserStun, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
@@ -46,6 +46,8 @@ export class Room {
   private bossHits = new Map<number, Map<string, number>>();
   /** 아직 안 나온 보스 등장 시점(판 시작 후 ms) */
   private bossQueue: number[] = [];
+  /** 황금 원이 나올 시점(판 시작 후 ms) */
+  private goldQueue: number[] = [];
   /** 클릭 속도 제한용: 플레이어 id → 최근 1초 클릭 시각 */
   private clickLog = new Map<string, number[]>();
   /** 비밀 키 → 플레이어 id */
@@ -323,6 +325,7 @@ export class Room {
         got = true;
         if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
+        else if (c.kind === 'gold') this.claimGold(p, c, now);
         else this.claim(p, c, now, 'click');
       }
     }
@@ -523,6 +526,7 @@ export class Room {
     this.theme = this.nextTheme;
     this.nextTheme = null;
     this.bossQueue = bossTimes(this.G, this.theme);
+    this.goldQueue = goldTimes(this.G.roundMs);
     this.zones = [];
     this.rain = null;
     this.freezeUntil = 0;
@@ -694,6 +698,12 @@ export class Room {
       this.bossQueue.shift();
       this.spawnBosses(now);
     }
+    while (now >= this.freezeUntil && this.goldQueue.length && now - this.startAt >= this.goldQueue[0]) {
+      this.goldQueue.shift();
+      const g = makeGold(this.nextCircleId++, now);
+      this.circles.set(g.id, g);
+      this.io.to(this.code).emit('circle:spawn', g);
+    }
     for (const [id, c] of this.circles) {
       // 끌려가는 원은 잡힐 때까지 남겨 둔다
       if (!isOut(c, now - LAG_WINDOW_MS) || this.pulls.has(id)) continue;
@@ -722,6 +732,7 @@ export class Room {
       if (!target) continue;
       if (target.kind === 'boss') this.hitBoss(p, target, now);
       else if (target.kind === 'item') this.claimItem(p, target, now);
+      else if (target.kind === 'gold') this.claimGold(p, target, now);
       else this.claim(p, target, now, 'click');
     }
   }
@@ -874,6 +885,16 @@ export class Room {
     if (!quiet) this.emitPlayers();
   }
 
+  /** 황금 원: 고정 점수 (구역·피버·잭팟·콤보 없음) */
+  private claimGold(p: PlayerState, c: Circle, now: number) {
+    if (!this.circles.has(c.id)) return;
+    this.circles.delete(c.id);
+    const { x, y } = circlePos(c, now);
+    p.score += RULES.gold.points;
+    this.io.to(this.code).emit('gold:got', { circleId: c.id, by: p.id, gained: RULES.gold.points, x, y });
+    this.emitPlayers();
+  }
+
   /** 아이템 원: 무작위 아이템을 바로 발동한다 */
   private claimItem(p: PlayerState, c: Circle, now: number) {
     if (!this.circles.has(c.id)) return;
@@ -895,7 +916,7 @@ export class Room {
       case 'bomb':
       case 'fieldClear':
         for (const o of [...this.circles.values()]) {
-          if (o.kind === 'boss' || o.kind === 'item' || isGuarded(o, now)) continue;
+          if (o.kind === 'boss' || o.kind === 'item' || o.kind === 'gold' || isGuarded(o, now)) continue;
           const q = circlePos(o, now);
           if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast', true);
         }
