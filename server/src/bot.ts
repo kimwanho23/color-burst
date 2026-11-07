@@ -1,10 +1,13 @@
 import { bossState, isFever, isGuarded, isMarked, isOut, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
 
-/** gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms) */
+/**
+ * gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms).
+ * 황금 원은 작고 빨라서 사람처럼 늦게 반응하고(goldDelay만큼 더) 노려도 goldHit 확률로만 맞힌다
+ */
 const LEVELS = [
-  { gap: 1400, react: 600 },
-  { gap: 1000, react: 450 },
-  { gap: 650, react: 300 },
+  { gap: 1400, react: 600, goldDelay: 1500, goldHit: 0.3 },
+  { gap: 1000, react: 450, goldDelay: 1000, goldHit: 0.5 },
+  { gap: 650, react: 300, goldDelay: 600, goldHit: 0.7 },
 ] as const;
 
 export class Bot {
@@ -23,7 +26,7 @@ export class Bot {
     this.next = now + (L.gap * (0.7 + Math.random() * 0.7)) / this.skill;
 
     const fever = isFever(me, now);
-    const cands = circles.filter((c) => now - c.born > L.react / this.skill && !isOut(c, now) && !isGuarded(c, now));
+    const cands = circles.filter((c) => now - c.born > (L.react + (c.kind === 'gold' ? L.goldDelay : 0)) / this.skill && !isOut(c, now) && !isGuarded(c, now));
     if (!cands.length) return null;
 
     const weights = cands.map((c) => {
@@ -43,7 +46,10 @@ export class Bot {
       return fever ? 2.5 : 0.5;
     });
     let r = Math.random() * weights.reduce((a, b) => a + b, 0);
-    for (let i = 0; i < cands.length; i++) { r -= weights[i]; if (r <= 0) return cands[i]; }
-    return cands[cands.length - 1];
+    let pick = cands[cands.length - 1];
+    for (let i = 0; i < cands.length; i++) { r -= weights[i]; if (r <= 0) { pick = cands[i]; break; } }
+    // 황금 원은 노려도 놓칠 수 있다
+    if (pick.kind === 'gold' && Math.random() >= L.goldHit) return null;
+    return pick;
   }
 }
