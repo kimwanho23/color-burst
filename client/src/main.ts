@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  ABILITY, ARCADE, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, holdLasers, isLast, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -368,6 +368,17 @@ function renderCombo(n: number) {
   void el.offsetWidth; // 같은 애니메이션을 다시 시작
   el.classList.add(anim);
 }
+/** 헛손질 보정: 빈 곳 클릭 반경 안에 내 일반 원이 있으면 서버가 대신 잡아 준다 (빗나감 표시 안 함) */
+function missSaveNear(m: PlayerState, x: number, y: number, now: number) {
+  const r = modsOf(m.picks).missSave;
+  if (r <= 0) return false;
+  for (const c of circles.values()) {
+    if (!isMine(c.kind, m.color) || isGuarded(c, now) || pending.has(c.id) || pulls.has(c.id)) continue;
+    const q = circlePos(c, now);
+    if (Math.hypot(q.x - x, q.y - y) - c.r <= r) return true;
+  }
+  return false;
+}
 /** 점수 글자 단계: 잭팟 ×3·보스 막타 5, 잭팟·황금 원 4, 피버 3, 콤보 보너스·반격 2, 평소 1 */
 const scoreTier = (o: { jackpot?: number; fever?: boolean; special?: boolean; kill?: boolean; gold?: boolean }): ScoreTier =>
   o.kill || (o.jackpot ?? 1) >= 3 ? 5 : o.gold || (o.jackpot ?? 1) > 1 ? 4 : o.fever ? 3 : o.special ? 2 : 1;
@@ -614,7 +625,7 @@ $('cv').addEventListener('pointerdown', (e) => {
   } else {
     // 넓은 손·자석으로 잡힐 원이 있으면 빗나간 표시를 하지 않는다 (서버가 잡아서 알려 준다)
     // 넓은 손 범위로 같이 잡힐 원이 있으면 빗나간 게 아니다
-    const saved = !!m && rangeTargets(circles.values(), m.color, x, y, now, reach, pending, RULES.lagWindowMs).length > 0;
+    const saved = !!m && (rangeTargets(circles.values(), m.color, x, y, now, reach, pending, RULES.lagWindowMs).length > 0 || missSaveNear(m, x, y, now));
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
     // 보스가 막 터진 직후의 빈 곳 클릭은 서버도 페널티를 주지 않으므로 가볍게만 표시
     const grace = now - bossKilledAt < RULES.boss.killGraceMs;

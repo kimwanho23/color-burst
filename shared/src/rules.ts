@@ -1,4 +1,4 @@
-import { ABILITY, ARCADE, CURSE, SPECIAL, bossDamage, comboPeriod, jackpotMult, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
+import { ABILITY, ARCADE, AUG, CURSE, LEGEND, SPECIAL, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -394,8 +394,7 @@ export interface PlayerState {
   afterUntil: number;
   /** 방해 전파를 맞아 내 화면의 원이 흐려지는 시각 */
   blurUntil: number;
-  /** 이번 라운드에 남은 침착·방패 횟수 */
-  calmLeft: number;
+  /** 이번 라운드에 남은 방패 횟수 */
   shieldLeft: number;
   /** 라운드 시작 때 점수 (도박사·악마의 계약 계산용) */
   roundStart: number;
@@ -425,6 +424,21 @@ export interface PlayerState {
   rankReach: number;
   /** 이번 라운드가 끝나는 서버 시각 (마지막 불꽃) */
   roundEnd: number;
+  /** 이번 라운드 시작 서버 시각 (출발 신호 레전드) */
+  roundBegin: number;
+  /** 이번 라운드 첫 피버 전인지, 지금 피버에 더해지는 배율 (예열 레전드) */
+  firstFever: boolean;
+  feverBonus: number;
+  /** 피버가 끝나면 게이지에 더할 양 (과충전 레전드) */
+  feverCarry: number;
+  /** 리바운드: 끝나는 시각, 끊긴 콤보 수, 레전드로 되찾았는지 */
+  reboundUntil: number;
+  reboundLost: number;
+  reboundUsed: boolean;
+  /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
+  lastClaimAt: number;
+  rapidStreak: number;
+  rapidJackpot: boolean;
 }
 
 /** 방해 효과: 감도 감소, 마우스 반대, 시야 방해 */
@@ -451,7 +465,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd', 'roundBegin', 'reboundUntil', 'lastClaimAt'] as const) if (p[k] > since) p[k] += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
   for (const k of Object.keys(p.debuffs) as DebuffId[]) if (p.debuffs[k]! > since) p.debuffs[k]! += delta;
 }
@@ -479,7 +493,8 @@ export function itemMult(p: PlayerState, now: number, consume: boolean, gold = t
 
 export type ClaimType = 'own' | 'yellow' | 'rainbow' | 'steal' | 'feverSteal' | 'counter';
 /** 어떻게 잡았는지: 직접 클릭, 넓은 손 범위, 자석, 장판, 폭죽·필드 클리어 */
-export type ClaimVia = 'click' | 'range' | 'magnet' | 'zone' | 'blast';
+/** save: 헛손질 보정으로 대신 잡음 */
+export type ClaimVia = 'click' | 'range' | 'magnet' | 'zone' | 'blast' | 'save';
 
 export interface ClaimResult {
   type: ClaimType;
@@ -497,6 +512,8 @@ export interface ClaimResult {
   via: ClaimVia;
   /** 잭팟 배율 (안 터지면 1) */
   jackpot: number;
+  /** 방패 레전드로 원 주인에게 빼앗긴 점수 */
+  drained?: number;
   /** 잡은 자리의 점수 구역 (0 중앙, 1 사이, 2 가장자리) */
   zone: ZoneIndex;
   /** 견제 반사: 원 주인이 반사해서 주인이 잡은 것으로 처리됐으면 그 주인 id와 주인 쪽 결과 */
@@ -507,9 +524,10 @@ export interface ClaimResult {
 export function newPlayer(id: string, name: string, color: ColorIndex, bot = false): PlayerState {
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
-    picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
+    picks: [], afterUntil: 0, blurUntil: 0, shieldLeft: 0,
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
-    comeback: false, rankReach: 0, roundEnd: 0,
+    comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
+    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
   };
 }
 
@@ -528,11 +546,13 @@ export function applyPick(p: PlayerState, pick: Pick) {
 export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt = 0) {
   const m = modsOf(p.picks);
   p.combo = 0; p.fever = 0; p.feverUntil = 0; p.markedUntil = 0; p.afterUntil = 0; p.blurUntil = 0;
-  p.calmLeft = m.calm; p.shieldLeft = m.shield; p.reflectLeft = m.reflect; p.stunUntil = 0;
+  p.shieldLeft = m.shield; p.reflectLeft = m.reflect; p.stunUntil = 0;
   p.debuffs = {}; p.blind = null;
   p.buffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.roundEnd = endAt || startAt + G.roundMs;
+  p.roundBegin = startAt; p.firstFever = true; p.feverBonus = 0; p.feverCarry = 0;
+  p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false;
   p.score += m.headStart;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
   // 표적 자처: 라운드 내내 표적
@@ -546,7 +566,7 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
 export const feverMsOf = (p: PlayerState, G: GameRules) => G.feverMs + modsOf(p.picks).overtime * 1000;
 export const feverMultOf = (p: PlayerState, G: GameRules) => {
   const m = modsOf(p.picks);
-  return G.feverMult + m.frenzy + (m.berserker ? CURSE.berserker.multAdd : 0) + (m.focusFire ? SPECIAL.focusMult : 0);
+  return G.feverMult + m.frenzy + (m.berserker ? CURSE.berserker.multAdd : 0) + (m.focusFire ? SPECIAL.focusMult : 0) + (p.feverBonus ?? 0);
 };
 /** 유리 대포·표적 자처·대역전: 모든 점수 배율 */
 export const scoreBoostOf = (m: Mods) =>
@@ -568,7 +588,20 @@ export function sweepComeback(players: PlayerState[]) {
 /** 원·보스·황금 원 점수에 더 곱하는 배율: 역전 기회 × 마지막 불꽃 */
 export function extraMult(p: PlayerState, now: number, players: PlayerState[]) {
   const flame = modsOf(p.picks).lastFlame && p.roundEnd && now >= p.roundEnd - SPECIAL.flameMs ? SPECIAL.flameMult : 1;
-  return comebackMult(p, players) * flame;
+  // 출발 신호 레전드: 라운드 처음 10초 ×1.5
+  const start = hasLegend(p, 'headStart') && now < p.roundBegin + LEGEND.headStartMs ? LEGEND.headStartMult : 1;
+  return comebackMult(p, players) * flame * start;
+}
+
+/** 여운 배율 (여운 레전드면 ×2) */
+export const afterMultOf = (p: PlayerState) => (hasLegend(p, 'afterglow') ? LEGEND.afterglowMult : 1.5);
+
+/** 과충전 레전드: 피버가 끝난 뒤 처음 불릴 때 남겨 둔 게이지를 채운다 (서버 틱·원 획득 때) */
+export function settleFever(p: PlayerState, now: number) {
+  if (p.feverCarry > 0 && p.feverUntil > 0 && now >= p.feverUntil) {
+    p.fever = Math.min(100, p.fever + p.feverCarry);
+    p.feverCarry = 0;
+  }
 }
 
 /** 판 뒤집기: 라운드가 끝날 때 1등과의 점수 차의 일부를 내 점수에 더한다 (1등 점수는 그대로) */
@@ -634,6 +667,12 @@ export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[
 
 export function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
   p.fever = 0;
+  const L = legendOf(p.picks);
+  // 예열 레전드: 라운드 첫 피버만 배율 +2
+  p.feverBonus = L.has('preheat') && p.firstFever ? LEGEND.preheatMult : 0;
+  p.firstFever = false;
+  // 과충전 레전드: 피버가 끝나면 게이지 50%
+  p.feverCarry = L.has('overcharge') ? LEGEND.overchargeKeep : 0;
   p.feverUntil = now + G.feverMs + m.overtime * 1000;
   p.afterUntil = m.afterglow ? p.feverUntil + m.afterglow * 1000 : 0;
 }
@@ -644,6 +683,8 @@ function breakCombo(p: PlayerState, m: Mods, now: number) {
   if (buffOn(p, 'comboLock', now) || m.momentum) return false;
   const before = p.combo;
   p.combo = Math.floor((p.combo * m.insurance) / 100);
+  // 리바운드: 끊긴 뒤 잠깐 점수 보너스 (레전드는 끊긴 콤보 절반을 되찾을 수 있음)
+  if (p.combo < before && m.rebound > 0) { p.reboundUntil = now + AUG.reboundMs; p.reboundLost = before - p.combo; p.reboundUsed = false; }
   return p.combo < before;
 }
 
@@ -658,7 +699,8 @@ export function zoneOf(p: { x: number; y: number }): ZoneIndex {
 }
 
 /** 구역 배율. 찰나의 순간 증강은 가장자리 배율을 올린다 */
-export const zoneMult = (zone: ZoneIndex, m: Mods) => RULES.zones.mult[zone] + (m.chaser ? 1 : 0) + (zone === 2 ? m.edge : 0);
+export const zoneMult = (zone: ZoneIndex, m: Mods) =>
+  (RULES.zones.mult[zone] + (m.chaser ? SPECIAL.chaserAdd : 0) + (zone === 2 ? m.edge : 0)) * (zone === 0 ? 1 + m.centerKing / 100 : 1);
 
 export const isFever = (p: PlayerState, now: number) => now < p.feverUntil;
 export const isStunned = (p: PlayerState, now: number) => now < p.stunUntil;
@@ -873,7 +915,10 @@ export function bossHitInfo(p: PlayerState, rand = Math.random) {
   const m = modsOf(p.picks);
   // 막타 독식: 피해·막타 점수 ×2
   const feast = m.bossFeast ? SPECIAL.feastMult : 1;
-  return { damage: bossDamage(m, rand) * feast, hit: RULES.boss.hit + m.hammer, kill: (RULES.boss.kill + m.hunter) * feast, boost: scoreBoostOf(m) };
+  // 해머 레전드: 15% 확률로 3타
+  let dmg = bossDamage(m, rand);
+  if (hasLegend(p, 'hammer') && rand() < LEGEND.hammerChance) dmg = Math.max(dmg, LEGEND.hammerDmg);
+  return { damage: dmg * feast, hit: RULES.boss.hit + m.hammer, kill: (RULES.boss.kill + m.hunter) * feast, boost: scoreBoostOf(m) };
 }
 
 /** 꼴찌인지 (동점이면 모두 꼴찌가 아님) */
@@ -889,12 +934,16 @@ export function isLast(p: PlayerState, players: PlayerState[]) {
 export function addFever(p: PlayerState, amt: number, now: number, G: GameRules, players: PlayerState[], raw = false): boolean {
   if (isFever(p, now)) return false;
   const m = modsOf(p.picks);
+  // 보험 레전드: 피버 게이지가 깎이지 않음
+  if (amt < 0 && hasLegend(p, 'insurance')) return false;
   if (amt > 0 && !raw) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1) / (m.berserker ? CURSE.berserker.gainDiv : 1);
   p.fever = Math.max(0, Math.min(100, p.fever + amt));
   if (p.fever >= 100) {
     startFever(p, now, G, m);
     // 방해 전파: 다른 사람 화면의 원을 흐리게
     if (m.jammer) for (const o of players) if (o !== p) o.blurUntil = Math.max(o.blurUntil, now + m.jammer);
+    // 방해 전파 레전드: 상대 커서 감도 감소 (철벽 제외)
+    if (hasLegend(p, 'jammer')) for (const o of players) if (o !== p && !modsOf(o.picks).fortress) addDebuff(o, 'slow', LEGEND.jammerSlowMs, now);
     return true;
   }
   return false;
@@ -914,7 +963,11 @@ export function resolveClaim(
   const blast = via === 'blast';
   const fever = isFever(claimer, now);
   const after = !fever && now < claimer.afterUntil;
+  settleFever(claimer, now);
   const m = modsOf(claimer.picks);
+  const L = legendOf(claimer.picks);
+  // 속사 레전드: 이전 획득까지 쌓인 '다음 잭팟 확정' (이번 획득으로 새로 생긴 것은 다음 원에)
+  const rapidForced = claimer.rapidJackpot;
   const P = RULES.points;
   const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1, zone: 0 };
   let pts = 0;
@@ -924,7 +977,9 @@ export function resolveClaim(
   const own = (P.own + m.picky) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
   if (kind === 'rainbow') {
     res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; claimer.combo++;
-    res.feverStarted = addFever(claimer, RULES.fever.rainbow, now, G, players);
+    // 무지개 사냥 레전드: 즉시 피버
+    if (L.has('rainbowHunt') && !fever) { startFever(claimer, now, G, m); res.feverStarted = true; }
+    else res.feverStarted = addFever(claimer, RULES.fever.rainbow, now, G, players);
   } else if (kind === 'y' && !fever && buffOn(claimer, 'paint', now)) {
     // 물들이기: 노란 원을 내 색으로 계산 (외길이면 그대로 0점)
     res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
@@ -933,20 +988,21 @@ export function resolveClaim(
     res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
   } else if (kind === 'y') {
     res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); claimer.combo++;
-    res.feverStarted = addFever(claimer, RULES.fever.yellow, now, G, players);
+    // 노란 맛 레전드: 피버 게이지가 내 색만큼
+    res.feverStarted = addFever(claimer, L.has('yellowTaste') ? RULES.fever.own : RULES.fever.yellow, now, G, players);
   } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands)) {
-    // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음)
+    // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
     res.type = 'own'; pts = own; claimer.combo++;
-    res.feverStarted = addFever(claimer, RULES.fever.own, now, G, players);
+    res.feverStarted = addFever(claimer, RULES.fever.own * (L.has('picky') ? 2 : 1), now, G, players);
   } else {
     steal = true;
     const owner = players.find((p) => p.color === kind);
     if (blast) {
       // 폭죽·필드 클리어: 남의 색도 +1만, 견제 페널티·표적·반격·강탈 없음
       res.type = 'feverSteal'; pts = P.stealCalm;
-    } else if (owner && owner.reflectLeft > 0 && !isMarked(owner, now)) {
-      // 견제 반사: 원은 주인이 잡은 것으로, 견제한 사람은 0점·콤보 끊김·표적 (반격은 반사하지 않음)
-      owner.reflectLeft--;
+    } else if (owner && (owner.reflectLeft > 0 || hasLegend(owner, 'reflect')) && !isMarked(owner, now)) {
+      // 견제 반사: 원은 주인이 잡은 것으로, 견제한 사람은 0점·콤보 끊김·표적 (반격은 반사하지 않음). 레전드는 횟수 제한 없음
+      if (!hasLegend(owner, 'reflect')) owner.reflectLeft--;
       res.type = 'steal'; res.reflectedTo = owner.id;
       res.reflected = resolveClaim(owner, kind, players, now, G, opts);
       breakCombo(claimer, m, now);
@@ -956,12 +1012,15 @@ export function resolveClaim(
     } else {
       if (owner && isMarked(owner, now)) {
         res.type = 'counter'; pts = P.counter + m.counterPro;
+        // 반격 전문가 레전드: 상대 콤보도 끊음
+        if (L.has('counterPro') && owner.combo > 0 && breakCombo(owner, modsOf(owner.picks), now)) res.brokeComboOf = owner.id;
       } else if (fever || !G.stealPenalty) {
         res.type = 'feverSteal'; pts = P.stealCalm;
       } else {
         res.type = 'steal'; pts = P.stealCalm;
         breakCombo(claimer, m, now);
-        addFever(claimer, RULES.fever.stealCalm, now, G, players);
+        // 철면피 레전드: 견제해도 피버 게이지가 안 깎임
+        if (!L.has('thickSkin')) addFever(claimer, RULES.fever.stealCalm, now, G, players);
         // 철면피: 표적 시간 감소 (99 이상이면 표적 안 됨)
         const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
         if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
@@ -976,18 +1035,49 @@ export function resolveClaim(
       }
       // 강탈·흡혈귀: 상대 점수를 빼앗음 (배율 없음). 흡혈귀를 가진 사람은 견제당할 때도 빼앗긴다
       if (owner && res.type !== 'counter') {
-        const take = (guarded ? 0 : m.plunder) + (m.vampire ? CURSE.vampire.drain : 0) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
+        // 강탈 레전드: 1등을 견제하면 2배
+        const top = owner.score >= Math.max(...players.map((x) => x.score));
+        const plunder = m.plunder * (L.has('plunder') && top ? LEGEND.plunderTopMult : 1);
+        const take = (guarded ? 0 : plunder) + (m.vampire ? CURSE.vampire.drain : 0) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
         res.plundered = Math.min(take, owner.score);
         owner.score -= res.plundered;
+        // 방패 레전드: 견제당하면 견제한 사람 점수를 빼앗음
+        if (hasLegend(owner, 'shield')) {
+          const d = Math.min(LEGEND.shieldDrain, claimer.score);
+          claimer.score -= d; owner.score += d; res.drained = d;
+        }
+      }
+      // 도발: 상대 피버 게이지 감소, 레전드면 피버 중인 상대의 피버 단축
+      if (owner && m.taunt) {
+        if (!isFever(owner, now)) owner.fever = Math.max(0, owner.fever - m.taunt);
+        else if (L.has('taunt')) owner.feverUntil = Math.max(now, owner.feverUntil - LEGEND.tauntMs);
       }
     }
   }
 
-  // 기세: 콤보 보너스가 더 자주
+  res.zone = opts.zone ?? 0;
+  if (!steal) {
+    // 찰나의 순간·중앙의 왕 레전드: 그 구역에서 잡으면 콤보 +1 더
+    if ((res.zone === 2 && L.has('edge')) || (res.zone === 0 && L.has('centerKing'))) claimer.combo += LEGEND.zoneComboAdd;
+    // 연장전 레전드: 피버 중 잡을 때마다 피버 시간 연장
+    if (fever && L.has('overtime')) claimer.feverUntil += LEGEND.overtimeMs;
+    // 리바운드 레전드: 창 안 첫 획득에 끊긴 콤보 절반을 되찾음
+    if (now < claimer.reboundUntil && L.has('rebound') && !claimer.reboundUsed) {
+      claimer.combo += Math.floor(claimer.reboundLost / 2); claimer.reboundUsed = true;
+    }
+    // 속사: 짧은 간격으로 연달아 잡으면 보너스, 레전드는 5연속에 다음 잭팟 확정 (자동 획득·폭죽은 세지 않음)
+    if (!blast) {
+      claimer.rapidStreak = now - claimer.lastClaimAt <= AUG.rapidMs ? claimer.rapidStreak + 1 : 1;
+      claimer.lastClaimAt = now;
+      if (claimer.rapidStreak >= 2) pts += m.rapid;
+      if (L.has('rapid') && claimer.rapidStreak >= LEGEND.rapidStreak) { claimer.rapidJackpot = true; claimer.rapidStreak = 0; }
+    }
+  }
+  // 기세: 콤보 보너스가 더 자주. 콤보 장인 레전드 +10, 폭주 레전드는 피버 중 2배
   const every = m.momentum ? Math.min(SPECIAL.momentumEvery, comboPeriod(m.comboArtist)) : comboPeriod(m.comboArtist);
   if (!steal && claimer.combo > 0 && claimer.combo % every === 0) {
     res.comboBonus = true;
-    pts += RULES.comboBonus;
+    pts += (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0)) * (fever && L.has('frenzy') ? 2 : 1);
   }
   const st = claimer.stats;
   st.hits++;
@@ -997,10 +1087,16 @@ export function resolveClaim(
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준). 점수 구역 배율도 곱한다
-  res.zone = opts.zone ?? 0;
-  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0) * zoneMult(res.zone, m) * extraMult(claimer, now, players);
-  // 잭팟은 맨 마지막에 곱한다 (블라스트는 없음)
-  if (!blast) res.jackpot = jackpotMult(m, opts.rand);
+  const rebound = now < claimer.reboundUntil ? 1 + m.rebound / 100 : 1;
+  const viaLegend = (via === 'range' && L.has('wideHand')) ? LEGEND.wideHandMult : (via === 'save' && L.has('missSave')) ? LEGEND.missSaveMult : 1;
+  const mult = (fever ? feverMultOf(claimer, G) : after ? afterMultOf(claimer) : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0)
+    * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend;
+  // 잭팟은 맨 마지막에 곱한다 (블라스트는 없음). 속사 레전드면 이번 잭팟 확정
+  if (!blast) {
+    const forced = rapidForced && pts > 0;
+    if (forced) claimer.rapidJackpot = false;
+    res.jackpot = jackpotMult(forced ? { ...m, jackpot: 100 } : m, opts.rand, L.has('jackpot'));
+  }
   res.gained = Math.round(pts * mult * res.jackpot) + res.plundered;
   claimer.score += res.gained;
   return res;
@@ -1010,10 +1106,8 @@ export function resolveClaim(
 export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
   p.stats.misses++;
   const m = modsOf(p.picks);
-  // 헛클릭 무효 아이템이 먼저 막는다 (침착 횟수는 그대로, 유리 대포 감점은 아래에서 그대로 적용)
+  // 헛클릭 무효 아이템이 먼저 막는다 (유리 대포 감점은 아래에서 그대로 적용)
   if (G.missPenalty && !buffOn(p, 'missGuard', now)) {
-    // 침착: 라운드당 정해진 횟수만큼 페널티 무시
-    if (p.calmLeft > 0) { p.calmLeft--; return; }
     breakCombo(p, m, now);
     addFever(p, RULES.fever.miss, now, G, players);
   }

@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, ARCADE, EVENTS, THEMES, TIERS, abilityText, groupPicks, modsOf,
+  ABILITY, ARCADE, EVENTS, LEGEND_TEXT, THEMES, TIERS, abilityText, groupPicks, modsOf,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, eventIcon, icon } from './icons.ts';
@@ -61,7 +61,8 @@ function card(o: Pick, i: number, me: PlayerState | undefined) {
   const body = a.curse
     ? `<span class="gain">${icon(UI.up, 15)}<span>${emph(a.curse.gain)}</span></span>
        <span class="cost">${icon(UI.down, 15)}<span>${emph(a.curse.cost)}</span></span>`
-    : `<span class="adesc">${emph(abilityText(o))}</span>`;
+    : `<span class="adesc">${emph(abilityText(o))}</span>${LEGEND_TEXT[o.id]
+      ? `<span class="alegend${o.tier === 3 ? ' on' : ''}">${o.tier === 3 ? '레전드' : '레전드면'}: ${esc(LEGEND_TEXT[o.id]!)}</span>` : ''}`;
   return `<button type="button" class="acard ${tierClass(o)}" data-i="${i}" style="--i:${i}">
     <span class="tier">${tierLabel(o)}</span>
     <span class="cat" title="${a.cat}">${categoryIcon(a.cat)}</span>

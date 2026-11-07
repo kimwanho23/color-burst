@@ -1,5 +1,5 @@
 /** 도감: 증강(등급별 수치)·저주·아이템·보스를 한 화면에서 본다 (처음 화면·대기실에서 연다) */
-import { ABILITIES, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, SPECIALS, TIERS, type AbilityCategory } from '@color-burst/shared';
+import { ABILITIES, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, SPECIALS, TIERS, type AbilityCategory } from '@color-burst/shared';
 import { abilityIcon, categoryIcon, itemIcon } from './icons.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -20,7 +20,8 @@ function abilityTab() {
   const cats = [...new Set(ABILITIES.map((a) => a.cat))] as AbilityCategory[];
   return cats.map((cat) => `<h3>${categoryIcon(cat, 16)} ${cat}</h3><ul class="cx-list">${ABILITIES.filter((a) => a.cat === cat).map((a) => `
     <li><span class="cx-ic">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b>${a.cap !== undefined ? `<em class="cx-cap">중첩 상한 ${a.cap}</em>` : ''}
-      <ol class="cx-tiers">${a.values.map((v, t) => `<li class="t${t}"><span>${TIERS[t].name}</span>${esc(a.desc(v))}</li>`).join('')}</ol></div></li>`).join('')}</ul>`).join('');
+      <ol class="cx-tiers">${a.values.map((v, t) => `<li class="t${t}"><span>${TIERS[t].name}</span>${esc(a.desc(v))}</li>`).join('')}</ol>
+      ${LEGEND_TEXT[a.id] ? `<p class="cx-legend">레전드 효과: ${esc(LEGEND_TEXT[a.id]!)}</p>` : ''}</div></li>`).join('')}</ul>`).join('');
 }
 
 function curseTab() {

@@ -9,6 +9,7 @@ import {
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
   Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
+  HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId } from '@color-burst/shared';
 
@@ -16,7 +17,9 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
   picky: UtensilsCrossed, yellowTaste: Citrus, rainbowHunt: Rainbow, comboArtist: Link2, headStart: Flag,
   preheat: Thermometer, overtime: Hourglass, overcharge: BatteryCharging, frenzy: Flame, afterglow: Sunset,
   hammer: Hammer, hunter: Crosshair, crusher: Pickaxe,
-  insurance: Umbrella, calm: Wind, shield: Shield,
+  insurance: Umbrella, shield: Shield,
+  missSave: HandHelping, rebound: RotateCcw, rapid: FastForward, laserProof: ShieldOff, collector: Archive,
+  chainCombo: Link, centerKing: Focus, ignite: FlameKindling, vanguard: Sword, taunt: Megaphone,
   thickSkin: EyeOff, plunder: HandCoins, counterPro: Swords, jammer: RadioTower,
   jackpot: Coins, wideHand: Hand, magnet: Magnet, reflect: Undo2, edge: Maximize2,
   glassCannon: GlassWater, gambler: Dices, berserker: Axe, oneWay: MoveUp,

@@ -25,7 +25,7 @@ test('jackpotMult: 확률을 넘으면 1, 터지면 ×1.5 / ×2 / ×3', () => {
 
 test('잭팟은 피버 배율까지 붙은 점수에 곱한다', () => {
   const [a, b] = two();
-  a.picks = [{ id: 'jackpot', tier: 3 }];
+  a.picks = [{ id: 'jackpot', tier: 2 }];
   const r = resolveClaim(a, 0, [a, b], 100, G, { rand: seq(0.1, 0.8) });
   assert.deepEqual([r.gained, r.jackpot], [6, 2]);
   a.feverUntil = 10_000;

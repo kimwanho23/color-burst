@@ -79,7 +79,8 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
   const def = ITEMS[id];
   if (def.buff) {
     // 꼴찌 보정 ×1.5, 아이템 사냥꾼 ×2
-    const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1) * (modsOf(p.picks).itemHunter ? SPECIAL.hunterDur : 1);
+    // 수집가 +v%
+    const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1) * (modsOf(p.picks).itemHunter ? SPECIAL.hunterDur : 1) * (1 + modsOf(p.picks).collector / 100);
     addBuff(p, def.buff, ms, now);
     return null;
   }

@@ -648,3 +648,76 @@ test('카드 id가 다르면 고르지 않음 (겹친 클릭)', () => {
   assert.equal(me.picks.length, 1);
   room.destroy();
 });
+
+// ---------- 3-2: 레전드·새 증강 (서버) ----------
+test('헛손질 보정은 내 원만 (남의 색·끌리는 원·보호 구역 제외), 페널티 없음', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  me.picks = [{ id: 'missSave', tier: 0 }]; // 반경 40
+  me.combo = 4;
+  circles.set(51, slowAt(51, (me.color + 1) % 4 as 0, 1230, 450, now)); // 남의 색 (더 가까움)
+  circles.set(52, slowAt(52, me.color, 1270, 450, now)); // 내 원
+  room.click(me.id, { circleId: null, x: 1200, y: 450 });
+  assert.deepEqual([circles.has(51), circles.has(52), me.stats.misses], [true, false, 0]);
+  assert.equal(me.combo, 5);
+  // 보호 구역 안의 내 원은 안 잡음 → 빈 곳
+  circles.set(53, slowAt(53, me.color, 860, 450, now));
+  room.click(me.id, { circleId: null, x: 830, y: 450 });
+  assert.deepEqual([circles.has(53), me.stats.misses], [true, 1]);
+  room.destroy();
+});
+
+test('자동 획득은 다시 연쇄하지 않음 (점화·연쇄 콤보·연쇄 폭발 함께)', (t) => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  me.picks = [{ id: 'ignite', tier: 3 }, { id: 'chainCombo', tier: 3 }, { id: 'chainBlast', tier: 0 }];
+  me.fever = 99; me.combo = 4;
+  for (let i = 0; i < 12; i++) circles.set(100 + i, slowAt(100 + i, me.color, 1000 + i * 40, 200 + (i % 3) * 40, now));
+  t.mock.method(Math, 'random', () => 0);
+  sent.length = 0;
+  room.click(me.id, { circleId: 100, x: 1000, y: 200 });
+  assert.equal(circles.size, 0, '점화 레전드: 화면의 내 원 전부');
+  assert.equal(sent.filter((e) => e === 'circle:claimed').length, 12);
+  room.destroy();
+});
+
+test('과충전 레전드: 피버가 끝나면 서버 틱에서 게이지 50%', () => {
+  const { room, me } = playingRoom();
+  me.picks = [{ id: 'overcharge', tier: 3 }];
+  (room as unknown as { startAt: number }).startAt = Date.now() - 5000; // 판 시작 직후로 (시작 0이면 생성 계산이 폭주)
+  me.feverUntil = Date.now() - 10; me.feverCarry = 50; me.fever = 0;
+  (room as unknown as { tick(): void }).tick();
+  assert.equal(me.fever, 50);
+  room.destroy();
+});
+
+test('사냥꾼 레전드 막타: 화면의 내 원 전부, 파쇄 레전드: 보호막 무시, 선봉 첫 타 +v', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  me.picks = [{ id: 'hunter', tier: 3 }, { id: 'crusher', tier: 3 }, { id: 'vanguard', tier: 0 }];
+  // 방어형 보스, 지금 보호막 중 (주기 3초 중 마지막 1초)
+  const boss: Circle = { id: 90, kind: 'boss', boss: 'guard', angle: 0, speed: 160, r: 90, born: now - 2500, hp: 10, maxHp: 10 }; // 지금 (1200, 450), 보호막 중
+  circles.set(90, boss);
+  circles.set(91, slowAt(91, me.color, 1200, 300, now));
+  circles.set(92, slowAt(92, me.color, 400, 600, now));
+  const p0 = circlePosOf(boss, now);
+  room.click(me.id, { circleId: 90, x: p0.x, y: p0.y });
+  assert.equal(boss.hp, 5, '보호막 무시하고 피해 1 + 파쇄 4');
+  assert.ok(me.score >= 1 + 5, '첫 타 +5');
+  room.click(me.id, { circleId: 90, x: p0.x, y: p0.y });
+  assert.deepEqual([circles.has(90), circles.has(91), circles.has(92)], [false, false, false]);
+  room.destroy();
+});
+
+test('레이저 내성 100: 스턴 없음, 레전드는 피버 +20', () => {
+  const { room, me } = playingRoom();
+  const now = Date.now();
+  me.picks = [{ id: 'laserProof', tier: 3 }];
+  room.cursor(me.id, { x: 800, y: 300 });
+  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }], at: now - 10, hit: new Set() }];
+  priv(room).nextLaserAt = Infinity;
+  sent.length = 0;
+  priv(room).updateLaser(now);
+  assert.deepEqual([me.stunUntil, me.fever, sent.includes('stun')], [0, 20, false]);
+  room.destroy();
+});
