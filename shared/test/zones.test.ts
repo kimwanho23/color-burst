@@ -15,7 +15,7 @@ test('zoneOf: 타원 0.35 / 0.7 경계', () => {
 
 test('zoneMult: 1/2/3, 찰나의 순간은 가장자리만, 상한 +4', () => {
   const m = modsOf([{ id: 'edge', tier: 3 }]);
-  assert.deepEqual(([0, 1, 2] as const).map((z) => zoneMult(z, m)), [1, 2, 5.5]);
+  assert.deepEqual(([0, 1, 2] as const).map((z) => zoneMult(z, m)), [1, 2, 6]);
   assert.equal(modsOf(Array<Pick>(5).fill({ id: 'edge', tier: 3 })).edge, 4);
 });
 

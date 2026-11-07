@@ -58,13 +58,13 @@ test('reachOf·magnetOf: 능력 + 아이템, 능력 상한', () => {
   assert.equal(reachOf(a, 0), 80);
   const [c] = two();
   c.picks = [{ id: 'wideHand', tier: 3 }];
-  assert.equal(reachOf(c, 0), 55);
+  assert.equal(reachOf(c, 0), 70);
   addBuff(c, 'wideHand', 5000, 0);
   assert.equal(reachOf(c, 0), 80);
   addBuff(c, 'magnet', 5000, 0);
   assert.equal(magnetOf(c, 0), 90);
   c.picks = [{ id: 'magnet', tier: 3 }];
-  assert.equal(magnetOf(c, 0), 200);
+  assert.equal(magnetOf(c, 0), 240); // 레전드 240 + 아이템 90, 상한 240
 });
 
 test('groupPicks: 같은 증강은 하나로, 가장 높은 등급, 개수', () => {

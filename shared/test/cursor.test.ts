@@ -98,9 +98,9 @@ test('pickMagnetTargets: 내 원만, 가까운 순, 최대 개수, 보호 구역
   assert.deepEqual(pickMagnetTargets(cs, 0, { x: 820, y: 450 }, 1000, 90, 5).map((c) => c.id), []);
 });
 
-test('자석 능력 60 / 90 / 120 / 160, 상한 200, 아이템 +90', () => {
-  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'magnet', tier: t as 0 }]).magnet), [60, 90, 120, 160]);
-  assert.equal(modsOf([{ id: 'magnet', tier: 3 }, { id: 'magnet', tier: 3 }]).magnet, 200);
+test('자석 능력 60 / 90 / 120 / 240(레전드 = 에픽 × 2), 상한 240, 아이템 +90', () => {
+  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'magnet', tier: t as 0 }]).magnet), [60, 90, 120, 240]);
+  assert.equal(modsOf([{ id: 'magnet', tier: 3 }, { id: 'magnet', tier: 3 }]).magnet, 240);
   assert.equal(RULES.items.magnet, 90);
 });
 

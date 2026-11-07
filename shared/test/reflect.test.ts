@@ -11,8 +11,8 @@ const setup = (tier: 0 | 1 | 2 | 3 = 0): [PlayerState, PlayerState] => {
   return [a, b];
 };
 
-test('견제 반사: 라운드당 1 / 2 / 3 / 5번', () => {
-  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'reflect', tier: t as 0 }]).reflect), [1, 2, 3, 5]);
+test('견제 반사: 라운드당 1 / 2 / 3 / 6번', () => {
+  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'reflect', tier: t as 0 }]).reflect), [1, 2, 3, 6]);
   const [, b] = setup(1);
   assert.equal(b.reflectLeft, 2);
 });

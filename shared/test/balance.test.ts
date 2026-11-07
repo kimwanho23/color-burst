@@ -12,8 +12,8 @@ test('반격 +6, 견제 +1 유지', () => {
   assert.equal(resolveClaim(a, 1, [a, b], 200, G).gained, 1);
 });
 
-test('강탈 능력 1 / 1 / 2 / 3', () => {
-  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'plunder', tier: t as 0 }]).plunder), [1, 1, 2, 3]);
+test('강탈 능력 1 / 1 / 2 / 4', () => {
+  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'plunder', tier: t as 0 }]).plunder), [1, 1, 2, 4]);
 });
 
 test('증강 선택 시간 30초', () => {

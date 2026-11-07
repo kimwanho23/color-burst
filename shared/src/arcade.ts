@@ -103,36 +103,36 @@ const sec = (ms: number) => `${+(ms / 1000).toFixed(1)}초`;
 
 export const ABILITIES: readonly AbilityDef[] = [
   // 점수
-  { id: 'picky', name: '편식가', cat: '점수', values: [1, 2, 3, 5], desc: (v) => `내 색 +${v}점, 대신 노란색 −1점` },
-  { id: 'yellowTaste', name: '노란 맛', cat: '점수', values: [1, 2, 3, 5], desc: (v) => `노란색 +${v}점` },
-  { id: 'rainbowHunt', name: '무지개 사냥', cat: '점수', values: [3, 6, 9, 15], desc: (v) => `무지개 +${v}점` },
-  { id: 'comboArtist', name: '콤보 장인', cat: '점수', values: [1, 2, 3, 5], cap: 7, desc: (v) => `콤보 보너스가 ${comboPeriod(v)}콤보마다` },
-  { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 10, 15, 25], desc: (v) => `라운드 시작할 때 +${v}점` },
-  { id: 'jackpot', name: '잭팟', cat: '점수', values: [5, 10, 15, 25], cap: 50, desc: (v) => `원을 잡을 때 ${v}% 확률로 잭팟 (×1.5~×3)` },
-  { id: 'edge', name: '찰나의 순간', cat: '점수', values: [0.5, 1, 1.5, 2.5], cap: 4, desc: (v) => `가장자리 점수 배율 +${v} (기본 ×3)` },
+  { id: 'picky', name: '편식가', cat: '점수', values: [1, 2, 3, 6], desc: (v) => `내 색 +${v}점, 대신 노란색 −1점` },
+  { id: 'yellowTaste', name: '노란 맛', cat: '점수', values: [1, 2, 3, 6], desc: (v) => `노란색 +${v}점` },
+  { id: 'rainbowHunt', name: '무지개 사냥', cat: '점수', values: [3, 6, 9, 18], desc: (v) => `무지개 +${v}점` },
+  { id: 'comboArtist', name: '콤보 장인', cat: '점수', values: [1, 2, 3, 6], cap: 7, desc: (v) => `콤보 보너스가 ${comboPeriod(v)}콤보마다` },
+  { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 10, 15, 30], desc: (v) => `라운드 시작할 때 +${v}점` },
+  { id: 'jackpot', name: '잭팟', cat: '점수', values: [5, 10, 15, 30], cap: 50, desc: (v) => `원을 잡을 때 ${v}% 확률로 잭팟 (×1.5~×3)` },
+  { id: 'edge', name: '찰나의 순간', cat: '점수', values: [0.5, 1, 1.5, 3], cap: 4, desc: (v) => `가장자리 점수 배율 +${v} (기본 ×3)` },
   // 피버
   { id: 'preheat', name: '예열', cat: '피버', values: [20, 40, 60, 100], cap: 100, desc: (v) => (v >= 100 ? '라운드를 피버 상태로 시작' : `라운드를 피버 게이지 ${v}%로 시작`) },
-  { id: 'overtime', name: '연장전', cat: '피버', values: [1, 2, 3, 5], desc: (v) => `피버 시간 +${v}초` },
-  { id: 'overcharge', name: '과충전', cat: '피버', values: [15, 30, 45, 75], desc: (v) => `피버 게이지 충전 +${v}%` },
-  { id: 'frenzy', name: '폭주', cat: '피버', values: [0.5, 1, 1.5, 2.5], desc: (v) => `피버 배율 +${v}` },
-  { id: 'afterglow', name: '여운', cat: '피버', values: [1, 2, 3, 5], desc: (v) => `피버가 끝난 뒤 ${v}초 동안 점수 ×1.5` },
+  { id: 'overtime', name: '연장전', cat: '피버', values: [1, 2, 3, 6], desc: (v) => `피버 시간 +${v}초` },
+  { id: 'overcharge', name: '과충전', cat: '피버', values: [15, 30, 45, 90], desc: (v) => `피버 게이지 충전 +${v}%` },
+  { id: 'frenzy', name: '폭주', cat: '피버', values: [0.5, 1, 1.5, 3], desc: (v) => `피버 배율 +${v}` },
+  { id: 'afterglow', name: '여운', cat: '피버', values: [1, 2, 3, 6], desc: (v) => `피버가 끝난 뒤 ${v}초 동안 점수 ×1.5` },
   // 보스
-  { id: 'hammer', name: '해머', cat: '보스', values: [1, 2, 3, 5], desc: (v) => `보스 타격 +${v}점` },
-  { id: 'hunter', name: '사냥꾼', cat: '보스', values: [10, 20, 30, 50], desc: (v) => `보스 막타 +${v}점` },
+  { id: 'hammer', name: '해머', cat: '보스', values: [1, 2, 3, 6], desc: (v) => `보스 타격 +${v}점` },
+  { id: 'hunter', name: '사냥꾼', cat: '보스', values: [10, 20, 30, 60], desc: (v) => `보스 막타 +${v}점` },
   { id: 'crusher', name: '파쇄', cat: '보스', values: [0.5, 1, 2, 4], desc: (v) => (v < 1 ? `보스를 때리면 ${Math.round(v * 100)}% 확률로 2타` : `보스를 때리면 ${crushText(v)}`) },
   // 유지
   { id: 'insurance', name: '보험', cat: '유지', values: [20, 40, 60, 100], cap: 100, desc: (v) => `콤보가 끊겨도 ${v}% 유지` },
   { id: 'calm', name: '침착', cat: '유지', values: [1, 2, 3, 5], desc: (v) => `빈 곳 클릭 페널티를 라운드당 ${v}번 무시` },
-  { id: 'shield', name: '방패', cat: '유지', values: [1, 2, 3, 5], desc: (v) => `견제당해도 콤보 유지, 라운드당 ${v}번` },
+  { id: 'shield', name: '방패', cat: '유지', values: [1, 2, 3, 6], desc: (v) => `견제당해도 콤보 유지, 라운드당 ${v}번` },
   // 견제
   { id: 'thickSkin', name: '철면피', cat: '견제', values: [1, 2, 3, 99], provisional: true, desc: (v) => (v >= 99 ? '견제해도 표적이 되지 않음' : `표적 시간 −${v}초`) },
-  { id: 'plunder', name: '강탈', cat: '견제', values: [1, 1, 2, 3], provisional: true, desc: (v) => `견제하면 상대 점수 ${v}점을 빼앗음` },
-  { id: 'counterPro', name: '반격 전문가', cat: '견제', values: [2, 4, 6, 10], provisional: true, desc: (v) => `반격 +${v}점` },
-  { id: 'reflect', name: '견제 반사', cat: '견제', values: [1, 2, 3, 5], desc: (v) => `내 색을 견제당하면 내가 잡은 것으로, 견제한 사람은 콤보 끊김·표적 (라운드당 ${v}번)` },
-  { id: 'jammer', name: '방해 전파', cat: '견제', values: [500, 1000, 1500, 2500], provisional: true, desc: (v) => `내 피버가 터지면 상대 원이 ${sec(v)} 동안 흐려짐` },
+  { id: 'plunder', name: '강탈', cat: '견제', values: [1, 1, 2, 4], provisional: true, desc: (v) => `견제하면 상대 점수 ${v}점을 빼앗음` },
+  { id: 'counterPro', name: '반격 전문가', cat: '견제', values: [2, 4, 6, 12], provisional: true, desc: (v) => `반격 +${v}점` },
+  { id: 'reflect', name: '견제 반사', cat: '견제', values: [1, 2, 3, 6], desc: (v) => `내 색을 견제당하면 내가 잡은 것으로, 견제한 사람은 콤보 끊김·표적 (라운드당 ${v}번)` },
+  { id: 'jammer', name: '방해 전파', cat: '견제', values: [500, 1000, 1500, 3000], provisional: true, desc: (v) => `내 피버가 터지면 상대 원이 ${sec(v)} 동안 흐려짐` },
   // 보조
-  { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 55], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
-  { id: 'magnet', name: '자석', cat: '보조', values: [60, 90, 120, 160], cap: 200, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (1초에 2개)` },
+  { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 70], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
+  { id: 'magnet', name: '자석', cat: '보조', values: [60, 90, 120, 240], cap: 240, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (1초에 2개)` },
 ];
 
 /** 봇은 고르지 않는 능력 (봇은 원을 정확히 눌러서 효과가 없음) */
