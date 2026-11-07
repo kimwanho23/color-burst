@@ -162,7 +162,10 @@ test('빈 곳 클릭은 지금처럼 페널티', () => {
 type Priv = {
   updateLaser(now: number): void;
   updatePulls(now: number): void;
-  laser: { a: { x: number; y: number }; b: { x: number; y: number }; at: number; hit: Set<string> } | null;
+  lasers: { lines: { a: { x: number; y: number }; b: { x: number; y: number } }[]; at: number; hit: Set<string> }[];
+  nextLaserAt: number;
+  endAt: number;
+  playPayload(): { lasers: object[] };
   hostId: string;
 };
 const priv = (room: Room) => room as unknown as Priv;
@@ -189,7 +192,8 @@ test('레이저: 선 위에 커서가 있는 사람만 1.5초 스턴, 한 레이
   const now = Date.now();
   room.cursor(me.id, { x: 800, y: 300 });
   room.cursor(other.id, { x: 800, y: 600 });
-  priv(room).laser = { a: { x: 0, y: 300 }, b: { x: 1600, y: 300 }, at: now - 10, hit: new Set() };
+  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }], at: now - 10, hit: new Set() }];
+  priv(room).nextLaserAt = Infinity;
   sent.length = 0;
   priv(room).updateLaser(now);
   assert.ok(me.stunUntil >= now + 1400 && me.stunUntil <= now + 1600, String(me.stunUntil - now));
@@ -207,7 +211,8 @@ test('레이저: 0.5초 넘게 소식 없는 커서는 안 맞는다', (t) => {
   room.cursor(me.id, { x: 800, y: 300 });
   t.mock.timers.tick(600);
   const now = Date.now();
-  priv(room).laser = { a: { x: 0, y: 300 }, b: { x: 1600, y: 300 }, at: now - 10, hit: new Set() };
+  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }], at: now - 10, hit: new Set() }];
+  priv(room).nextLaserAt = Infinity;
   priv(room).updateLaser(now);
   assert.equal(me.stunUntil, 0);
   room.destroy();
@@ -251,16 +256,17 @@ test('자석: 스턴 중이거나 커서가 오래되면 끌지 않는다', () =
   room.destroy();
 });
 
-test('일시정지가 풀리면 레이저 발사 시각도 그만큼 밀린다', (t) => {
+const lineAB = { a: { x: 0, y: 0 }, b: { x: 1, y: 1 } };
+test('일시정지가 풀리면 모든 볼리의 발사 시각이 그만큼 밀린다', (t) => {
   const { room } = playingRoom();
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   const at = Date.now() + 500;
-  priv(room).laser = { a: { x: 0, y: 0 }, b: { x: 1, y: 1 }, at, hit: new Set() };
+  priv(room).lasers = [{ lines: [lineAB], at, hit: new Set() }, { lines: [lineAB], at: at + 700, hit: new Set() }];
   const host = priv(room).hostId;
   room.pause(host);
   t.mock.timers.tick(2000);
   room.resume(host);
-  assert.equal(priv(room).laser!.at, at + 2000);
+  assert.deepEqual(priv(room).lasers.map((l) => l.at), [at + 2000, at + 2700]);
   room.destroy();
 });
 
@@ -289,10 +295,11 @@ test('시간 정지를 잡으면 예고 중인 레이저도 정지 시간만큼 
   const now = Date.now();
   circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
   const at = now + 600;
-  priv(room).laser = { a: { x: 0, y: 0 }, b: { x: 1, y: 1 }, at, hit: new Set() };
+  // 아직 안 쏜 볼리만 밀리고, 이미 쏘고 있는 볼리는 그대로
+  priv(room).lasers = [{ lines: [lineAB], at, hit: new Set() }, { lines: [lineAB], at: now - 50, hit: new Set() }];
   t.mock.method(Math, 'random', () => 0); // 전설 [시간 정지, 필드 클리어] 중 시간 정지
   room.click(me.id, { circleId: 1, x: 1100, y: 450 });
-  assert.equal(priv(room).laser!.at, at + RULES.items.freezeMs);
+  assert.deepEqual(priv(room).lasers.map((l) => l.at), [at + RULES.items.freezeMs, now - 50]);
   room.destroy();
 });
 
@@ -396,5 +403,56 @@ test('카오스 방: 아이템 원 확률 3배', () => {
   assert.equal(room.start(a.id), null);
   const opts = (room as unknown as { spawnOpts(now: number): { itemChance?: number } }).spawnOpts(Date.now());
   assert.ok(Math.abs(opts.itemChance! - RULES.items.chance * 3) < 1e-12);
+  room.destroy();
+});
+
+// ---------- 레이저 볼리 ----------
+test('여러 줄·겹친 볼리에도 스턴은 한 번, 스턴 중인 사람은 안 늘어남', () => {
+  const { room, me } = playingRoom();
+  const other = room.players.find((p) => p.id !== me.id)!;
+  const now = Date.now();
+  room.cursor(me.id, { x: 800, y: 300 });
+  room.cursor(other.id, { x: 400, y: 300 });
+  other.stunUntil = now + 2000; // 저격 스턴 중
+  const h = { a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }, v = { a: { x: 800, y: 0 }, b: { x: 800, y: 900 } };
+  priv(room).lasers = [{ lines: [h, v], at: now - 10, hit: new Set() }, { lines: [h], at: now - 10, hit: new Set() }];
+  priv(room).nextLaserAt = Infinity;
+  sent.length = 0;
+  priv(room).updateLaser(now);
+  assert.equal(sent.filter((e) => e === 'stun').length, 1);
+  assert.equal(me.stunUntil, now + RULES.laser.stunMs);
+  assert.equal(other.stunUntil, now + 2000);
+  room.destroy();
+});
+
+test('상태 스냅샷에 진행 중 볼리 (hit는 빼고)', () => {
+  const { room } = playingRoom();
+  priv(room).lasers = [{ lines: [lineAB], at: Date.now() + 500, hit: new Set(['x']) }];
+  const ls = priv(room).playPayload().lasers;
+  assert.equal(ls.length, 1);
+  assert.equal('hit' in ls[0], false);
+  room.destroy();
+});
+
+test('카오스도 시작·끝 조용한 시간을 지키고, 다음은 0.6초나 2초 뒤', () => {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.fillBots = false;
+  room.setRules(a.id, { preset: 'chaos' });
+  assert.equal(room.start(a.id), null);
+  const r = room as unknown as Priv & { startAt: number };
+  const now = Date.now();
+  r.nextLaserAt = 0;
+  r.startAt = now - 1000; r.endAt = now + 30_000;
+  r.updateLaser(now);
+  assert.equal(r.lasers.length, 0, '시작 1초');
+  r.startAt = now - 30_000; r.endAt = now + 1000;
+  r.updateLaser(now);
+  assert.equal(r.lasers.length, 0, '끝 1초 전');
+  r.startAt = now - 5000; r.endAt = now + 30_000;
+  r.updateLaser(now);
+  assert.equal(r.lasers.length, 1);
+  assert.ok([600, 2000].includes(r.nextLaserAt - 5000), String(r.nextLaserAt));
   room.destroy();
 });

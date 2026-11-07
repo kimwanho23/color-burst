@@ -40,16 +40,22 @@ export const RULES = {
   hitPad: 12,
   /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */
   cursor: { sendHz: 15, staleMs: 500 },
-  /** 레이저 발사기: 간격, 경고, 발사 시간, 맞는 거리(중심선에서, 빔 폭은 그 2배), 스턴, 판 시작·끝 조용한 시간 */
-  laser: { everyMin: 10_000, everyMax: 15_000, warnMs: 1_200, fireMs: 300, width: 135, stunMs: 1_500, startQuietMs: 3_000, endQuietMs: 1_000 },
+  /**
+   * 레이저 발사기: 간격, 경고, 발사 시간, 맞는 거리(중심선에서, 빔 폭은 그 2배), 스턴, 판 시작·끝 조용한 시간,
+   * 스턴이 끝난 뒤 레이저 무적 시간, 평행 두 줄 사이에 남기는 틈, 한 번에 쏘는 줄 모양 확률(%)
+   */
+  laser: {
+    everyMin: 10_000, everyMax: 15_000, warnMs: 1_200, fireMs: 300, width: 135, stunMs: 1_500, startQuietMs: 3_000, endQuietMs: 1_000,
+    immuneMs: 1_000, safeGap: 160, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
+  },
   /** 커서 자석: 끌려오는 시간, 플레이어마다 1초에 끌 수 있는 원 수 */
   magnet: { pullMs: 250, perSec: 2 },
   /** 방해 아이템: 효과 시간, 감도 감소 배율, 1등 저격 스턴, 효과가 끝난 뒤 커서가 마우스로 돌아오는 시간 */
   sabotage: { ms: 5_000, slow: 0.3, snipeStunMs: 3_000, slideMs: 150 },
   /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
   aura: { extra: 80, pullSpeed: 120, tickMs: 500, touchPenalty: 1, clickPenalty: 2 },
-  /** 카오스 모드 배율 */
-  chaos: { itemMult: 3, waveIntervalMult: 0.5, laserIntervalMult: 0.5, bossCountOdds: [20, 40, 40], eventChance: 0.3 },
+  /** 카오스 모드 배율. 레이저는 laserEveryMs마다, laserQuickChance 확률로 laserQuickMs 뒤 한 번 더 (겹쳐 나옴) */
+  chaos: { itemMult: 3, waveIntervalMult: 0.5, laserEveryMs: 2_000, laserQuickChance: 0.35, laserQuickMs: 600, bossCountOdds: [20, 40, 40], eventChance: 0.3 },
   /** 아케이드: 라운드가 끝나고 능력 선택 화면이 열리기까지 ("라운드 종료!" 표시) */
   roundEndMs: 1_500,
   /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 (서버 판정과 화면 예측 공통) */

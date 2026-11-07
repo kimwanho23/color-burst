@@ -62,7 +62,7 @@ export interface DrawState {
   /** 게임 커서 (내 커서만): 스턴이면 회색, 넓은 손·자석 범위 */
   cursor?: { x: number; y: number; stunned: boolean; reach: number; magnet: number } | null;
   /** 레이저: at 전에는 경고선, at부터 fireMs 동안 빛줄기 */
-  laser?: { a: { x: number; y: number }; b: { x: number; y: number }; at: number } | null;
+  lasers?: { lines: { a: { x: number; y: number }; b: { x: number; y: number } }[]; at: number }[];
   /** 시야 방해: 종류·시드·끝나는 시각 */
   blind?: { kind: BlindKind; seed: number; until: number } | null;
   /** 내 커서가 이동형 보스 오오라 안 (오오라를 더 진하게) */
@@ -213,7 +213,7 @@ export class Renderer {
     if (s.blurred) ctx.globalAlpha = 0.55;
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
-    if (s.laser) this.drawLaser(s.laser, s.now, now);
+    for (const l of s.lasers ?? []) this.drawLaser(l, s.now, now);
     const base = ctx.globalAlpha;
     // 발사 보호 구역 안의 원은 반투명 (아직 잡을 수 없음)
     const fade = (c: Circle) => { ctx.globalAlpha = isGuarded(c, s.now) ? base * 0.4 : base; };
@@ -354,22 +354,27 @@ export class Renderer {
   }
 
   /** 레이저: 발사 전에는 깜빡이는 빨간 점선, 발사 중에는 굵은 빛줄기와 흰 심지 */
-  private drawLaser(l: NonNullable<DrawState['laser']>, t: number, frameNow: number) {
+  /** 레이저 볼리: 예고 중에는 맞는 범위(빔 폭)를 반투명 띠 + 가운데 점선으로, 발사 중에는 붉은 띠 + 흰 심 */
+  private drawLaser(v: NonNullable<DrawState['lasers']>[number], t: number, frameNow: number) {
     const ctx = this.ctx;
-    const fire = RULES.laser.fireMs;
-    if (t >= l.at + fire) return;
+    const fire = RULES.laser.fireMs, W = RULES.laser.width * 2;
+    if (t >= v.at + fire) return;
+    const line = (l: { a: { x: number; y: number }; b: { x: number; y: number } }) => { ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke(); };
     ctx.save();
-    ctx.lineCap = 'round';
-    if (t < l.at) {
+    ctx.lineCap = 'butt';
+    if (t < v.at) {
+      const pulse = Math.abs(Math.sin(frameNow / 80));
+      ctx.strokeStyle = `rgba(255, 60, 60, ${0.1 + 0.12 * pulse})`; ctx.lineWidth = W;
+      v.lines.forEach(line);
       ctx.setLineDash([14, 10]); ctx.lineWidth = 3;
-      ctx.strokeStyle = `rgba(255, 77, 77, ${0.35 + 0.35 * Math.abs(Math.sin(frameNow / 80))})`;
-      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 77, 77, ${0.35 + 0.35 * pulse})`;
+      v.lines.forEach(line);
     } else {
-      const k = 1 - (t - l.at) / fire;
-      ctx.strokeStyle = `rgba(255, 60, 60, ${0.55 * k + 0.2})`; ctx.lineWidth = RULES.laser.width * 2;
-      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.9 * k + 0.1})`; ctx.lineWidth = 5;
-      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+      const k = 1 - (t - v.at) / fire;
+      ctx.strokeStyle = `rgba(255, 60, 60, ${0.55 * k + 0.2})`; ctx.lineWidth = W;
+      v.lines.forEach(line);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.9 * k + 0.1})`; ctx.lineWidth = 14;
+      v.lines.forEach(line);
     }
     ctx.restore();
   }

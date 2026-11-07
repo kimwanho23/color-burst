@@ -12,7 +12,8 @@ import type { Point } from './cursor.ts';
 /** 커서 자석으로 끌려가는 원: at부터 ms 동안 by의 커서로 빨려 들어간 뒤 잡힌다 */
 export interface Pull { circleId: number; by: string; from: Point; at: number; ms: number }
 /** 레이저: at(서버 시각)에 a-b 선분으로 발사 (그 전은 경고) */
-export interface LaserShot { a: Point; b: Point; at: number }
+/** 레이저 볼리: 한 번에 같이 쏘는 줄들, at = 발사 시각 */
+export interface LaserVolley { lines: { a: Point; b: Point }[]; at: number }
 import type { ThemeId } from './rules.ts';
 
 /** 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다 */
@@ -80,7 +81,7 @@ export interface PlayPayload {
   zones: Zone[];
   /** 끌려가는 원, 예고·발사 중인 레이저 (재접속 때 이어서 그린다) */
   pulls: Pull[];
-  laser: LaserShot | null;
+  lasers: LaserVolley[];
   /** 이번 라운드 테마 (아케이드 랜덤 이벤트) */
   theme: ThemeId | null;
 }
@@ -111,7 +112,7 @@ export interface ServerToClient {
   'item:got': (d: { circleId: number; by: string; item: ItemId; tier: ItemTier; x: number; y: number }) => void;
   'zone:add': (z: Zone) => void;
   /** 레이저 예고 (at에 발사) */
-  'laser:warn': (d: LaserShot) => void;
+  'laser:warn': (d: LaserVolley) => void;
   /** 스턴: until까지 클릭 불가 */
   stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' }) => void;
   /** 이동형 보스 오오라를 클릭해 점수를 잃음 */

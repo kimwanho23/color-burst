@@ -1,9 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULES, auraAt, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, nextCursor, nextLaserIn,
-  pickMagnetTargets, rollLaser, slideBack, type Circle,
+  RULES, auraAt, canLaserStun, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, nextCursor, nextLaserIn,
+  pickMagnetTargets, rollLaser, rollVolley, slideBack, volleyHits, type Circle, type Point,
 } from '../src/index.ts';
+
+/** 순서대로 값을 돌려주는 난수 */
+const seq = (v: number[]) => { let i = 0; return () => v[i++ % v.length]; };
 
 test('nextCursor: 효과가 없으면 진짜 마우스 위치 그대로', () => {
   assert.deepEqual(nextCursor({ x: 0, y: 0 }, { x: 500, y: 300 }, { x: 5, y: 5 }, null), { x: 500, y: 300 });
@@ -26,6 +29,42 @@ test('laserHits: 135 안이면 맞음 (빔 폭 270)', () => {
   assert.equal(laserHits({ x: 800, y: 235 }, a, b), true);
   assert.equal(laserHits({ x: 800, y: 236 }, a, b), false);
   assert.equal(RULES.laser.warnMs, 1200);
+});
+
+test('rollVolley: 확률 순서 single 40 / parallel 25 / cross 20 / radial 15', () => {
+  const kind = (r: number) => rollVolley(seq([r, 0.5, 0.5, 0.5])).kind;
+  assert.deepEqual([kind(0), kind(0.39), kind(0.4), kind(0.64), kind(0.65), kind(0.84), kind(0.85)],
+    ['single', 'single', 'parallel', 'parallel', 'cross', 'cross', 'radial']);
+});
+
+test('rollVolley: 평행 두 줄 사이에 safeGap 틈', () => {
+  const { lines } = rollVolley(seq([0.5, 0.5, 0.5, 0.5]));
+  assert.equal(lines.length, 2);
+  // 두 선분은 길이·중심이 같고 수직으로만 밀려 있어 끝점의 수선이 선분 안에 떨어진다
+  const d = distToSegment(lines[1].a, lines[0].a, lines[0].b);
+  assert.ok(Math.abs(d - (2 * RULES.laser.width + RULES.laser.safeGap)) < 1e-6, String(d));
+});
+
+test('rollVolley: X자는 한 점에서 수직, 방사는 3줄', () => {
+  const cross = rollVolley(seq([0.7, 0.5, 0.5, 0.5])).lines;
+  assert.equal(cross.length, 2);
+  const ang = (l: { a: Point; b: Point }) => Math.atan2(l.b.y - l.a.y, l.b.x - l.a.x);
+  assert.ok(Math.abs(Math.cos(ang(cross[0]) - ang(cross[1]))) < 1e-9);
+  assert.equal(rollVolley(seq([0.9, 0.5, 0.5, 0.5])).lines.length, 3);
+});
+
+test('volleyHits: 한 줄이라도 닿으면 true', () => {
+  const lines = [{ a: { x: 0, y: 100 }, b: { x: 1600, y: 100 } }, { a: { x: 0, y: 800 }, b: { x: 1600, y: 800 } }];
+  assert.equal(volleyHits({ x: 5, y: 790 }, lines), true);
+  assert.equal(volleyHits({ x: 5, y: 450 }, lines), false);
+});
+
+test('canLaserStun: 스턴 중·스턴 끝나고 1초 안에는 안 됨', () => {
+  const p = newPlayer('a', 'A', 0); const now = 1_000_000;
+  assert.equal(canLaserStun(p, now), true);
+  p.stunUntil = now + 500; assert.equal(canLaserStun(p, now), false);
+  p.stunUntil = now - 999; assert.equal(canLaserStun(p, now), false);
+  p.stunUntil = now - 1000; assert.equal(canLaserStun(p, now), true);
 });
 
 test('rollLaser: 길이 4000, 필드 안쪽을 지난다', () => {

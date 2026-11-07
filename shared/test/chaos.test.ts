@@ -15,9 +15,10 @@ test('카오스 프리셋만 chaos가 켜짐, 방해 아이템은 느긋하게�
   assert.equal(toGameRules(PRESETS.chaos.rules).chaos, true);
 });
 
-test('카오스: 웨이브·레이저 간격 절반', () => {
+test('카오스: 웨이브 간격 절반, 레이저는 2초마다 (35% 확률로 0.6초 뒤 겹침)', () => {
   assert.equal(nextWaveIn(() => 0, true), 6000);
-  assert.equal(nextLaserIn(() => 0, true), 5000);
+  assert.equal(nextLaserIn(() => 0, true), 600);
+  assert.equal(nextLaserIn(() => 0.5, true), 2000);
   assert.equal(nextWaveIn(() => 0), 12_000);
 });
 

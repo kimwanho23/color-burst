@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserShot, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
@@ -282,7 +282,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   zones = d.zones ?? [];
   pulls.clear();
   for (const pl of d.pulls ?? []) pulls.set(pl.circleId, pl);
-  setLaser(d.laser ?? null);
+  setLasers(d.lasers ?? []);
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
   playing = true;
@@ -302,7 +302,7 @@ socket.on('game:pause', ({ by }) => setPaused(by));
 function setPaused(by: string | null) {
   if (by) {
     // 멈춰 있는 동안 레이저 발사음이 나지 않게 (다시 시작하면 game:sync로 다시 예약)
-    clearTimeout(laserFireTimer);
+    laserFireTimers.forEach(clearTimeout); laserFireTimers = [];
     if (!pausedView) pausedView = serverNow();
     stopMusic();
     const who = players.find((p) => p.id === by);
@@ -438,14 +438,22 @@ socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); }
 const gameCursor = new GameCursor();
 /** 커서 자석으로 끌려가는 원 */
 const pulls = new Map<number, Pull>();
-let laser: LaserShot | null = null;
-let laserFireTimer = 0;
-function setLaser(l: LaserShot | null) {
-  laser = l;
-  clearTimeout(laserFireTimer);
-  if (l && l.at > serverNow()) laserFireTimer = window.setTimeout(() => sfx.laserFire(), l.at - serverNow());
+/** 예고·발사 중인 레이저 볼리들 (발사가 끝난 것은 그릴 때 거른다) */
+let lasers: LaserVolley[] = [];
+let laserFireTimers: number[] = [];
+/** 볼리 발사음 예약 */
+const scheduleLaserFire = (l: LaserVolley) => {
+  if (l.at > serverNow()) laserFireTimers.push(window.setTimeout(() => sfx.laserFire(), l.at - serverNow()));
+};
+function setLasers(ls: LaserVolley[]) {
+  lasers = ls;
+  laserFireTimers.forEach(clearTimeout); laserFireTimers = [];
+  ls.forEach(scheduleLaserFire);
 }
-socket.on('laser:warn', (l) => { setLaser(l); sfx.laserWarn(); });
+socket.on('laser:warn', (l) => {
+  lasers = lasers.filter((x) => serverNow() < x.at + RULES.laser.fireMs);
+  lasers.push(l); scheduleLaserFire(l); sfx.laserWarn();
+});
 socket.on('stun', ({ playerId, by }) => {
   const p = nameOf(playerId);
   const snipe = by === 'snipe';
@@ -659,7 +667,7 @@ function frame() {
     cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView
       ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now) : 0 }
       : null,
-    laser,
+    lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),
     blind: live && m?.blind && (m.debuffs.blind ?? 0) > now ? { ...m.blind, until: m.debuffs.blind! } : null,
     myAura: !!aura,
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),

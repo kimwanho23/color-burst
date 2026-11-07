@@ -5,7 +5,7 @@ import {
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
-  FIELD, isStunned, laserHits, nextLaserIn, pickMagnetTargets, rollLaser, type LaserShot, type Point, type Pull,
+  FIELD, canLaserStun, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
@@ -89,8 +89,8 @@ export class Room {
   // ---------- 게임 커서 ----------
   /** 플레이어 id → 마지막 커서 위치와 받은 시각 */
   private cursors = new Map<string, { x: number; y: number; at: number }>();
-  /** 예고·발사 중인 레이저 (hit: 이번 레이저에 맞은 플레이어) */
-  private laser: (LaserShot & { hit: Set<string> }) | null = null;
+  /** 예고·발사 중인 레이저 볼리들 (hit: 그 볼리에 맞은 플레이어) */
+  private lasers: (LaserVolley & { hit: Set<string> })[] = [];
   /** 다음 레이저 시점(판 시작 후 ms) */
   private nextLaserAt = 0;
   /** 원 id → 커서 자석 끌기 */
@@ -261,7 +261,7 @@ export class Room {
     for (const c of [...this.circles.values(), ...this.spawnQueue]) { c.born += delta; for (const h of c.holds ?? []) h[0] += delta; }
     for (const p of this.players) shiftTimes(p, this.pausedAt, delta);
     for (const z of this.zones) z.until += delta;
-    if (this.laser) this.laser.at += delta;
+    for (const l of this.lasers) l.at += delta;
     for (const pl of this.pulls.values()) pl.at += delta;
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
     if (this.freezeUntil > this.pausedAt) this.freezeUntil += delta;
@@ -501,7 +501,7 @@ export class Room {
     return {
       startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
       rules: this.rules, pausedBy: this.pausedBy, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
-      pulls: [...this.pulls.values()], laser: this.laser ? { a: this.laser.a, b: this.laser.b, at: this.laser.at } : null,
+      pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
     };
   }
 
@@ -527,7 +527,7 @@ export class Room {
     this.rain = null;
     this.freezeUntil = 0;
     this.nextWaveAt = nextWaveIn(Math.random, this.G.chaos);
-    this.laser = null;
+    this.lasers = [];
     this.nextLaserAt = nextLaserIn(Math.random, this.G.chaos);
     this.pulls.clear();
     this.pullLog.clear();
@@ -773,35 +773,33 @@ export class Room {
     return c && now - c.at <= RULES.cursor.staleMs ? c : null;
   }
 
-  /** 레이저 발사기: 예고 → 발사(커서가 닿으면 스턴) → 다음 예약 */
+  /**
+   * 레이저 발사기: 예약 시각이 되면 볼리를 예고하고 다음을 예약한다 (카오스는 2초마다라 여러 볼리가 겹칠 수 있다).
+   * 발사 중인 볼리의 줄에 커서가 닿으면 스턴. 스턴 중·스턴이 끝난 직후(무적)에는 다시 걸리지 않는다
+   */
   private updateLaser(now: number) {
     if (!this.G.laser) return;
     const L = RULES.laser;
     const el = now - this.startAt;
-    if (!this.laser) {
-      // 판 시작 직후·시간 정지 중·라운드 끝 직전에는 쏘지 않는다
-      if (el < this.nextLaserAt || el < L.startQuietMs || now < this.freezeUntil) return;
-      if (this.endAt - (now + L.warnMs + L.fireMs) < L.endQuietMs) return;
-      const { a, b } = rollLaser();
-      this.laser = { a, b, at: now + L.warnMs, hit: new Set() };
-      this.io.to(this.code).emit('laser:warn', { a, b, at: this.laser.at });
-      return;
-    }
-    const { a, b, at, hit } = this.laser;
-    if (now < at) return;
-    if (now >= at + L.fireMs) {
-      this.laser = null;
+    // 판 시작 직후·시간 정지 중·라운드 끝 직전에는 쏘지 않는다
+    if (el >= this.nextLaserAt && el >= L.startQuietMs && now >= this.freezeUntil && this.endAt - (now + L.warnMs + L.fireMs) >= L.endQuietMs) {
+      const v = { lines: rollVolley().lines, at: now + L.warnMs };
+      this.lasers.push({ ...v, hit: new Set() });
+      this.io.to(this.code).emit('laser:warn', v);
       this.nextLaserAt = el + nextLaserIn(Math.random, this.G.chaos);
-      return;
     }
+    this.lasers = this.lasers.filter((l) => now < l.at + L.fireMs);
     let stunned = false;
-    for (const p of this.players) {
-      const cur = this.freshCursor(p.id, now);
-      if (p.bot || hit.has(p.id) || !cur || !laserHits(cur, a, b)) continue;
-      hit.add(p.id);
-      p.stunUntil = Math.max(p.stunUntil, now + L.stunMs);
-      this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
-      stunned = true;
+    for (const l of this.lasers) {
+      if (now < l.at) continue;
+      for (const p of this.players) {
+        const cur = this.freshCursor(p.id, now);
+        if (p.bot || l.hit.has(p.id) || !cur || !canLaserStun(p, now) || !volleyHits(cur, l.lines)) continue;
+        l.hit.add(p.id);
+        p.stunUntil = now + L.stunMs;
+        this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
+        stunned = true;
+      }
     }
     if (stunned) this.emitPlayers();
   }
@@ -905,7 +903,7 @@ export class Room {
         const ids = holdCircles(this.circles.values(), now, I.freezeMs);
         this.freezeUntil = now + I.freezeMs;
         // 예고 중인 레이저도 멈춘 시간만큼 늦게 쏜다 (시간 정지 중에는 쏘지 않음)
-        if (this.laser && this.laser.at > now) this.laser.at += I.freezeMs;
+        for (const l of this.lasers) if (l.at > now) l.at += I.freezeMs;
         // 예약된 웨이브 원도 정지가 끝난 뒤로 미룬다 (나선 간격은 유지)
         for (const q of this.spawnQueue) q.born += I.freezeMs;
         this.io.to(this.code).emit('circles:hold', { ids, at: now, ms: I.freezeMs });

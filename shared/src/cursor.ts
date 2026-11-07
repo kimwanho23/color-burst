@@ -37,9 +37,49 @@ export function rollLaser(rand = Math.random): { a: Point; b: Point } {
 
 export const laserHits = (cursor: Point, a: Point, b: Point) => distToSegment(cursor, a, b) <= RULES.laser.width;
 
-/** 다음 레이저까지 걸리는 시간(ms). 카오스면 절반 */
-export const nextLaserIn = (rand = Math.random, chaos = false) =>
-  (RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin)) * (chaos ? RULES.chaos.laserIntervalMult : 1);
+/** 한 번에 같이 쏘는 레이저 줄 모양 */
+export type VolleyKind = 'single' | 'parallel' | 'cross' | 'radial';
+export type LaserLine = { a: Point; b: Point };
+
+/** 중심 c를 지나는 각도 ang의 길이 4000 선분 (화면 밖까지) */
+const lineThrough = (c: Point, ang: number): LaserLine => {
+  const dx = Math.cos(ang) * 2000, dy = Math.sin(ang) * 2000;
+  return { a: { x: c.x - dx, y: c.y - dy }, b: { x: c.x + dx, y: c.y + dy } };
+};
+
+/**
+ * 레이저 볼리: 모양을 고르고 줄들을 만든다. 한 줄 / 평행 두 줄(사이에 safeGap 틈) / X자 / 60° 간격 세 줄.
+ * 중심은 필드 안쪽(x 200~1400, y 150~750)
+ */
+export function rollVolley(rand = Math.random): { kind: VolleyKind; lines: LaserLine[] } {
+  const odds = Object.entries(RULES.laser.volleyOdds) as [VolleyKind, number][];
+  let r = rand() * odds.reduce((s, [, w]) => s + w, 0);
+  let kind: VolleyKind = odds[odds.length - 1][0];
+  for (const [k, w] of odds) { r -= w; if (r < 0) { kind = k; break; } }
+  const c = { x: 200 + rand() * 1200, y: 150 + rand() * 600 };
+  const ang = rand() * Math.PI;
+  if (kind === 'single') return { kind, lines: [lineThrough(c, ang)] };
+  if (kind === 'parallel') {
+    const h = (2 * RULES.laser.width + RULES.laser.safeGap) / 2;
+    const nx = -Math.sin(ang) * h, ny = Math.cos(ang) * h;
+    return { kind, lines: [lineThrough({ x: c.x + nx, y: c.y + ny }, ang), lineThrough({ x: c.x - nx, y: c.y - ny }, ang)] };
+  }
+  if (kind === 'cross') return { kind, lines: [lineThrough(c, ang), lineThrough(c, ang + Math.PI / 2)] };
+  return { kind, lines: [0, 1, 2].map((i) => lineThrough(c, ang + (i * Math.PI) / 3)) };
+}
+
+/** 볼리의 줄 중 하나라도 커서에 닿는지 */
+export const volleyHits = (cursor: Point, lines: readonly LaserLine[]) => lines.some((l) => laserHits(cursor, l.a, l.b));
+
+/** 레이저 스턴을 걸 수 있는지: 스턴 중이 아니고, 스턴이 끝난 지 immuneMs가 지났다 (연속 스턴 방지) */
+export const canLaserStun = (p: PlayerState, now: number) => now >= p.stunUntil + RULES.laser.immuneMs;
+
+/** 다음 레이저까지 걸리는 시간(ms). 카오스면 2초마다, 가끔 0.6초 뒤 한 번 더 (겹침) */
+export const nextLaserIn = (rand = Math.random, chaos = false) => {
+  const C = RULES.chaos;
+  if (chaos) return rand() < C.laserQuickChance ? C.laserQuickMs : C.laserEveryMs;
+  return RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin);
+};
 
 /** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원 (보호 구역·화면 밖·skip 제외), 가까운 순 최대 max개 */
 export function pickMagnetTargets(
