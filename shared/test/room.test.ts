@@ -497,3 +497,4 @@ test('황금 원은 직접 클릭으로만, +20 고정', (t) => {
   assert.equal(me.score, 20);
   room.destroy();
 });
+

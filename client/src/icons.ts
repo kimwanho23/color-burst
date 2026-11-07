@@ -8,6 +8,7 @@ import {
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
+  Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId } from '@color-burst/shared';
 
@@ -20,10 +21,12 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
   jackpot: Coins, wideHand: Hand, magnet: Magnet, reflect: Undo2, edge: Maximize2,
   glassCannon: GlassWater, gambler: Dices, berserker: Axe, oneWay: MoveUp,
   vampire: Droplet, timeBomb: Bomb, selfTarget: Target, devilPact: Skull,
+  comebackBoost: Rocket, flip: FlipVertical2, focusFire: Siren, hyena: Dog, chaser: Footprints, momentum: Activity,
+  allHands: HandMetal, fortress: Castle, chainBlast: Radiation, bossFeast: Medal, lastFlame: Sunrise, itemHunter: PackageSearch,
 };
 
 const CATEGORY_ICON: Record<AbilityCategory, IconNode> = {
-  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 저주: Skull,
+  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 저주: Skull, 특별: Gem,
 };
 
 export const ITEM_ICON: Record<ItemId, IconNode> = {

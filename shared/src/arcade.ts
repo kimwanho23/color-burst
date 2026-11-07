@@ -23,6 +23,23 @@ export const ARCADE = {
   curseChanceLastPlace: 0.3,
   /** 한 게임에 가질 수 있는 저주 수 */
   maxCurses: 1,
+  /** 선택 차례(0 = 1라운드 뒤)별 고르는 카드 수 */
+  picksPerRound: [1, 1, 2, 2],
+  /** 이 차례부터 모두 노말 등급이 안 나온다 */
+  noNormalFrom: 1,
+  /** 꼴찌: 차례별로 이 등급 이상 카드가 1장 이상 */
+  lastGuarantee: [1, 2, 3, 3],
+  /**
+   * 역전 기회: 꼴찌 점수 < 1등 × ratio이면 켜짐. from 차례부터 판정(2라운드 끝),
+   * specialAt 차례에 특별 카드 1장, legendAt 차례에 전부 레전드. 켜진 동안 꼴찌 점수에 방 인원별 배율
+   */
+  comeback: { ratio: 0.6, from: 1, specialAt: 2, legendAt: 3, roomMult: { 2: 1.1, 3: 1.2, 4: 1.3 } as Record<number, number> },
+} as const;
+
+/** 특별 카드 수치 */
+export const SPECIAL = {
+  boost: 1.5, flipPct: 20, focusMult: 2, hyenaChance: 0.2, hyenaGain: 3, momentumEvery: 5,
+  chainChance: 0.15, chainR: 120, feastMult: 2, flameMs: 15_000, flameMult: 2, hunterDur: 2,
 } as const;
 
 /** 저주 카드 수치 */
@@ -54,11 +71,15 @@ export type AbilityId =
   | 'insurance' | 'calm' | 'shield'
   | 'thickSkin' | 'plunder' | 'counterPro' | 'jammer'
   | 'jackpot' | 'wideHand' | 'magnet' | 'reflect' | 'edge'
-  | CurseId;
+  | CurseId | SpecialId;
+
+export type SpecialId =
+  | 'comebackBoost' | 'flip' | 'focusFire' | 'hyena' | 'chaser' | 'momentum'
+  | 'allHands' | 'fortress' | 'chainBlast' | 'bossFeast' | 'lastFlame' | 'itemHunter';
 
 export type CurseId = 'glassCannon' | 'gambler' | 'berserker' | 'oneWay' | 'vampire' | 'timeBomb' | 'selfTarget' | 'devilPact';
 
-export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '보조' | '저주';
+export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '보조' | '저주' | '특별';
 
 export interface AbilityDef {
   id: AbilityId;
@@ -74,6 +95,8 @@ export interface AbilityDef {
   provisional?: boolean;
   /** 저주 카드: 등급 없음, 보상과 대가를 따로 표시 */
   curse?: { gain: string; cost: string };
+  /** 특별 카드: 역전 기회인 꼴찌만 받는 카드 (등급 없음, 게임 끝까지) */
+  special?: true;
 }
 
 const sec = (ms: number) => `${+(ms / 1000).toFixed(1)}초`;
@@ -134,8 +157,41 @@ export const CURSES: readonly AbilityDef[] = ([
   desc: () => `${gain} / 대가: ${cost}`,
 }));
 
-export const ALL_ABILITIES: readonly AbilityDef[] = [...ABILITIES, ...CURSES];
+const S = SPECIAL;
+/** 특별 카드 12장: 역전 기회인 꼴찌의 3번째 선택에 1장 섞인다. 남의 점수를 깎지 않는다 */
+export const SPECIALS: readonly AbilityDef[] = ([
+  ['comebackBoost', '대역전', `내 모든 점수 ×${S.boost}`],
+  ['flip', '판 뒤집기', `라운드가 끝날 때 1등과의 점수 차의 ${S.flipPct}%를 내 점수에 더함`],
+  ['focusFire', '집중 포화', `라운드를 피버로 시작, 피버 배율 +${S.focusMult}`],
+  ['hyena', '하이에나', `1등이 원을 잡을 때마다 ${S.hyenaChance * 100}% 확률로 내 점수 +${S.hyenaGain}`],
+  ['chaser', '추격자', '모든 원이 한 단계 바깥 구역 배율 (중앙 ×2 · 사이 ×3 · 가장자리 ×4)'],
+  ['momentum', '기세', `콤보가 끊기지 않고, 콤보 보너스가 ${S.momentumEvery}콤보마다`],
+  ['allHands', '만능 손', '남의 색 원도 내 색처럼 +3, 견제 페널티·표적 없음'],
+  ['fortress', '철벽', '견제·레이저·방해 아이템에 걸리지 않음'],
+  ['chainBlast', '연쇄 폭발', `원을 잡으면 ${S.chainChance * 100}% 확률로 반지름 ${S.chainR} 안의 내 원도 함께`],
+  ['bossFeast', '막타 독식', `보스에게 주는 피해 ${S.feastMult}배, 막타 점수 ${S.feastMult}배`],
+  ['lastFlame', '마지막 불꽃', `라운드 마지막 ${S.flameMs / 1000}초 동안 점수 ×${S.flameMult}`],
+  ['itemHunter', '아이템 사냥꾼', `아이템 원을 잡으면 한 등급 위 아이템, 효과 시간 ${S.hunterDur}배`],
+] as const).map(([id, name, text]) => ({
+  id, name, cat: '특별' as const, values: [1, 1, 1, 1] as const, cap: 1, special: true as const, desc: () => text,
+}));
+
+export const ALL_ABILITIES: readonly AbilityDef[] = [...ABILITIES, ...CURSES, ...SPECIALS];
 export const isCurse = (id: AbilityId) => !!ABILITY[id]?.curse;
+export const isSpecial = (id: AbilityId) => !!ABILITY[id]?.special;
+
+/**
+ * 역전 기회 판정: 1등 점수가 0보다 크고, 꼴찌(최저 점수, 모두 동점이면 없음) 점수가 1등 × ratio 미만이면 그 꼴찌들
+ */
+export function judgeComeback(players: readonly { id: string; score: number }[]): Set<string> {
+  const out = new Set<string>();
+  if (!players.length) return out;
+  const scores = players.map((p) => p.score);
+  const top = Math.max(...scores), min = Math.min(...scores);
+  if (top <= 0 || min === top || min >= top * ARCADE.comeback.ratio) return out;
+  for (const p of players) if (p.score === min) out.add(p.id);
+  return out;
+}
 
 export const ABILITY = Object.fromEntries(ALL_ABILITIES.map((a) => [a.id, a])) as Record<AbilityId, AbilityDef>;
 
@@ -211,28 +267,50 @@ export interface RollOpts {
   forceCurse?: boolean;
   /** 이 방 규칙에서 의미 없는 능력 (예: 빈 곳 페널티가 꺼져 있으면 침착) */
   exclude?: readonly AbilityId[];
+  /** 이 등급 미만은 나오지 않음 (노말 제외) */
+  minTier?: Tier;
+  /** 이 등급 이상 카드가 1장 이상 (없으면 무작위 1장을 그 등급으로) */
+  guarantee?: Tier;
+  /** 역전 기회: 1장을 무작위 특별 카드로 (저주와 다른 자리) */
+  special?: boolean;
 }
 
 export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.random, opts: RollOpts = {}, count: number = ARCADE.optionCount): Pick[] {
   const i = Math.min(pickIndex, TIER_ODDS.length - 1);
-  const odds = lastPlace ? (i + 1 < TIER_ODDS.length ? TIER_ODDS[i + 1] : LAST_PLACE_FINAL_ODDS) : TIER_ODDS[i];
+  const base = lastPlace ? (i + 1 < TIER_ODDS.length ? TIER_ODDS[i + 1] : LAST_PLACE_FINAL_ODDS) : TIER_ODDS[i];
+  // 노말 제외: 낮은 등급 확률을 0으로 (모두 0이 되면 가장 높은 등급만)
+  const min = opts.minTier ?? 0;
+  let odds: readonly number[] = base.map((w, t) => (t < min ? 0 : w));
+  if (odds.every((w) => w === 0)) odds = base.map((_, t) => (t === base.length - 1 ? 1 : 0));
   const pool = ABILITIES.filter((a) => !opts.exclude?.includes(a.id));
   const out: Pick[] = [];
   while (out.length < count && pool.length) {
     const a = pool.splice(Math.floor(rand() * pool.length), 1)[0];
     out.push({ id: a.id, tier: opts.allLegend ? 3 : rollTier(odds, rand) });
   }
+  let curseAt = -1;
   // 저주 카드: 선택지 하나를 바꿔 끼운다
   const chance = opts.forceCurse ? 1 : lastPlace ? ARCADE.curseChanceLastPlace : ARCADE.curseChance;
   if (!opts.allLegend && (opts.curses ?? 0) < ARCADE.maxCurses && rand() < chance) {
     // 악마의 계약은 마지막 선택에서는 대가만 남아서 제외
     const curses = CURSES.filter((c) => !(c.id === 'devilPact' && pickIndex >= ARCADE.rounds - 2));
     const c = curses[Math.floor(rand() * curses.length)];
-    out[Math.floor(rand() * out.length)] = { id: c.id, tier: 0 };
+    curseAt = Math.floor(rand() * out.length);
+    out[curseAt] = { id: c.id, tier: 0 };
   }
+  // 특별 카드: 저주가 아닌 자리 하나를 바꾼다
+  if (opts.special && out.length) {
+    const spots = out.map((_, k) => k).filter((k) => k !== curseAt);
+    const s = SPECIALS[Math.floor(rand() * SPECIALS.length)];
+    if (spots.length) out[spots[Math.floor(rand() * spots.length)]] = { id: s.id, tier: 0 };
+  }
+  // 꼴찌 등급 보장: 저주·특별 카드를 끼운 뒤, 남은 일반 카드 중에서
+  const g = opts.guarantee;
+  const plain = out.filter((o) => !isCurse(o.id) && !isSpecial(o.id));
+  if (g !== undefined && plain.length && !plain.some((o) => o.tier >= g)) plain[Math.floor(rand() * plain.length)].tier = g;
   return out;
 }
 
-/** 라운드가 끝날 때 적용되는 저주 결과 */
+/** 라운드가 끝날 때 적용되는 저주·특별 카드 결과 */
 /** 'tax': 랜덤 이벤트 세금을 받은 사람 */
-export interface RoundEffect { playerId: string; id: CurseId | 'tax'; delta: number }
+export interface RoundEffect { playerId: string; id: CurseId | 'flip' | 'tax'; delta: number }
