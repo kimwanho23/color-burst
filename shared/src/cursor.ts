@@ -68,6 +68,11 @@ export function rollVolley(rand = Math.random): { kind: VolleyKind; lines: Laser
   return { kind, lines: [0, 1, 2].map((i) => lineThrough(c, ang + (i * Math.PI) / 3)) };
 }
 
+/** 시간 정지: from 뒤에 쏠 볼리만 ms만큼 늦춘다 (이미 쏘고 있는 볼리는 그대로). 서버·화면이 같은 규칙을 쓴다 */
+export function holdLasers(lasers: { at: number }[], from: number, ms: number) {
+  for (const l of lasers) if (l.at > from) l.at += ms;
+}
+
 /** 볼리의 줄 중 하나라도 커서에 닿는지 */
 export const volleyHits = (cursor: Point, lines: readonly LaserLine[]) => lines.some((l) => laserHits(cursor, l.a, l.b));
 

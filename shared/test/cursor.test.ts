@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULES, auraAt, canLaserStun, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, nextCursor, nextLaserIn,
+  RULES, auraAt, canLaserStun, holdLasers, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, nextCursor, nextLaserIn,
   pickMagnetTargets, rollLaser, rollVolley, slideBack, volleyHits, type Circle, type Point,
 } from '../src/index.ts';
 
@@ -156,4 +156,10 @@ test('lensWarp: 렌즈 밖·가운데는 그대로, 볼록은 바깥으로 크�
   const vex = lensWarp({ x: 900, y: 450 }, 40, true), cave = lensWarp({ x: 900, y: 450 }, 40, false);
   assert.ok(vex.x > 900 && vex.size > 40, JSON.stringify(vex));
   assert.ok(cave.x < 900 && cave.size < 40, JSON.stringify(cave));
+});
+
+test('holdLasers: 아직 안 쏜 볼리만 늦춘다', () => {
+  const ls = [{ at: 1000 }, { at: 400 }, { at: 500 }];
+  holdLasers(ls, 500, 1500);
+  assert.deepEqual(ls.map((l) => l.at), [2500, 400, 500]);
 });

@@ -5,7 +5,7 @@ import {
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
-  FIELD, canLaserStun, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
+  FIELD, canLaserStun, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
@@ -903,7 +903,7 @@ export class Room {
         const ids = holdCircles(this.circles.values(), now, I.freezeMs);
         this.freezeUntil = now + I.freezeMs;
         // 예고 중인 레이저도 멈춘 시간만큼 늦게 쏜다 (시간 정지 중에는 쏘지 않음)
-        for (const l of this.lasers) if (l.at > now) l.at += I.freezeMs;
+        holdLasers(this.lasers, now, I.freezeMs);
         // 예약된 웨이브 원도 정지가 끝난 뒤로 미룬다 (나선 간격은 유지)
         for (const q of this.spawnQueue) q.born += I.freezeMs;
         this.io.to(this.code).emit('circles:hold', { ids, at: now, ms: I.freezeMs });
