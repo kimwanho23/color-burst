@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, SPECIAL, applyRankReach, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
@@ -66,7 +66,7 @@ export class Room {
   private round = 0;
   private roundPhase: 'play' | 'pick' = 'play';
   private pickEndsAt = 0;
-  private offers = new Map<string, { options: Pick[]; rerolls: number; chosen: boolean; last: boolean; allLegend: boolean; extra: RollExtra }>();
+  private offers = new Map<string, Offer>();
   // ---------- 랜덤 이벤트 ----------
   /** 이번 게임에 랜덤 이벤트가 일어난 횟수 */
   private eventsUsed = 0;
@@ -287,7 +287,11 @@ export class Room {
     const pick = o?.options[index];
     if (!o || !p || o.chosen || !pick) return;
     applyPick(p, pick);
-    o.chosen = true;
+    // 두 장 고르는 차례: 고른 카드를 빼고 남은 카드에서 한 장 더
+    o.options = o.options.filter((_, k) => k !== index);
+    o.need--;
+    if (o.need <= 0 || !o.options.length) o.chosen = true;
+    else this.sendOffer(id);
     this.emitPlayers();
     this.emitArcade();
     if ([...this.offers.values()].every((x) => x.chosen)) this.finishPick();
@@ -299,7 +303,7 @@ export class Room {
     const o = this.offers.get(id);
     if (!o || o.chosen || o.rerolls <= 0) return;
     o.rerolls--;
-    o.options = this.roll(p0(this.players, id), o.last, o.allLegend, o.extra);
+    o.options = this.roll(p0(this.players, id), o);
     this.sendOffer(id);
   }
 
@@ -470,7 +474,7 @@ export class Room {
     c.hp = Math.max(0, (c.hp ?? 1) - dmg);
 
     // 배율 순서: 피버(보스 상한) → 점수 2배·황금 손 → 잭팟 (타격과 막타는 잭팟을 따로 굴린다)
-    const mult = bossMult(p, now, this.G) * info.boost * itemMult(p, now, true);
+    const mult = bossMult(p, now, this.G) * info.boost * itemMult(p, now, true) * extraMult(p, now, this.players);
     const m = modsOf(p.picks);
     const hitJp = jackpotMult(m);
     let gained = Math.round(info.hit * mult * hitJp);
@@ -587,30 +591,32 @@ export class Room {
     const scores = this.players.map((p) => p.score);
     const min = Math.min(...scores);
     const tied = scores.every((v) => v === min);
+    // 역전 기회: 2라운드 끝부터 판정 (그 전에는 모두 꺼짐)
+    const k = this.round - 1;
+    const cb = k >= ARCADE.comeback.from ? judgeComeback(this.players) : new Set<string>();
+    for (const p of this.players) p.comeback = cb.has(p.id);
     this.offers.clear();
     for (const p of this.players) {
       const last = !tied && p.score === min;
       const allLegend = p.legendNext;
       p.legendNext = false;
       const extra: RollExtra = { gift: ev?.giftTo === p.id, curse: ev?.curseTo === p.id };
-      this.offers.set(p.id, { options: this.roll(p, last, allLegend, extra), rerolls: ARCADE.rerollsPerPick, chosen: false, last, allLegend, extra });
+      const o: Offer = { options: [], rerolls: ARCADE.rerollsPerPick, need: ARCADE.picksPerRound[Math.min(k, ARCADE.picksPerRound.length - 1)], chosen: false, last, comeback: p.comeback, allLegend, extra };
+      o.options = this.roll(p, o);
+      this.offers.set(p.id, o);
     }
     this.emitArcade();
     if (ev) { this.io.to(this.code).emit('arcade:event', ev); this.emitPlayers(); }
     for (const p of this.players) {
       if (!p.bot) { this.sendOffer(p.id); continue; }
-      // 봇은 1~3초 고민하다가 가장 높은 등급을 고른다. 저주는 꼴찌일 때만 반반 확률로 고른다
-      // 보조 능력(넓은 손·자석)은 봇에게 효과가 없어서, 다른 선택지가 있으면 고르지 않는다
-      const { options: opts, last } = this.offers.get(p.id)!;
-      const curseAt = opts.findIndex((o) => isCurse(o.id));
-      const useful = opts.some((o) => !isCurse(o.id) && !ASSIST_ABILITIES.includes(o.id));
-      let best = -1;
-      opts.forEach((o, i) => {
-        if (isCurse(o.id) || (useful && ASSIST_ABILITIES.includes(o.id))) return;
-        if (best < 0 || o.tier > opts[best].tier || (o.tier === opts[best].tier && Math.random() < 0.5)) best = i;
-      });
-      if (curseAt >= 0 && (best < 0 || (last && Math.random() < 0.5))) best = curseAt;
-      this.botPickTimers.push(setTimeout(() => this.choose(p.id, best), delay + 1000 + Math.random() * 2000));
+      // 봇은 1~3초 고민하다가 고른다 (두 장 고르는 차례면 한 장씩 차례로)
+      const botPick = (wait: number) => this.botPickTimers.push(setTimeout(() => {
+        const o = this.offers.get(p.id);
+        if (!o || o.chosen) return;
+        this.choose(p.id, botChoice(o.options, o.last));
+        if (!o.chosen) botPick(800 + Math.random() * 1200);
+      }, wait));
+      botPick(delay + 1000 + Math.random() * 2000);
     }
     this.pickTimer = setTimeout(() => this.finishPick(), ARCADE.pickSec * 1000 + delay);
   }
@@ -622,7 +628,13 @@ export class Room {
     for (const [id, o] of this.offers) {
       if (o.chosen) continue;
       const p = this.players.find((x) => x.id === id);
-      if (p) applyPick(p, o.options[Math.floor(Math.random() * o.options.length)]);
+      // 남은 고를 수만큼 남은 카드에서 무작위로
+      while (p && o.need > 0 && o.options.length) {
+        const k = Math.floor(Math.random() * o.options.length);
+        applyPick(p, o.options[k]);
+        o.options.splice(k, 1);
+        o.need--;
+      }
       o.chosen = true;
     }
     this.offers.clear();
@@ -632,17 +644,27 @@ export class Room {
     this.beginRound();
   }
 
-  /** extra: 랜덤 이벤트 선물(선택지 +1)·저주 배달 */
-  private roll(p: PlayerState | undefined, last: boolean, allLegend: boolean, extra: RollExtra) {
+  /**
+   * 선택지 뽑기: 차례(k = 라운드 − 1)에 따라 노말 제외·꼴찌 등급 보장, 역전 꼴찌는 3번째에 특별 카드·4번째에 전부 레전드.
+   * extra: 랜덤 이벤트 선물(선택지 +1)·저주 배달
+   */
+  private roll(p: PlayerState | undefined, o: Offer) {
+    const k = this.round - 1, C = ARCADE.comeback;
     const curses = p ? p.picks.filter((x) => isCurse(x.id)).length : 0;
-    const opts = { curses, allLegend, forceCurse: extra.curse, exclude: this.G.missPenalty ? [] : ['calm' as const] };
-    return rollOptions(this.round - 1, last, Math.random, opts, ARCADE.optionCount + (extra.gift ? 1 : 0));
+    const opts = {
+      curses, allLegend: o.allLegend || (o.comeback && k === C.legendAt), forceCurse: o.extra.curse,
+      exclude: this.G.missPenalty ? [] : ['calm' as const],
+      minTier: (k >= ARCADE.noNormalFrom ? 1 : 0) as 0 | 1,
+      guarantee: o.last ? ARCADE.lastGuarantee[Math.min(k, ARCADE.lastGuarantee.length - 1)] as 0 | 1 | 2 | 3 : undefined,
+      special: o.comeback && k === C.specialAt,
+    };
+    return rollOptions(k, o.last, Math.random, opts, ARCADE.optionCount + (o.extra.gift ? 1 : 0));
   }
 
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
   private applyRoundCurses() {
     if (!this.G.arcade) return;
-    const effects = this.players.flatMap((p) => endRoundCurses(p));
+    const effects = [...this.players.flatMap((p) => endRoundCurses(p)), ...endRoundSpecials(this.players)];
     // 세금: 이번 라운드에 가장 많이 번 사람이 받는다 (동점이면 나눔)
     if (this.taxPot > 0) {
       effects.push(...payTax(this.players, this.taxPot));
@@ -655,7 +677,7 @@ export class Room {
     const o = this.offers.get(id);
     const sid = this.socketOf.get(id);
     if (!o || o.chosen || !sid) return;
-    this.io.to(sid).emit('arcade:offer', { options: o.options, rerollLeft: o.rerolls, pickEndsAt: this.pickEndsAt, lastPlace: o.last });
+    this.io.to(sid).emit('arcade:offer', { options: o.options, rerollLeft: o.rerolls, pickEndsAt: this.pickEndsAt, lastPlace: o.last, need: o.need, comeback: o.comeback });
   }
 
   private emitArcade() {
@@ -882,6 +904,16 @@ export class Room {
     const { x, y } = circlePos(c, now);
     const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }) });
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
+    // 하이에나: 1등이 잡으면 하이에나를 가진 사람이 확률로 점수를 얻는다
+    for (const g of hyenaGains(p, this.players)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
+    // 연쇄 폭발: 확률로 근처 내 원도 함께 (연쇄로 잡힌 원은 다시 연쇄하지 않음)
+    if (via !== 'blast' && modsOf(p.picks).chainBlast && Math.random() < SPECIAL.chainChance) {
+      for (const o of [...this.circles.values()]) {
+        if (!isMine(o.kind, p.color) || isGuarded(o, now)) continue;
+        const q = circlePos(o, now);
+        if (Math.hypot(q.x - x, q.y - y) <= SPECIAL.chainR + o.r) this.claim(p, o, now, 'blast', true);
+      }
+    }
     if (!quiet) this.emitPlayers();
   }
 
@@ -890,8 +922,9 @@ export class Room {
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
     const { x, y } = circlePos(c, now);
-    p.score += RULES.gold.points;
-    this.io.to(this.code).emit('gold:got', { circleId: c.id, by: p.id, gained: RULES.gold.points, x, y });
+    const gained = Math.round(RULES.gold.points * extraMult(p, now, this.players));
+    p.score += gained;
+    this.io.to(this.code).emit('gold:got', { circleId: c.id, by: p.id, gained, x, y });
     this.emitPlayers();
   }
 
@@ -899,7 +932,8 @@ export class Room {
   private claimItem(p: PlayerState, c: Circle, now: number) {
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
-    const tier = c.itemTier ?? 0;
+    // 아이템 사냥꾼: 한 등급 위 아이템
+    const tier = Math.min(2, (c.itemTier ?? 0) + (modsOf(p.picks).itemHunter ? 1 : 0)) as 0 | 1 | 2;
     const item = rollItem(tier, this.G);
     const { x, y } = circlePos(c, now);
     const action = applyItem(p, item, now, this.G, this.players);
@@ -992,10 +1026,37 @@ export class Room {
     return null;
   }
 
-  private emitPlayers() { this.io.to(this.code).emit('players', this.players); }
+  /** 플레이어 상태를 보낸다 (넓은 손 순위 보정을 먼저 다시 계산) */
+  private emitPlayers() {
+    applyRankReach(this.players, this.G);
+    this.io.to(this.code).emit('players', this.players);
+  }
   private broadcastState() { this.io.to(this.code).emit('room:state', this.snapshot()); }
 }
 
 const p0 = (players: PlayerState[], id: string) => players.find((p) => p.id === id);
+
+/**
+ * 봇의 카드 고르기: 특별 카드가 먼저, 그다음 가장 높은 등급. 저주는 꼴찌일 때만 반반 확률로.
+ * 보조 능력(넓은 손·자석)은 봇에게 효과가 없어서, 다른 선택지가 있으면 고르지 않는다
+ */
+function botChoice(opts: Pick[], last: boolean) {
+  const sp = opts.findIndex((o) => isSpecial(o.id));
+  if (sp >= 0) return sp;
+  const curseAt = opts.findIndex((o) => isCurse(o.id));
+  const useful = opts.some((o) => !isCurse(o.id) && !ASSIST_ABILITIES.includes(o.id));
+  let best = -1;
+  opts.forEach((o, i) => {
+    if (isCurse(o.id) || (useful && ASSIST_ABILITIES.includes(o.id))) return;
+    if (best < 0 || o.tier > opts[best].tier || (o.tier === opts[best].tier && Math.random() < 0.5)) best = i;
+  });
+  if (curseAt >= 0 && (best < 0 || (last && Math.random() < 0.5))) best = curseAt;
+  return Math.max(0, best);
+}
 /** 랜덤 이벤트로 이번 선택지에 붙는 것 */
 interface RollExtra { gift: boolean; curse: boolean }
+/** 한 사람의 이번 선택: 남은 카드, 남은 고를 수(need), 꼴찌·역전·뽑기 옵션 */
+interface Offer {
+  options: Pick[]; rerolls: number; need: number; chosen: boolean;
+  last: boolean; comeback: boolean; allLegend: boolean; extra: RollExtra;
+}

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { RULES, circlePos as circlePosOf, type Circle } from '../src/index.ts';
+import { RULES, circlePos as circlePosOf, isSpecial, type Circle, type Pick } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -498,3 +498,112 @@ test('황금 원은 직접 클릭으로만, +20 고정', (t) => {
   room.destroy();
 });
 
+// ---------- 3-1: 두 장 선택·역전 기회·특별 카드 ----------
+type PickPriv = {
+  round: number; roundPhase: string; startPick(): void; finishPick(): void;
+  offers: Map<string, { options: Pick[]; need: number; chosen: boolean; comeback: boolean }>;
+};
+/** 아케이드 방 (사람 2명, 봇 없음) */
+function arcadeRoom() {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  const b = room.join('s2', 'k2', 'B') as { id: string };
+  room.fillBots = false;
+  room.setRules(a.id, { rules: { mode: 'arcade', randomEvents: false } });
+  assert.equal(room.start(a.id), null);
+  const me = room.players.find((p) => p.id === a.id)!, other = room.players.find((p) => p.id === b.id)!;
+  return { room, me, other, r: room as unknown as PickPriv };
+}
+/** k라운드가 끝난 뒤 선택을 연다 */
+const openPick = (r: PickPriv, round: number) => { r.round = round; r.roundPhase = 'pick'; r.startPick(); };
+
+test('두 장 선택: 하나 고르면 남은 카드·need 1을 다시 보냄', () => {
+  const { room, me, r } = arcadeRoom();
+  openPick(r, 3);
+  const o = r.offers.get(me.id)!;
+  assert.deepEqual([o.need, o.options.length], [2, 3]);
+  sent.length = 0;
+  room.choose(me.id, 0);
+  assert.deepEqual([o.need, o.options.length, o.chosen, me.picks.length], [1, 2, false, 1]);
+  assert.ok(sent.includes('arcade:offer'));
+  room.choose(me.id, 0);
+  assert.deepEqual([o.chosen, me.picks.length], [true, 2]);
+  room.destroy();
+});
+
+test('두 장 선택: 마감 때 남은 수만큼 무작위', () => {
+  const { room, me, other, r } = arcadeRoom();
+  openPick(r, 3);
+  room.choose(me.id, 0);
+  r.finishPick();
+  assert.deepEqual([me.picks.length, other.picks.length], [2, 2]);
+  room.destroy();
+});
+
+test('재접속하면 남은 선택지를 다시 받음', () => {
+  const { room, me, r } = arcadeRoom();
+  openPick(r, 3);
+  room.choose(me.id, 0);
+  sent.length = 0;
+  room.join('s9', 'k1', 'A');
+  assert.ok(sent.includes('arcade:offer'));
+  assert.equal(r.offers.get(me.id)!.need, 1);
+  room.destroy();
+});
+
+test('3라운드 끝 역전 꼴찌는 특별 카드를 받음, 1등은 못 받음', () => {
+  const { room, me, other, r } = arcadeRoom();
+  me.score = 100; other.score = 1000;
+  openPick(r, 3);
+  assert.equal(me.comeback, true);
+  assert.equal(r.offers.get(me.id)!.options.filter((o) => isSpecial(o.id)).length, 1);
+  assert.equal(r.offers.get(other.id)!.options.some((o) => isSpecial(o.id)), false);
+  room.destroy();
+});
+
+test('4라운드 끝 역전 꼴찌는 전부 레전드', () => {
+  const { room, me, other, r } = arcadeRoom();
+  me.score = 100; other.score = 1000;
+  openPick(r, 4);
+  assert.ok(r.offers.get(me.id)!.options.every((o) => o.tier === 3));
+  room.destroy();
+});
+
+test('1라운드 끝은 역전 판정 안 함', () => {
+  const { room, me, other, r } = arcadeRoom();
+  me.score = 100; other.score = 1000;
+  openPick(r, 1);
+  assert.equal(me.comeback, false);
+  assert.equal(r.offers.get(me.id)!.comeback, false);
+  room.destroy();
+});
+
+test('봇은 두 장을 고르고 특별 카드를 먼저', (t) => {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.setRules(a.id, { rules: { mode: 'arcade', randomEvents: false } });
+  assert.equal(room.start(a.id), null);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const r = room as unknown as PickPriv;
+  const bots = room.players.filter((p) => p.bot);
+  room.players.forEach((p) => { p.score = p.bot ? 500 : 1000; });
+  bots[0].score = 100;
+  openPick(r, 3);
+  for (let k = 0; k < 10; k++) t.mock.timers.tick(1000); // 두 번째 카드 타이머는 첫 카드를 고른 뒤에 걸린다
+  assert.equal(bots[0].picks.length, 2);
+  assert.equal(isSpecial(bots[0].picks[0].id), true);
+});
+
+test('연쇄 폭발: 근처 내 원을 함께 잡음', (t) => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  me.picks.push({ id: 'chainBlast', tier: 0 });
+  circles.set(71, slowAt(71, me.color, 1200, 450, now));
+  circles.set(72, slowAt(72, me.color, 1260, 450, now));
+  circles.set(73, slowAt(73, me.color, 400, 450, now));
+  t.mock.method(Math, 'random', () => 0);
+  room.click(me.id, { circleId: 71, x: 1200, y: 450 });
+  assert.deepEqual([circles.has(71), circles.has(72), circles.has(73)], [false, false, true]);
+  room.destroy();
+});

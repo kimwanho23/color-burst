@@ -3,7 +3,7 @@
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
-import type { Pick, RoundEffect } from './arcade.ts';
+import type { AbilityId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
 import type { WavePattern } from './waves.ts';
@@ -41,6 +41,10 @@ export interface ArcadeOffer {
   pickEndsAt: number;
   /** 꼴찌라서 상위 등급 확률이 올라간 선택지인지 */
   lastPlace: boolean;
+  /** 이번 차례에 남은 고를 카드 수 */
+  need: number;
+  /** 역전 기회인지 (꼴찌 점수에 방 인원 배율) */
+  comeback: boolean;
 }
 
 export type Phase = 'lobby' | 'play';
@@ -106,6 +110,8 @@ export interface ServerToClient {
   /** 아케이드: 라운드가 끝남 (잠시 뒤 능력 선택이 열린다) */
   'round:end': (d: { round: number }) => void;
   'circle:spawn': (c: Circle) => void;
+  /** 특별 카드로 점수를 얻음 (하이에나) */
+  'special:gain': (d: { playerId: string; id: AbilityId; delta: number }) => void;
   /** 황금 원을 잡음 (고정 점수) */
   'gold:got': (d: { circleId: number; by: string; gained: number; x: number; y: number }) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
