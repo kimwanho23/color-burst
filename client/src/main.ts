@@ -5,7 +5,7 @@ import {
   type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
-import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG } from './render.ts';
+import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { pickChips, renderPick } from './arcadeUI.ts';
@@ -349,7 +349,9 @@ socket.on('circle:spawn', (c) => {
 const nameOf = (id: string | null) => players.find((p) => p.id === id);
 const GOLD = '#ffd166';
 /** 잭팟 숫자는 배율이 클수록 크게 */
-const jackpotSize = (mult: number, base = 1) => base * (1 + (mult - 1) * 0.5);
+/** 점수 글자 단계: 잭팟 ×3·보스 막타 5, 잭팟·황금 원 4, 피버 3, 콤보 보너스·반격 2, 평소 1 */
+const scoreTier = (o: { jackpot?: number; fever?: boolean; special?: boolean; kill?: boolean; gold?: boolean }): ScoreTier =>
+  o.kill || (o.jackpot ?? 1) >= 3 ? 5 : o.gold || (o.jackpot ?? 1) > 1 ? 4 : o.fever ? 3 : o.special ? 2 : 1;
 socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged }) => {
   const c = circles.get(circleId);
   if (c) c.hp = hp;
@@ -365,7 +367,8 @@ socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged }) 
   if (by === myId() && c) {
     const p = circlePos(c, serverNow());
     if (jackpot > 1) { renderer.jackpot(p.x, p.y, jackpot, true); sfx.jackpot(jackpot); }
-    renderer.text(p.x + 60, p.y - 70, `+${gained}`, jackpot > 1 ? GOLD : '#fff', jackpotSize(jackpot, 0.7));
+    const mm = me();
+    if (gained > 0) renderer.scoreText(p.x + 60, p.y - 70, `+${gained}`, scoreTier({ jackpot, fever: !!mm && isFever(mm, serverNow()) }), 0.7);
   }
 });
 /** 마지막으로 보스가 터진 서버 시각 */
@@ -382,7 +385,7 @@ socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot 
   if (killer) renderer.banner(by === myId() ? `내가 보스 처치! +${gained}` : `${killer.name} 보스 처치! +${gained}`, COLORS[killer.color].hex);
   sfx.bossKill();
   if (jackpot > 1) { renderer.jackpot(x, y, jackpot, true); if (by === myId()) sfx.jackpot(jackpot); }
-  if (killer) renderer.text(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, jackpot > 1 ? GOLD : by === myId() ? '#ffc23a' : COLORS[killer.color].hex, jackpotSize(jackpot, 1.3));
+  if (killer) renderer.scoreText(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, 5, 0.8);
   if (mvpP && mvpGained) renderer.text(x, y + 50, `최다 타격 ${mvp === myId() ? '나' : mvpP.name} +${mvpGained}`, '#fff', 0.85);
 });
 socket.on('boss:escaped', ({ circleId }) => {
@@ -414,10 +417,9 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
   if (mine) {
     const label = blasted ? '' : (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
-    // 사이·가장자리면 점수 옆에 구역 배율, 가장자리는 하늘색
-    const col = result.jackpot > 1 ? GOLD : isFever(who, serverNow()) ? '#ff9f1c' : result.zone === 2 ? '#7ee0ff' : '#fff';
-    const zone = result.zone ? ` ×${RULES.zones.mult[result.zone]}` : '';
-    renderer.text(x, y, `+${result.gained}${zone}${label}${result.comboBonus ? ' 콤보!' : ''}`, col, jackpotSize(result.jackpot));
+    // 점수 글자는 특별한 순간일수록 높은 단계 (0점이면 글자 없음)
+    const tier = scoreTier({ jackpot: result.jackpot, fever: isFever(who, serverNow()), special: result.comboBonus || result.type === 'counter' });
+    if (result.gained > 0) renderer.scoreText(x, y, `+${result.gained}${label}${result.comboBonus ? ' 콤보!' : ''}`, tier);
     if (!blasted) ({ own: sfx.own, yellow: sfx.yellow, rainbow: sfx.rainbow, steal: sfx.steal, feverSteal: sfx.steal, counter: sfx.rainbow })[result.type]();
     if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
     if (result.feverStarted) { sfx.fever(); renderer.text(800, 400, 'FEVER!', '#ff9f1c', 2); }
@@ -431,7 +433,7 @@ socket.on('gold:got', ({ circleId, by, gained, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
   const who = nameOf(by);
   renderer.burst(x, y, GOLD, true, 2); renderer.burst(x, y, '#fff', false);
-  if (by === myId()) { sfx.jackpot(2); renderer.text(x, y, `+${gained} 황금!`, GOLD, 1.5); }
+  if (by === myId()) { sfx.jackpot(2); renderer.scoreText(x, y, `+${gained} 황금!`, scoreTier({ gold: true })); }
   else if (who) {
     renderer.text(x, y, `${who.name} 황금`, COLORS[who.color].hex, 0.75);
     pushFeed($('feed'), icon(UI.gold, 18), `${who.name}: 황금 원 +${gained}`, COLORS[who.color].hex);

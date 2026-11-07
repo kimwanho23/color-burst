@@ -24,6 +24,18 @@ export const BOSS_HITSTOP_MS = 80;
 export const BOSS_SHAKE = { sec: 0.35, amp: 22 } as const;
 /** 피버 중 원이 터질 때 파편 배율 */
 export const FEVER_BURST = 1.5;
+/**
+ * 점수 글자 단계 (증강 등급처럼): 1 흰색 평소 / 2 파랑 콤보 보너스·반격 / 3 보라 피버 / 4 노랑 잭팟·황금 원 / 5 프리즘 잭팟 ×3·보스 막타.
+ * 4단계부터 튀어 오르며 등장, 5단계는 무지개가 흐르는 글자 + 금빛 테두리 + 파편
+ */
+export type ScoreTier = 1 | 2 | 3 | 4 | 5;
+const SCORE_TIER: Record<ScoreTier, { col: string; size: number }> = {
+  1: { col: '#ffffff', size: 1 },
+  2: { col: '#4d9bff', size: 1.2 },
+  3: { col: '#b26cff', size: 1.35 },
+  4: { col: '#ffd43b', size: 1.6 },
+  5: { col: '#ffd43b', size: 2 },
+};
 /** 배너: 화면 가운데보다 살짝 위, 보이는 시간(초) */
 const BANNER_Y = 230, BANNER_LIFE = 1.2;
 
@@ -36,7 +48,7 @@ type Fx =
   /** g: 중력(동전 파편), round: 동그란 입자 */
   | { type: 'spark'; x: number; y: number; vx: number; vy: number; col: string; t: number; life: number; g?: number; size?: number; round?: boolean }
   | { type: 'miss'; x: number; y: number; t: number; life: number }
-  | { type: 'text'; x: number; y: number; txt: string; col: string; size: number; t: number; life: number }
+  | { type: 'text'; x: number; y: number; txt: string; col: string; size: number; t: number; life: number; pop?: boolean; prism?: boolean }
   | { type: 'banner'; txt: string; col: string; t: number; life: number }
   /** 자석 끌림 선 */
   | { type: 'line'; x: number; y: number; x1: number; y1: number; col: string; t: number; life: number }
@@ -197,6 +209,12 @@ export class Renderer {
   bossPoke(id: number) { this.bossPoked.set(id, performance.now()); }
 
   text(x: number, y: number, txt: string, col: string, size = 1) { this.fx.push({ type: 'text', x, y, txt, col, size, t: 0, life: 0.8 }); }
+  /** 점수 글자: 단계에 따라 색·크기·등장 연출 (base: 자리에 맞춘 기본 크기) */
+  scoreText(x: number, y: number, txt: string, tier: ScoreTier, base = 1) {
+    const T = SCORE_TIER[tier];
+    this.fx.push({ type: 'text', x, y, txt, col: T.col, size: T.size * base, t: 0, life: tier >= 4 ? 1.1 : 0.8, pop: tier >= 4, prism: tier === 5 });
+    if (tier === 5) this.sparks(x, y - 20, GOLD, 12, 260);
+  }
   miss(x: number, y: number, soft = false) {
     this.fx.push({ type: 'miss', x, y, t: 0, life: soft ? 0.2 : 0.35 });
     if (!soft) this.shakeFor(0.15, 8);
@@ -307,9 +325,22 @@ export class Renderer {
       if (f.type === 'flash') { ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.55 * (1 - k); ctx.fillRect(0, 0, FIELD.w, FIELD.h); }
       if (f.type === 'miss') { ctx.strokeStyle = '#9ca2d6'; ctx.lineWidth = 3; const m = 12; ctx.beginPath(); ctx.moveTo(f.x - m, f.y - m); ctx.lineTo(f.x + m, f.y + m); ctx.moveTo(f.x + m, f.y - m); ctx.lineTo(f.x - m, f.y + m); ctx.stroke(); }
       if (f.type === 'text') {
-        ctx.globalAlpha = 1 - k * k; ctx.fillStyle = f.col;
-        ctx.font = `${Math.round(28 * f.size)}px 'Black Han Sans', sans-serif`; ctx.textAlign = 'center';
-        ctx.fillText(f.txt, f.x, f.y - k * 45);
+        ctx.globalAlpha = 1 - k * k;
+        // 튀어 오름: 처음 0.15초 동안 작게 → 크게 → 제자리 (효과 줄이기면 없음)
+        const pop = f.pop && !reduceMotion ? (f.t < 0.08 ? 0.6 + (f.t / 0.08) * 0.6 : f.t < 0.15 ? 1.2 - ((f.t - 0.08) / 0.07) * 0.2 : 1) : 1;
+        const px = Math.round(28 * f.size * pop);
+        ctx.font = `${px}px 'Black Han Sans', sans-serif`; ctx.textAlign = 'center';
+        const ty = f.y - k * 45;
+        if (f.prism) {
+          // 무지개가 글자 안에서 흐른다 + 금빛 테두리
+          const w = ctx.measureText(f.txt).width, sh = ((now / 6) % (w * 2)) - w;
+          const g = ctx.createLinearGradient(f.x - w / 2 + sh, 0, f.x + w / 2 + sh, 0);
+          PRISM.forEach((c, i) => g.addColorStop(i / (PRISM.length - 1), c));
+          ctx.lineWidth = Math.max(3, px / 9); ctx.lineJoin = 'round'; ctx.strokeStyle = GOLD;
+          ctx.strokeText(f.txt, f.x, ty);
+          ctx.fillStyle = g;
+        } else ctx.fillStyle = f.col;
+        ctx.fillText(f.txt, f.x, ty);
       }
       if (f.type === 'banner') {
         const grow = Math.min(1, f.t / 0.15);
