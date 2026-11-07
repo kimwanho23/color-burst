@@ -4,12 +4,12 @@ import {
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
-import { Renderer, shapeSVG } from './render.ts';
+import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { pickChips, renderPick } from './arcadeUI.ts';
-import { UI, icon } from './icons.ts';
-import { buffChips, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
+import { UI, icon, itemIcon } from './icons.ts';
+import { buffChips, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
 import { GameCursor, startCursorSync } from './cursor.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
@@ -371,7 +371,12 @@ socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot 
   bossKilledAt = serverNow();
   circles.delete(circleId);
   const killer = nameOf(by), mvpP = nameOf(mvp);
-  renderer.burst(x, y, '#ffc23a', true); renderer.burst(x, y, '#fff', true);
+  // 타격감: 멈칫 → 강한 흔들림 → 큰 파편 + 충격파 → 처치한 사람 색 배너
+  renderer.hitstop(BOSS_HITSTOP_MS);
+  renderer.shakeFor(BOSS_SHAKE.sec, BOSS_SHAKE.amp);
+  renderer.burst(x, y, '#ffc23a', true, 2.5); renderer.burst(x, y, '#fff', true, 2);
+  renderer.shockwave(x, y, 260);
+  if (killer) renderer.banner(by === myId() ? `내가 보스 처치! +${gained}` : `${killer.name} 보스 처치! +${gained}`, COLORS[killer.color].hex);
   sfx.bossKill();
   if (jackpot > 1) { renderer.jackpot(x, y, jackpot, true); if (by === myId()) sfx.jackpot(jackpot); }
   if (killer) renderer.text(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, jackpot > 1 ? GOLD : by === myId() ? '#ffc23a' : COLORS[killer.color].hex, jackpotSize(jackpot, 1.3));
@@ -402,7 +407,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   const blasted = result.via === 'blast';
   // 폭죽·필드 클리어: 폭발 중심에서 가까운 원부터 충격파를 따라 차례로 터진다
   if (blasted) renderer.burstDelayed(x, y, COLORS[who.color].hex, (Math.hypot(x - blast.x, y - blast.y) / blast.R) * 350);
-  else renderer.burst(x, y, COLORS[who.color].hex, mine);
+  else renderer.burst(x, y, COLORS[who.color].hex, mine, isFever(who, serverNow()) ? FEVER_BURST : 1);
   if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
   if (mine) {
     const label = blasted ? '' : (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
@@ -429,7 +434,11 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
     const sp = renderer.toScreen(x, y);
     showItemPop($('itemPops'), sp.x, sp.y, item, tier, !fxOn());
     sfx.item(tier);
-  } else if (who) renderer.text(x, y, `${who.name} ${ITEMS[item].name}`, COLORS[who.color].hex, 0.75);
+  } else if (who) {
+    renderer.text(x, y, `${who.name} ${ITEMS[item].name}`, COLORS[who.color].hex, 0.75);
+    pushFeed($('feed'), itemIcon(item, 18), `${who.name}: ${ITEMS[item].name}`, COLORS[who.color].hex);
+  }
+  popOnChip($('scores'), by, itemIcon(item, 22));
   if (item === 'bomb') { blast = { x, y, R: RULES.items.bombR }; renderer.shockwave(x, y, RULES.items.bombR); sfx.bomb(); }
   if (item === 'fieldClear') { blast = { x: 800, y: 450, R: 1000 }; renderer.flash(); renderer.shockwave(800, 450, 1000); sfx.clear(); }
 });

@@ -19,6 +19,14 @@ const BOSS_BODY: Record<BossType, [string, string, string]> = {
 };
 const RAGE_BODY: [string, string, string] = ['#ffd0d0', '#ff4d4d', '#8a0000'];
 
+/** 보스 처치 타격감: 멈칫(히트스톱), 흔들림 */
+export const BOSS_HITSTOP_MS = 80;
+export const BOSS_SHAKE = { sec: 0.35, amp: 22 } as const;
+/** 피버 중 원이 터질 때 파편 배율 */
+export const FEVER_BURST = 1.5;
+/** 배너: 화면 가운데보다 살짝 위, 보이는 시간(초) */
+const BANNER_Y = 230, BANNER_LIFE = 1.2;
+
 type BasicKind = Exclude<CircleKind, 'boss' | 'item'>;
 
 type Fx =
@@ -28,6 +36,7 @@ type Fx =
   | { type: 'spark'; x: number; y: number; vx: number; vy: number; col: string; t: number; life: number; g?: number; size?: number; round?: boolean }
   | { type: 'miss'; x: number; y: number; t: number; life: number }
   | { type: 'text'; x: number; y: number; txt: string; col: string; size: number; t: number; life: number }
+  | { type: 'banner'; txt: string; col: string; t: number; life: number }
   /** 자석 끌림 선 */
   | { type: 'line'; x: number; y: number; x1: number; y1: number; col: string; t: number; life: number }
   /** 화면 전체 번쩍임 */
@@ -77,6 +86,10 @@ export class Renderer {
   private scale = 1; private ox = 0; private oy = 0;
   private fx: Fx[] = [];
   private shake = 0;
+  private shakeAmp = 8;
+  /** 히트스톱: 이 시각(performance.now)까지 원·보스 위치 계산 시각을 멈춘다 */
+  private stopUntil = 0;
+  private stopNow: number | null = null;
   private last = performance.now();
   /** 보스 원 id → 마지막으로 맞은 시각 (흔들림 연출) */
   private bossPoked = new Map<number, number>();
@@ -130,9 +143,26 @@ export class Renderer {
     return { x: (clientX - r.left - this.ox) / this.scale, y: (clientY - r.top - this.oy) / this.scale };
   }
 
-  burst(x: number, y: number, col: string, big: boolean) {
+  /** scale: 파편 수 배율 (피버 중 1.5) */
+  burst(x: number, y: number, col: string, big: boolean, scale = 1) {
     this.add({ type: 'ring', x, y, col, t: 0, life: 0.35 });
-    this.sparks(x, y, col, big ? 10 : 5);
+    this.sparks(x, y, col, Math.round((big ? 10 : 5) * scale));
+  }
+  /** 히트스톱: ms 동안 원·보스가 멈칫 (파편·글자는 계속). 효과 줄이기면 없음 */
+  hitstop(ms: number) {
+    if (reduceMotion) return;
+    this.stopUntil = performance.now() + ms; this.stopNow = null;
+  }
+  /** 화면 흔들림: sec초 동안 amp만큼. 효과 줄이기면 없음 */
+  shakeFor(sec: number, amp: number) {
+    if (reduceMotion) return;
+    if (this.shake <= 0 || amp >= this.shakeAmp) this.shakeAmp = amp;
+    this.shake = Math.max(this.shake, sec);
+  }
+  /** 큰 배너 글자: 화면 가운데보다 살짝 위, 커지며 등장 */
+  banner(txt: string, col: string) {
+    this.fx = this.fx.filter((f) => f.type !== 'banner');
+    this.fx.push({ type: 'banner', txt, col, t: 0, life: BANNER_LIFE });
   }
   /** delayMs 뒤에 터진다 (연쇄 폭발) */
   burstDelayed(x: number, y: number, col: string, delayMs: number) {
@@ -168,11 +198,13 @@ export class Renderer {
   text(x: number, y: number, txt: string, col: string, size = 1) { this.fx.push({ type: 'text', x, y, txt, col, size, t: 0, life: 0.8 }); }
   miss(x: number, y: number, soft = false) {
     this.fx.push({ type: 'miss', x, y, t: 0, life: soft ? 0.2 : 0.35 });
-    if (!reduceMotion && !soft) this.shake = 0.15;
+    if (!soft) this.shakeFor(0.15, 8);
   }
 
   draw(s: DrawState) {
     const now = performance.now();
+    // 히트스톱 중에는 원·보스·레이저가 멈춘 시각으로 그려진다
+    if (now < this.stopUntil) { this.stopNow ??= s.now; s = { ...s, now: this.stopNow }; } else this.stopNow = null;
     const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now;
     for (const f of this.fx) {
       f.t += dt;
@@ -189,7 +221,7 @@ export class Renderer {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.W, this.H);
     ctx.save();
-    if (this.shake > 0) ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+    if (this.shake > 0) ctx.translate((Math.random() - 0.5) * this.shakeAmp, (Math.random() - 0.5) * this.shakeAmp);
     ctx.translate(this.ox, this.oy);
     ctx.scale(this.scale, this.scale);
 
@@ -270,6 +302,14 @@ export class Renderer {
         ctx.globalAlpha = 1 - k * k; ctx.fillStyle = f.col;
         ctx.font = `${Math.round(28 * f.size)}px 'Black Han Sans', sans-serif`; ctx.textAlign = 'center';
         ctx.fillText(f.txt, f.x, f.y - k * 45);
+      }
+      if (f.type === 'banner') {
+        const grow = Math.min(1, f.t / 0.15);
+        ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+        ctx.font = `${Math.round(28 * 2.2 * (0.6 + 0.4 * grow))}px 'Black Han Sans', sans-serif`; ctx.textAlign = 'center';
+        ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(8, 9, 22, .85)'; ctx.lineJoin = 'round';
+        ctx.strokeText(f.txt, FIELD.w / 2, BANNER_Y);
+        ctx.fillStyle = f.col; ctx.fillText(f.txt, FIELD.w / 2, BANNER_Y);
       }
       ctx.globalAlpha = 1;
     }

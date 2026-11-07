@@ -337,3 +337,20 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 
 /* 방해 디버프 아이콘: 붉은 원형 타이머 */
 .buff.debuff { --tc: var(--red); color: var(--red); }
+
+/* 아이템 획득 알림 (화면 위쪽 가운데, 최대 3줄) */
+.feed { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; z-index: 3; }
+.feedrow { display: flex; align-items: center; gap: 6px; padding: 4px 12px 4px 10px; border-radius: 10px; background: rgba(8, 9, 22, .78); border-left: 4px solid var(--pc); color: var(--pc); font-weight: 700; font-size: 14px; animation: feedIn .2s ease-out, feedOut .25s ease-in .95s forwards; }
+@keyframes feedIn { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes feedOut { to { opacity: 0; } }
+/* 점수판 칩 위로 떠오르는 아이템 아이콘 */
+.chippop { position: fixed; transform: translate(-50%, -50%); color: var(--fg); pointer-events: none; z-index: 50; filter: drop-shadow(0 0 6px rgba(255, 255, 255, .6)); animation: chipPop .8s ease-out forwards; }
+@keyframes chipPop { 0% { opacity: 0; transform: translate(-50%, 0) scale(.6); } 20% { opacity: 1; transform: translate(-50%, -60%) scale(1.15); } 100% { opacity: 0; transform: translate(-50%, -140%) scale(1); } }
+/* 피버: 테두리가 주황↔빨강으로 0.5초마다 맥동, 배경도 살짝 밝아짐 */
+#stage.feverOn { animation: feverPulse .5s ease-in-out infinite alternate; }
+@keyframes feverPulse {
+  from { box-shadow: inset 0 0 0 3px var(--fever), inset 0 0 50px rgba(255, 159, 28, .3); background-color: rgba(255, 120, 30, .03); }
+  to { box-shadow: inset 0 0 0 5px #ff4d2e, inset 0 0 110px rgba(255, 77, 46, .45); background-color: rgba(255, 120, 30, .08); }
+}
+.reduce-fx #stage.feverOn, .reduce-fx .feedrow, .reduce-fx .chippop { animation: none; }
+@media (prefers-reduced-motion: reduce) { #stage.feverOn, .feedrow, .chippop { animation: none; } }

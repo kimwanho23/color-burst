@@ -39,6 +39,31 @@ export function showItemPop(host: HTMLElement, sx: number, sy: number, item: Ite
   setTimeout(() => el.remove(), 1400);
 }
 
+/** 아이템 획득 알림: 화면 위쪽에 "이름: 아이템" 줄을 쌓는다 (최대 3줄, 줄마다 1.2초) */
+export function pushFeed(el: HTMLElement, iconHtml: string, text: string, col: string) {
+  const row = document.createElement('div');
+  row.className = 'feedrow';
+  row.style.setProperty('--pc', col);
+  row.innerHTML = `${iconHtml}<span>${esc(text)}</span>`;
+  el.appendChild(row);
+  while (el.children.length > 3) el.firstElementChild!.remove();
+  setTimeout(() => row.remove(), 1200);
+}
+
+/** 점수판 칩 위로 아이콘이 떠오른다 (0.8초). 점수판이 다시 그려져도 지워지지 않게 body에 붙인다 */
+export function popOnChip(scoresEl: HTMLElement, playerId: string, iconHtml: string) {
+  const chip = scoresEl.querySelector<HTMLElement>(`.chip[data-id="${CSS.escape(playerId)}"]`);
+  if (!chip) return;
+  const r = chip.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'chippop';
+  el.style.left = `${r.left + r.width / 2}px`;
+  el.style.top = `${r.top}px`;
+  el.innerHTML = iconHtml;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 800);
+}
+
 /** 내 버프: 아이콘 + 원형 남은 시간, 끝나기 1초 전 깜빡임. 황금 손은 남은 개수 */
 /** 방해 디버프 → 아이콘으로 보여 줄 아이템 */
 const DEBUFF_ITEM: Record<DebuffId, ItemId> = { slow: 'slowCursor', invert: 'invertCursor', blind: 'blind' };
