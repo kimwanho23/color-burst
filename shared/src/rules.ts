@@ -40,8 +40,8 @@ export const RULES = {
   hitPad: 12,
   /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */
   cursor: { sendHz: 15, staleMs: 500 },
-  /** 레이저 발사기: 간격, 경고, 발사 시간, 맞는 거리, 스턴, 판 시작·끝 조용한 시간 */
-  laser: { everyMin: 10_000, everyMax: 15_000, warnMs: 1_000, fireMs: 300, width: 18, stunMs: 1_500, startQuietMs: 3_000, endQuietMs: 1_000 },
+  /** 레이저 발사기: 간격, 경고, 발사 시간, 맞는 거리(중심선에서, 빔 폭은 그 2배), 스턴, 판 시작·끝 조용한 시간 */
+  laser: { everyMin: 10_000, everyMax: 15_000, warnMs: 1_200, fireMs: 300, width: 135, stunMs: 1_500, startQuietMs: 3_000, endQuietMs: 1_000 },
   /** 커서 자석: 끌려오는 시간, 플레이어마다 1초에 끌 수 있는 원 수 */
   magnet: { pullMs: 250, perSec: 2 },
   /** 방해 아이템: 효과 시간, 감도 감소 배율, 1등 저격 스턴, 효과가 끝난 뒤 커서가 마우스로 돌아오는 시간 */

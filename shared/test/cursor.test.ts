@@ -21,10 +21,11 @@ test('distToSegment: 선분까지 거리, 끝 너머는 끝점까지', () => {
   assert.equal(distToSegment({ x: 13, y: 4 }, { x: 0, y: 0 }, { x: 10, y: 0 }), 5);
 });
 
-test('laserHits: 18 안이면 맞음', () => {
+test('laserHits: 135 안이면 맞음 (빔 폭 270)', () => {
   const a = { x: 0, y: 100 }, b = { x: 1600, y: 100 };
-  assert.equal(laserHits({ x: 800, y: 118 }, a, b), true);
-  assert.equal(laserHits({ x: 800, y: 119 }, a, b), false);
+  assert.equal(laserHits({ x: 800, y: 235 }, a, b), true);
+  assert.equal(laserHits({ x: 800, y: 236 }, a, b), false);
+  assert.equal(RULES.laser.warnMs, 1200);
 });
 
 test('rollLaser: 길이 4000, 필드 안쪽을 지난다', () => {
