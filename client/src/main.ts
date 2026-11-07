@@ -414,8 +414,10 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
   if (mine) {
     const label = blasted ? '' : (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
-    const col = result.jackpot > 1 ? GOLD : isFever(who, serverNow()) ? '#ff9f1c' : '#fff';
-    renderer.text(x, y, `+${result.gained}${label}${result.comboBonus ? ' 콤보!' : ''}`, col, jackpotSize(result.jackpot));
+    // 사이·가장자리면 점수 옆에 구역 배율, 가장자리는 하늘색
+    const col = result.jackpot > 1 ? GOLD : isFever(who, serverNow()) ? '#ff9f1c' : result.zone === 2 ? '#7ee0ff' : '#fff';
+    const zone = result.zone ? ` ×${RULES.zones.mult[result.zone]}` : '';
+    renderer.text(x, y, `+${result.gained}${zone}${label}${result.comboBonus ? ' 콤보!' : ''}`, col, jackpotSize(result.jackpot));
     if (!blasted) ({ own: sfx.own, yellow: sfx.yellow, rainbow: sfx.rainbow, steal: sfx.steal, feverSteal: sfx.steal, counter: sfx.rainbow })[result.type]();
     if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
     if (result.feverStarted) { sfx.fever(); renderer.text(800, 400, 'FEVER!', '#ff9f1c', 2); }

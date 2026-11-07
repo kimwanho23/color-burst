@@ -232,7 +232,7 @@ test('자석: 커서 근처 내 원을 1초에 2개까지 끌어와 0.25초 뒤 
   room.click(other.id, { circleId: 81, x: 1220, y: 450 });
   assert.equal(other.score, 0);
   priv(room).updatePulls(now + 300);
-  assert.equal(me.score, 6);
+  assert.equal(me.score, 12); // 원 2개 × 3점 × 사이 구역 ×2
   assert.equal(circles.has(82), true);
   // 1.1초 뒤에도 커서를 계속 움직이고 있다고 본다 (커서가 오래되면 끌지 않음)
   (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors.set(me.id, { x: 1200, y: 450, at: now + 1100 });
@@ -286,7 +286,7 @@ test('라운드가 끝날 때 끌려오던 원은 끄는 사람이 잡은 것으
   r.circles.set(95, slowAt(95, me.color, 1200, 450, now));
   r.pulls.set(95, { circleId: 95, by: me.id, from: { x: 1200, y: 450 }, at: now, ms: 250 });
   r.endRound();
-  assert.equal(me.score, 3);
+  assert.equal(me.score, 6); // 3점 × 사이 구역 ×2 (1200, 450)
   assert.equal(r.pulls.size, 0);
 });
 
@@ -454,5 +454,22 @@ test('카오스도 시작·끝 조용한 시간을 지키고, 다음은 0.6초�
   r.updateLaser(now);
   assert.equal(r.lasers.length, 1);
   assert.ok([600, 2000].includes(r.nextLaserAt - 5000), String(r.nextLaserAt));
+  room.destroy();
+});
+
+// ---------- 점수 구역·황금 원 ----------
+test('잡는 방법과 상관없이 원 위치로 구역', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(81, slowAt(81, me.color, 1500, 450, now));
+  room.click(me.id, { circleId: 81, x: 1500, y: 450 });
+  assert.equal(me.score, 9, '가장자리 클릭 3×3');
+  circles.set(82, slowAt(82, me.color, 1000, 450, now));
+  room.click(me.id, { circleId: 82, x: 1000, y: 450 });
+  assert.equal(me.score, 12, '중앙 3×1');
+  const c = slowAt(83, me.color, 1500, 450, now);
+  circles.set(83, c);
+  (room as unknown as { claim(p: unknown, c: Circle, now: number, via: string, quiet: boolean): void }).claim(me, c, now, 'blast', true);
+  assert.equal(me.score, 21, '폭죽도 가장자리 3×3');
   room.destroy();
 });

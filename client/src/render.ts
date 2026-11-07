@@ -234,7 +234,13 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
     // 발사 보호 구역: 이 안의 원은 아직 잡을 수 없다
     ctx.setLineDash([6, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.12)';
-    ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke();
+    // 점수 구역 경계: 사이(×2)·가장자리(×3)가 시작되는 타원
+    RULES.zones.bounds.forEach((b, i) => {
+      ctx.setLineDash([4, 12]); ctx.lineWidth = 2; ctx.strokeStyle = `rgba(126, 224, 255, ${i ? 0.1 : 0.07})`;
+      ctx.beginPath(); ctx.ellipse(cx, cy, cx * b, cy * b, 0, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.setLineDash([]);
 
     for (const z of s.zones ?? []) this.drawZone(z, s.now);
 
