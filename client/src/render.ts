@@ -21,7 +21,7 @@ const RAGE_BODY: [string, string, string] = ['#ffd0d0', '#ff4d4d', '#8a0000'];
 
 /** 보스 처치 타격감: 멈칫(히트스톱), 흔들림 */
 export const BOSS_HITSTOP_MS = 80;
-export const BOSS_SHAKE = { sec: 0.35, amp: 22 } as const;
+export const BOSS_SHAKE = { sec: 0.2, amp: 8 } as const;
 /** 피버 중 원이 터질 때 파편 배율 */
 export const FEVER_BURST = 1.5;
 /**
@@ -215,9 +215,9 @@ export class Renderer {
     this.fx.push({ type: 'text', x, y, txt, col: T.col, size: T.size * base, t: 0, life: tier >= 4 ? 1.1 : 0.8, pop: tier >= 4, prism: tier === 5 });
     if (tier === 5) this.sparks(x, y - 20, GOLD, 12, 260);
   }
+  /** 빈 곳 클릭: 회색 X만 (흔들림 없음) */
   miss(x: number, y: number, soft = false) {
     this.fx.push({ type: 'miss', x, y, t: 0, life: soft ? 0.2 : 0.35 });
-    if (!soft) this.shakeFor(0.15, 8);
   }
 
   draw(s: DrawState) {
