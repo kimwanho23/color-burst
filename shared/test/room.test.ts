@@ -721,3 +721,28 @@ test('레이저 내성 100: 스턴 없음, 레전드는 피버 +20', () => {
   assert.deepEqual([me.stunUntil, me.fever, sent.includes('stun')], [0, 20, false]);
   room.destroy();
 });
+
+// ---------- 3-2 리뷰 수정 (서버) ----------
+test('헛손질 보정은 지연 보정 위치로 판정 (0.1초 전 자리를 눌러도 잡음)', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  me.picks = [{ id: 'missSave', tier: 0 }]; // 반경 40
+  // 오른쪽으로 초당 1000: 지금 (1300, 450), 0.1초 전 (1200, 450)
+  circles.set(41, { id: 41, kind: me.color, angle: 0, speed: 1000, r: 40, born: now - 500 });
+  room.click(me.id, { circleId: null, x: 1200, y: 450 });
+  assert.equal(circles.has(41), false);
+  room.destroy();
+});
+
+test('잭팟 레전드는 보스 타격에도 ×2~×5', (t) => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  me.picks = [{ id: 'jackpot', tier: 3 }, { id: 'hammer', tier: 2 }]; // 타격 1 + 3 = 4
+  const boss: Circle = { id: 95, kind: 'boss', angle: 0, speed: 160, r: 90, born: now - 2500, hp: 10, maxHp: 10 };
+  circles.set(95, boss);
+  t.mock.method(Math, 'random', () => 0.2); // 잭팟 터짐(0.2 < 0.3), 첫 배율 (일반 1.5, 레전드 2)
+  const p0 = circlePosOf(boss, now);
+  room.click(me.id, { circleId: 95, x: p0.x, y: p0.y });
+  assert.equal(me.score, 8);
+  room.destroy();
+});

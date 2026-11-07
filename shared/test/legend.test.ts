@@ -200,3 +200,49 @@ test('수집가·중앙의 왕·도발', () => {
   assert.equal(lo.feverUntil, 9_000);
 });
 
+
+// ---------- 3-2 리뷰 수정 ----------
+test('반격 전문가 레전드: 반격하면 피버 +20, 철벽 상대 콤보는 지킴', () => {
+  const e = pl('e', 0, 'counterPro'), f = newPlayer('f', 'F', 1);
+  f.picks = [{ id: 'fortress', tier: 0 }]; f.markedUntil = 10_000; f.combo = 5;
+  const r = resolveClaim(e, 1, [e, f], 100, G);
+  assert.equal(r.type, 'counter');
+  assert.equal(f.combo, 5);
+  assert.equal(e.fever, 20);
+});
+
+test('도발은 철벽 상대에게 안 걸림', () => {
+  const t = pl('t', 0, 'taunt'), o = newPlayer('o', 'O', 1);
+  o.picks = [{ id: 'fortress', tier: 0 }]; o.fever = 40;
+  resolveClaim(t, 1, [t, o], 100, G);
+  assert.equal(o.fever, 40);
+  o.feverUntil = 10_000;
+  resolveClaim(t, 1, [t, o], 200, G);
+  assert.equal(o.feverUntil, 10_000);
+});
+
+test('연장전 레전드가 피버를 늘리면 여운도 같이 밀림', () => {
+  const p = newPlayer('a', 'A', 0);
+  p.picks = [{ id: 'overtime', tier: 3 }, { id: 'afterglow', tier: 2 }];
+  startFever(p, 0, G, modsOf(p.picks));
+  const f = p.feverUntil, a = p.afterUntil;
+  resolveClaim(p, 0, [p], 100, G);
+  assert.deepEqual([p.feverUntil - f, p.afterUntil - a], [100, 100]);
+});
+
+test('속사는 한 번에 같이 잡힌 원(넓은 손 등)을 연속으로 세지 않음', () => {
+  const p = pl('a', 0, 'rapid');
+  const gains = [0, 1, 2, 3, 4].map(() => resolveClaim(p, 0, [p], 1000, G, { via: 'range' }).gained);
+  assert.deepEqual(gains, [3, 3, 3, 3, 3]);
+  assert.equal(p.rapidJackpot, false);
+});
+
+test('리바운드는 내가 스스로 끊은 콤보(빈 곳·내 견제)에는 안 켜짐', () => {
+  const p = newPlayer('a', 'A', 0), o = newPlayer('o', 'O', 1);
+  p.picks = [{ id: 'rebound', tier: 0 }]; p.combo = 3;
+  resolveMiss(p, 100, G, [p, o]);
+  assert.equal(p.reboundUntil, 0);
+  p.combo = 3;
+  resolveClaim(p, 1, [p, o], 200, G);
+  assert.equal(p.reboundUntil, 0);
+});

@@ -593,6 +593,12 @@ export function extraMult(p: PlayerState, now: number, players: PlayerState[]) {
   return comebackMult(p, players) * flame * start;
 }
 
+/** 피버가 끝나는 시각을 옮긴다 (여운도 같은 만큼 옮겨 길이를 지킴) */
+function shiftFeverEnd(p: PlayerState, delta: number) {
+  p.feverUntil += delta;
+  if (p.afterUntil) p.afterUntil += delta;
+}
+
 /** 여운 배율 (여운 레전드면 ×2) */
 export const afterMultOf = (p: PlayerState) => (hasLegend(p, 'afterglow') ? LEGEND.afterglowMult : 1.5);
 
@@ -678,13 +684,14 @@ export function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
 }
 
 /** 콤보 끊기 (보험이 있으면 일부 유지, 콤보 고정 중이면 그대로). 실제로 줄었으면 true */
-function breakCombo(p: PlayerState, m: Mods, now: number) {
+/** byOther: 남이 끊었는지 (견제당함). 리바운드는 남이 끊었을 때만 켜진다 */
+function breakCombo(p: PlayerState, m: Mods, now: number, byOther = false) {
   // 콤보 고정 아이템·기세 특별 카드: 끊기지 않음
   if (buffOn(p, 'comboLock', now) || m.momentum) return false;
   const before = p.combo;
   p.combo = Math.floor((p.combo * m.insurance) / 100);
   // 리바운드: 끊긴 뒤 잠깐 점수 보너스 (레전드는 끊긴 콤보 절반을 되찾을 수 있음)
-  if (p.combo < before && m.rebound > 0) { p.reboundUntil = now + AUG.reboundMs; p.reboundLost = before - p.combo; p.reboundUsed = false; }
+  if (byOther && p.combo < before && m.rebound > 0) { p.reboundUntil = now + AUG.reboundMs; p.reboundLost = before - p.combo; p.reboundUsed = false; }
   return p.combo < before;
 }
 
@@ -1012,8 +1019,8 @@ export function resolveClaim(
     } else {
       if (owner && isMarked(owner, now)) {
         res.type = 'counter'; pts = P.counter + m.counterPro;
-        // 반격 전문가 레전드: 상대 콤보도 끊음
-        if (L.has('counterPro') && owner.combo > 0 && breakCombo(owner, modsOf(owner.picks), now)) res.brokeComboOf = owner.id;
+        // 반격 전문가 레전드: 반격하면 피버 게이지
+        if (L.has('counterPro')) res.feverStarted = addFever(claimer, LEGEND.counterFever, now, G, players, true);
       } else if (fever || !G.stealPenalty) {
         res.type = 'feverSteal'; pts = P.stealCalm;
       } else {
@@ -1031,7 +1038,7 @@ export function resolveClaim(
         // 보호막 아이템이 먼저 막는다 (방패 횟수는 그대로)
         if (guarded) res.shielded = true;
         else if (owner.shieldLeft > 0) { owner.shieldLeft--; res.shielded = true; }
-        else if (breakCombo(owner, modsOf(owner.picks), now)) res.brokeComboOf = owner.id;
+        else if (breakCombo(owner, modsOf(owner.picks), now, true)) res.brokeComboOf = owner.id;
       }
       // 강탈·흡혈귀: 상대 점수를 빼앗음 (배율 없음). 흡혈귀를 가진 사람은 견제당할 때도 빼앗긴다
       if (owner && res.type !== 'counter') {
@@ -1047,10 +1054,10 @@ export function resolveClaim(
           claimer.score -= d; owner.score += d; res.drained = d;
         }
       }
-      // 도발: 상대 피버 게이지 감소, 레전드면 피버 중인 상대의 피버 단축
-      if (owner && m.taunt) {
+      // 도발: 상대 피버 게이지 감소, 레전드면 피버 중인 상대의 피버 단축 (보호막·철벽은 안 걸림)
+      if (owner && m.taunt && !guarded) {
         if (!isFever(owner, now)) owner.fever = Math.max(0, owner.fever - m.taunt);
-        else if (L.has('taunt')) owner.feverUntil = Math.max(now, owner.feverUntil - LEGEND.tauntMs);
+        else if (L.has('taunt')) shiftFeverEnd(owner, -Math.min(LEGEND.tauntMs, owner.feverUntil - now));
       }
     }
   }
@@ -1060,13 +1067,13 @@ export function resolveClaim(
     // 찰나의 순간·중앙의 왕 레전드: 그 구역에서 잡으면 콤보 +1 더
     if ((res.zone === 2 && L.has('edge')) || (res.zone === 0 && L.has('centerKing'))) claimer.combo += LEGEND.zoneComboAdd;
     // 연장전 레전드: 피버 중 잡을 때마다 피버 시간 연장
-    if (fever && L.has('overtime')) claimer.feverUntil += LEGEND.overtimeMs;
+    if (fever && L.has('overtime')) shiftFeverEnd(claimer, LEGEND.overtimeMs);
     // 리바운드 레전드: 창 안 첫 획득에 끊긴 콤보 절반을 되찾음
     if (now < claimer.reboundUntil && L.has('rebound') && !claimer.reboundUsed) {
       claimer.combo += Math.floor(claimer.reboundLost / 2); claimer.reboundUsed = true;
     }
     // 속사: 짧은 간격으로 연달아 잡으면 보너스, 레전드는 5연속에 다음 잭팟 확정 (자동 획득·폭죽은 세지 않음)
-    if (!blast) {
+    if (via === 'click' || via === 'save') {
       claimer.rapidStreak = now - claimer.lastClaimAt <= AUG.rapidMs ? claimer.rapidStreak + 1 : 1;
       claimer.lastClaimAt = now;
       if (claimer.rapidStreak >= 2) pts += m.rapid;

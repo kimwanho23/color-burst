@@ -44,7 +44,7 @@ export const LEGEND = {
   hammerChance: 0.15, hammerDmg: 3, comboBonusAdd: 10, headStartMs: 10_000, headStartMult: 1.5, jackpotMults: [2, 3, 5],
   preheatMult: 2, overtimeMs: 100, overchargeKeep: 50, afterglowMult: 2, shieldDrain: 3, plunderTopMult: 2,
   jammerSlowMs: 2_000, wideHandMult: 1.5, magnetPerSec: 4, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
-  collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1,
+  collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1, counterFever: 20,
 } as const;
 
 /** 새 증강 수치 */
@@ -171,7 +171,7 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   frenzy: '피버 중 콤보 보너스 2배', afterglow: '여운 배율 ×1.5 → ×2', hammer: '보스를 때리면 15% 확률로 3타',
   hunter: '보스 막타 때 화면의 내 원을 전부 잡음', crusher: '방어형 보스의 보호막을 무시', insurance: '콤보가 끊겨도 피버 게이지가 안 깎임',
   shield: '견제당하면 견제한 사람 점수 3점을 빼앗음', thickSkin: '견제해도 피버 게이지가 안 깎임', plunder: '1등을 견제하면 빼앗는 점수 2배',
-  counterPro: '반격하면 상대 콤보도 끊김', reflect: '횟수 제한 없음', jammer: '내 피버가 터지면 상대 커서 2초 감도 감소',
+  counterPro: '반격하면 피버 게이지 +20', reflect: '횟수 제한 없음', jammer: '내 피버가 터지면 상대 커서 2초 감도 감소',
   wideHand: '범위로 같이 잡은 원 점수 ×1.5', magnet: '1초에 4개까지 끌어옴', missSave: '대신 잡은 원 점수 ×1.5',
   rebound: '끊긴 콤보의 절반을 그 3초 안에 되찾음', rapid: '연속 5개면 다음 원 잭팟 확정', laserProof: '레이저에 닿으면 피버 게이지 +20',
   collector: '아이템 원을 잡으면 50% 확률로 한 등급 위', chainCombo: '5콤보마다', centerKing: '중앙에서 잡으면 콤보 +2',

@@ -485,7 +485,7 @@ export class Room {
     // 배율 순서: 피버(보스 상한) → 점수 2배·황금 손 → 잭팟 (타격과 막타는 잭팟을 따로 굴린다)
     const mult = bossMult(p, now, this.G) * info.boost * itemMult(p, now, true) * extraMult(p, now, this.players);
     const m = modsOf(p.picks);
-    const hitJp = jackpotMult(m);
+    const hitJp = jackpotMult(m, Math.random, hasLegend(p, 'jackpot'));
     let gained = Math.round(info.hit * mult * hitJp) + (first ? m.vanguard : 0);
 
     if (c.hp > 0) {
@@ -499,7 +499,7 @@ export class Room {
     this.circles.delete(c.id);
     this.bossHits.delete(c.id);
     this.bossKilledAt = now;
-    const killJp = jackpotMult(m);
+    const killJp = jackpotMult(m, Math.random, hasLegend(p, 'jackpot'));
     gained += Math.round(info.kill * mult * killJp);
     p.score += gained;
     p.stats.bossKills++;
@@ -953,7 +953,11 @@ export class Room {
     let best: Circle | null = null, bd = Infinity;
     for (const c of this.circles.values()) {
       if (!isMine(c.kind, p.color) || isGuarded(c, now) || this.pulls.has(c.id)) continue;
-      const q = circlePos(c, now), d = Math.hypot(q.x - pt.x, q.y - pt.y) - c.r;
+      let d = Infinity;
+      for (let t = now; t >= now - LAG_WINDOW_MS; t -= 25) {
+        const q = circlePos(c, t);
+        d = Math.min(d, Math.hypot(q.x - pt.x, q.y - pt.y) - c.r);
+      }
       if (d <= radius && d < bd) { bd = d; best = c; }
     }
     return best;
