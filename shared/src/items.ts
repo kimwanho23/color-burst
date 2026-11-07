@@ -6,7 +6,7 @@ import {
   RULES, BLIND_KINDS, addBuff, addDebuff, addFever, isFever, isLast, startFever,
   type BuffId, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
-import { modsOf } from './arcade.ts';
+import { SPECIAL, modsOf } from './arcade.ts';
 
 export type ItemId =
   | 'wideHand' | 'magnet' | 'missGuard' | 'comboLock' | 'guard' | 'markClear' | 'feverCharge'
@@ -71,14 +71,15 @@ export type RoomAction = null | { kind: RoomActionKind } | { kind: 'snipe'; targ
 /** 1등 저격 대상: 점수 1등(동점은 앞 순번), 잡은 사람이 1등이면 2등, 없으면 null */
 export function snipeTarget(p: PlayerState, players: PlayerState[]): PlayerState | null {
   const order = [...players].sort((a, b) => b.score - a.score);
-  return order.find((x) => x !== p) ?? null;
+  return order.find((x) => x !== p && !modsOf(x.picks).fortress) ?? null;
 }
 
 /** 아이템 발동: 플레이어 효과를 적용하고, 방 단위 효과면 그 종류를 돌려준다 */
 export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules, players: PlayerState[], rand = Math.random): RoomAction {
   const def = ITEMS[id];
   if (def.buff) {
-    const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1);
+    // 꼴찌 보정 ×1.5, 아이템 사냥꾼 ×2
+    const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1) * (modsOf(p.picks).itemHunter ? SPECIAL.hunterDur : 1);
     addBuff(p, def.buff, ms, now);
     return null;
   }
@@ -104,7 +105,8 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
     case 'blind': {
       const debuff = id === 'slowCursor' ? 'slow' : id === 'invertCursor' ? 'invert' : 'blind';
       for (const o of players) {
-        if (o === p) continue;
+        // 철벽은 방해에 걸리지 않는다
+        if (o === p || modsOf(o.picks).fortress) continue;
         addDebuff(o, debuff, RULES.sabotage.ms, now);
         if (debuff === 'blind') o.blind = { kind: BLIND_KINDS[Math.floor(rand() * BLIND_KINDS.length)], seed: Math.floor(rand() * 1e9) };
       }

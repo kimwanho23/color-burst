@@ -1,4 +1,4 @@
-import { ABILITY, CURSE, bossDamage, comboPeriod, jackpotMult, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
+import { ABILITY, ARCADE, CURSE, SPECIAL, bossDamage, comboPeriod, jackpotMult, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -36,6 +36,8 @@ export const RULES = {
   spawn: { speedStart: 170, speedGain: 140, speedRand: 60, gapStart: 320, gapDrop: 120, gapMin: 170 },
   /** 꼴찌 보정이 켜졌을 때 꼴찌의 피버 충전 배율 */
   comebackGain: 1.25,
+  /** 꼴찌 보정이 켜졌을 때 넓은 손 순위 보정 [꼴찌, 4인 방의 3등] */
+  rankReach: [20, 10],
   /** 클릭 판정 여유(필드 단위) */
   hitPad: 12,
   /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */
@@ -417,6 +419,12 @@ export interface PlayerState {
   debuffs: Partial<Record<DebuffId, number>>;
   /** 시야 방해 모양 (서버가 정해서 재접속해도 같음) */
   blind: { kind: BlindKind; seed: number } | null;
+  /** 역전 기회 (아케이드, 라운드 끝에 판정). 꼴찌를 벗어나면 꺼진다 */
+  comeback: boolean;
+  /** 넓은 손 순위 보정 (꼴찌 보정 방에서 낮은 순위일수록) */
+  rankReach: number;
+  /** 이번 라운드가 끝나는 서버 시각 (마지막 불꽃) */
+  roundEnd: number;
 }
 
 /** 방해 효과: 감도 감소, 마우스 반대, 시야 방해 */
@@ -443,14 +451,14 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd'] as const) if (p[k] > since) p[k] += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
   for (const k of Object.keys(p.debuffs) as DebuffId[]) if (p.debuffs[k]! > since) p.debuffs[k]! += delta;
 }
 
 /** 넓은 손 범위: 능력 + 아이템, 능력 상한 */
 export function reachOf(p: PlayerState, now: number) {
-  const v = modsOf(p.picks).wideHand + (buffOn(p, 'wideHand', now) ? RULES.items.wideHand : 0);
+  const v = modsOf(p.picks).wideHand + (buffOn(p, 'wideHand', now) ? RULES.items.wideHand : 0) + (p.rankReach ?? 0);
   return Math.min(ABILITY.wideHand.cap ?? Infinity, v);
 }
 /** 자석 거리: 능력 + 아이템, 능력 상한 */
@@ -501,12 +509,13 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     id, name, color, bot, connected: true, score: 0, combo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, blurUntil: 0, calmLeft: 0, shieldLeft: 0,
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
+    comeback: false, rankReach: 0, roundEnd: 0,
   };
 }
 
 /** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false;
+  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false;
 }
 
 /** 능력(또는 저주)을 고른 직후 처리 */
@@ -523,11 +532,13 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.debuffs = {}; p.blind = null;
   p.buffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
+  p.roundEnd = endAt || startAt + G.roundMs;
   p.score += m.headStart;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
   // 표적 자처: 라운드 내내 표적
   if (m.selfTarget) p.markedUntil = endAt || startAt + G.roundMs;
-  if (m.preheat >= 100) startFever(p, startAt, G, m);
+  // 예열 100 또는 집중 포화: 라운드를 피버로 시작
+  if (m.preheat >= 100 || m.focusFire) startFever(p, startAt, G, m);
   else p.fever = m.preheat;
 }
 
@@ -535,11 +546,63 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
 export const feverMsOf = (p: PlayerState, G: GameRules) => G.feverMs + modsOf(p.picks).overtime * 1000;
 export const feverMultOf = (p: PlayerState, G: GameRules) => {
   const m = modsOf(p.picks);
-  return G.feverMult + m.frenzy + (m.berserker ? CURSE.berserker.multAdd : 0);
+  return G.feverMult + m.frenzy + (m.berserker ? CURSE.berserker.multAdd : 0) + (m.focusFire ? SPECIAL.focusMult : 0);
 };
-/** 유리 대포·표적 자처: 모든 점수 배율 */
+/** 유리 대포·표적 자처·대역전: 모든 점수 배율 */
 export const scoreBoostOf = (m: Mods) =>
-  1 + ((m.glassCannon ? CURSE.glassCannon.boostPct : 0) + (m.selfTarget ? CURSE.selfTarget.boostPct : 0)) / 100;
+  1 + ((m.glassCannon ? CURSE.glassCannon.boostPct : 0) + (m.selfTarget ? CURSE.selfTarget.boostPct : 0)) / 100
+  + (m.comebackBoost ? SPECIAL.boost - 1 : 0);
+
+/** 역전 기회 배율: 켜져 있고 아직 꼴찌면 방 인원별 배율. 꼴찌를 벗어나면 끈다 (다음 라운드 끝 판정까지) */
+export function comebackMult(p: PlayerState, players: PlayerState[]) {
+  if (!p.comeback) return 1;
+  if (!isLast(p, players)) { p.comeback = false; return 1; }
+  return ARCADE.comeback.roomMult[players.length] ?? 1;
+}
+
+/** 원·보스·황금 원 점수에 더 곱하는 배율: 역전 기회 × 마지막 불꽃 */
+export function extraMult(p: PlayerState, now: number, players: PlayerState[]) {
+  const flame = modsOf(p.picks).lastFlame && p.roundEnd && now >= p.roundEnd - SPECIAL.flameMs ? SPECIAL.flameMult : 1;
+  return comebackMult(p, players) * flame;
+}
+
+/** 판 뒤집기: 라운드가 끝날 때 1등과의 점수 차의 일부를 내 점수에 더한다 (1등 점수는 그대로) */
+export function endRoundSpecials(players: PlayerState[]): RoundEffect[] {
+  if (!players.length) return [];
+  const top = Math.max(...players.map((p) => p.score));
+  const out: RoundEffect[] = [];
+  for (const p of players) {
+    if (!modsOf(p.picks).flip || p.score >= top) continue;
+    const d = Math.round(((top - p.score) * SPECIAL.flipPct) / 100);
+    if (d > 0) { p.score += d; out.push({ playerId: p.id, id: 'flip', delta: d }); }
+  }
+  return out;
+}
+
+/** 하이에나: 1등(동점 포함)이 원을 잡을 때 하이에나를 가진 다른 사람마다 확률로 점수를 더한다 */
+export function hyenaGains(claimer: PlayerState, players: PlayerState[], rand = Math.random) {
+  const out: { playerId: string; delta: number }[] = [];
+  if (claimer.score < Math.max(...players.map((p) => p.score))) return out;
+  for (const p of players) {
+    if (p === claimer || !modsOf(p.picks).hyena || !(rand() < SPECIAL.hyenaChance)) continue;
+    p.score += SPECIAL.hyenaGain;
+    out.push({ playerId: p.id, delta: SPECIAL.hyenaGain });
+  }
+  return out;
+}
+
+/** 넓은 손 순위 보정 (꼴찌 보정 방): 최저 점수 무리 +20, 4인 방이면 그다음 낮은 무리 +10 (1등 점수 무리는 제외) */
+export function applyRankReach(players: PlayerState[], G: GameRules) {
+  for (const p of players) p.rankReach = 0;
+  if (!G.comeback || players.length < 2) return;
+  const distinct = [...new Set(players.map((p) => p.score))].sort((a, b) => a - b);
+  if (distinct.length < 2) return;
+  const top = distinct[distinct.length - 1];
+  for (const p of players) {
+    if (p.score === distinct[0]) p.rankReach = RULES.rankReach[0];
+    else if (players.length >= 4 && p.score === distinct[1] && distinct[1] !== top) p.rankReach = RULES.rankReach[1];
+  }
+}
 
 /** 라운드가 끝날 때 저주 효과 적용 (시한폭탄 → 악마의 계약 → 도박사 순) */
 export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[] {
@@ -572,7 +635,8 @@ export function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
 
 /** 콤보 끊기 (보험이 있으면 일부 유지, 콤보 고정 중이면 그대로). 실제로 줄었으면 true */
 function breakCombo(p: PlayerState, m: Mods, now: number) {
-  if (buffOn(p, 'comboLock', now)) return false;
+  // 콤보 고정 아이템·기세 특별 카드: 끊기지 않음
+  if (buffOn(p, 'comboLock', now) || m.momentum) return false;
   const before = p.combo;
   p.combo = Math.floor((p.combo * m.insurance) / 100);
   return p.combo < before;
@@ -589,7 +653,7 @@ export function zoneOf(p: { x: number; y: number }): ZoneIndex {
 }
 
 /** 구역 배율. 찰나의 순간 증강은 가장자리 배율을 올린다 */
-export const zoneMult = (zone: ZoneIndex, m: Mods) => RULES.zones.mult[zone] + (zone === 2 ? m.edge : 0);
+export const zoneMult = (zone: ZoneIndex, m: Mods) => RULES.zones.mult[zone] + (m.chaser ? 1 : 0) + (zone === 2 ? m.edge : 0);
 
 export const isFever = (p: PlayerState, now: number) => now < p.feverUntil;
 export const isStunned = (p: PlayerState, now: number) => now < p.stunUntil;
@@ -802,7 +866,9 @@ export function bossMult(p: PlayerState, now: number, G: GameRules) {
 /** 보스를 한 번 때렸을 때: 피해, 타격 점수(배율 전), 막타 점수(배율 전) */
 export function bossHitInfo(p: PlayerState, rand = Math.random) {
   const m = modsOf(p.picks);
-  return { damage: bossDamage(m, rand), hit: RULES.boss.hit + m.hammer, kill: RULES.boss.kill + m.hunter, boost: scoreBoostOf(m) };
+  // 막타 독식: 피해·막타 점수 ×2
+  const feast = m.bossFeast ? SPECIAL.feastMult : 1;
+  return { damage: bossDamage(m, rand) * feast, hit: RULES.boss.hit + m.hammer, kill: (RULES.boss.kill + m.hunter) * feast, boost: scoreBoostOf(m) };
 }
 
 /** 꼴찌인지 (동점이면 모두 꼴찌가 아님) */
@@ -863,7 +929,8 @@ export function resolveClaim(
   } else if (kind === 'y') {
     res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.yellow, now, G, players);
-  } else if (kind === claimer.color) {
+  } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands)) {
+    // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음)
     res.type = 'own'; pts = own; claimer.combo++;
     res.feverStarted = addFever(claimer, RULES.fever.own, now, G, players);
   } else {
@@ -894,7 +961,8 @@ export function resolveClaim(
         const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
         if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
       }
-      const guarded = !!owner && buffOn(owner, 'guard', now);
+      // 보호막 아이템·철벽 특별 카드: 콤보 끊김·강탈을 막는다
+      const guarded = !!owner && (buffOn(owner, 'guard', now) || !!modsOf(owner.picks).fortress);
       if (owner && owner.combo > 0) {
         // 보호막 아이템이 먼저 막는다 (방패 횟수는 그대로)
         if (guarded) res.shielded = true;
@@ -910,7 +978,9 @@ export function resolveClaim(
     }
   }
 
-  if (!steal && claimer.combo > 0 && claimer.combo % comboPeriod(m.comboArtist) === 0) {
+  // 기세: 콤보 보너스가 더 자주
+  const every = m.momentum ? Math.min(SPECIAL.momentumEvery, comboPeriod(m.comboArtist)) : comboPeriod(m.comboArtist);
+  if (!steal && claimer.combo > 0 && claimer.combo % every === 0) {
     res.comboBonus = true;
     pts += RULES.comboBonus;
   }
@@ -923,7 +993,7 @@ export function resolveClaim(
   claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준). 점수 구역 배율도 곱한다
   res.zone = opts.zone ?? 0;
-  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0) * zoneMult(res.zone, m);
+  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0) * zoneMult(res.zone, m) * extraMult(claimer, now, players);
   // 잭팟은 맨 마지막에 곱한다 (블라스트는 없음)
   if (!blast) res.jackpot = jackpotMult(m, opts.rand);
   res.gained = Math.round(pts * mult * res.jackpot) + res.plundered;

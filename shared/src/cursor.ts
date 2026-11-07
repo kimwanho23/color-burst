@@ -2,6 +2,7 @@
  * 게임 커서: 화면이 그리는 내 커서의 위치 계산, 레이저 기하, 커서 자석 대상 고르기.
  * 수치는 rules.ts의 RULES.cursor / RULES.laser / RULES.magnet에 있다.
  */
+import { modsOf } from './arcade.ts';
 import { FIELD, RULES, circlePos, debuffOn, isGuarded, isMine, isOut, type Circle, type ColorIndex, type PlayerState } from './rules.ts';
 
 export type Point = { x: number; y: number };
@@ -77,7 +78,7 @@ export function holdLasers(lasers: { at: number }[], from: number, ms: number) {
 export const volleyHits = (cursor: Point, lines: readonly LaserLine[]) => lines.some((l) => laserHits(cursor, l.a, l.b));
 
 /** 레이저 스턴을 걸 수 있는지: 스턴 중이 아니고, 스턴이 끝난 지 immuneMs가 지났다 (연속 스턴 방지) */
-export const canLaserStun = (p: PlayerState, now: number) => now >= p.stunUntil + RULES.laser.immuneMs;
+export const canLaserStun = (p: PlayerState, now: number) => now >= p.stunUntil + RULES.laser.immuneMs && !modsOf(p.picks).fortress;
 
 /** 다음 레이저까지 걸리는 시간(ms). 카오스면 2초마다, 가끔 0.6초 뒤 한 번 더 (겹침) */
 export const nextLaserIn = (rand = Math.random, chaos = false) => {
