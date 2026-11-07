@@ -54,6 +54,11 @@ export const RULES = {
   sabotage: { ms: 5_000, slow: 0.3, snipeStunMs: 3_000, slideMs: 150 },
   /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
   aura: { extra: 80, pullSpeed: 120, tickMs: 500, touchPenalty: 1, clickPenalty: 2 },
+  /**
+   * 점수 구역: 가운데에서의 타원 거리 e = √(((x−800)/800)² + ((y−450)/450)²)로 나눈다.
+   * e < bounds[0] 중앙, e < bounds[1] 사이, 그 밖은 가장자리. 일반 원 점수에 mult를 곱한다
+   */
+  zones: { bounds: [0.35, 0.7], mult: [1, 2, 3] },
   /** 카오스 모드 배율. 레이저는 laserEveryMs마다, laserQuickChance 확률로 laserQuickMs 뒤 한 번 더 (겹쳐 나옴) */
   chaos: { itemMult: 3, waveIntervalMult: 0.5, laserEveryMs: 2_000, laserQuickChance: 0.35, laserQuickMs: 600, bossCountOdds: [20, 40, 40], eventChance: 0.3 },
   /** 아케이드: 라운드가 끝나고 능력 선택 화면이 열리기까지 ("라운드 종료!" 표시) */
@@ -479,6 +484,8 @@ export interface ClaimResult {
   via: ClaimVia;
   /** 잭팟 배율 (안 터지면 1) */
   jackpot: number;
+  /** 잡은 자리의 점수 구역 (0 중앙, 1 사이, 2 가장자리) */
+  zone: ZoneIndex;
   /** 견제 반사: 원 주인이 반사해서 주인이 잡은 것으로 처리됐으면 그 주인 id와 주인 쪽 결과 */
   reflectedTo?: string;
   reflected?: ClaimResult;
@@ -565,6 +572,19 @@ function breakCombo(p: PlayerState, m: Mods, now: number) {
   p.combo = Math.floor((p.combo * m.insurance) / 100);
   return p.combo < before;
 }
+
+/** 점수 구역: 0 중앙 ×1, 1 사이 ×2, 2 가장자리 ×3 */
+export type ZoneIndex = 0 | 1 | 2;
+
+/** 이 점이 어느 점수 구역인지 (화면 비율에 맞춘 타원) */
+export function zoneOf(p: { x: number; y: number }): ZoneIndex {
+  const e = Math.hypot((p.x - FIELD.w / 2) / (FIELD.w / 2), (p.y - FIELD.h / 2) / (FIELD.h / 2));
+  const [b0, b1] = RULES.zones.bounds;
+  return e < b0 ? 0 : e < b1 ? 1 : 2;
+}
+
+/** 구역 배율. 찰나의 순간 증강은 가장자리 배율을 올린다 */
+export const zoneMult = (zone: ZoneIndex, m: Mods) => RULES.zones.mult[zone] + (zone === 2 ? m.edge : 0);
 
 export const isFever = (p: PlayerState, now: number) => now < p.feverUntil;
 export const isStunned = (p: PlayerState, now: number) => now < p.stunUntil;
@@ -796,7 +816,7 @@ export function addFever(p: PlayerState, amt: number, now: number, G: GameRules,
  */
 export function resolveClaim(
   claimer: PlayerState, kind: CircleKind, players: PlayerState[], now: number, G: GameRules,
-  opts: { via?: ClaimVia; rand?: () => number } = {},
+  opts: { via?: ClaimVia; rand?: () => number; zone?: ZoneIndex } = {},
 ): ClaimResult {
   const via = opts.via ?? 'click';
   const blast = via === 'blast';
@@ -804,7 +824,7 @@ export function resolveClaim(
   const after = !fever && now < claimer.afterUntil;
   const m = modsOf(claimer.picks);
   const P = RULES.points;
-  const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1 };
+  const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1, zone: 0 };
   let pts = 0;
   let steal = false;
 
@@ -880,8 +900,9 @@ export function resolveClaim(
   if (res.feverStarted) st.fevers++;
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
-  // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준)
-  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0);
+  // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준). 점수 구역 배율도 곱한다
+  res.zone = opts.zone ?? 0;
+  const mult = (fever ? feverMultOf(claimer, G) : after ? 1.5 : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0) * zoneMult(res.zone, m);
   // 잭팟은 맨 마지막에 곱한다 (블라스트는 없음)
   if (!blast) res.jackpot = jackpotMult(m, opts.rand);
   res.gained = Math.round(pts * mult * res.jackpot) + res.plundered;

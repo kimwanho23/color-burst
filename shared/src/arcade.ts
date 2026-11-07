@@ -53,7 +53,7 @@ export type AbilityId =
   | 'hammer' | 'hunter' | 'crusher'
   | 'insurance' | 'calm' | 'shield'
   | 'thickSkin' | 'plunder' | 'counterPro' | 'jammer'
-  | 'jackpot' | 'wideHand' | 'magnet' | 'reflect'
+  | 'jackpot' | 'wideHand' | 'magnet' | 'reflect' | 'edge'
   | CurseId;
 
 export type CurseId = 'glassCannon' | 'gambler' | 'berserker' | 'oneWay' | 'vampire' | 'timeBomb' | 'selfTarget' | 'devilPact';
@@ -86,6 +86,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'comboArtist', name: '콤보 장인', cat: '점수', values: [1, 2, 3, 5], cap: 7, desc: (v) => `콤보 보너스가 ${comboPeriod(v)}콤보마다` },
   { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 10, 15, 25], desc: (v) => `라운드 시작할 때 +${v}점` },
   { id: 'jackpot', name: '잭팟', cat: '점수', values: [5, 10, 15, 25], cap: 50, desc: (v) => `원을 잡을 때 ${v}% 확률로 잭팟 (×1.5~×3)` },
+  { id: 'edge', name: '찰나의 순간', cat: '점수', values: [0.5, 1, 1.5, 2.5], cap: 4, desc: (v) => `가장자리 점수 배율 +${v} (기본 ×3)` },
   // 피버
   { id: 'preheat', name: '예열', cat: '피버', values: [20, 40, 60, 100], cap: 100, desc: (v) => (v >= 100 ? '라운드를 피버 상태로 시작' : `라운드를 피버 게이지 ${v}%로 시작`) },
   { id: 'overtime', name: '연장전', cat: '피버', values: [1, 2, 3, 5], desc: (v) => `피버 시간 +${v}초` },
