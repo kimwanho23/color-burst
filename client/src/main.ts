@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, holdLasers, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, holdLasers, isLast, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -448,6 +448,10 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   if (result.brokeComboOf === myId()) { sfx.comboBroken(); renderer.text(x, y - 45, '콤보 끊김!', '#ff5d73', 1.1); }
   if (result.shielded && claimedKind === me()?.color) renderer.text(x, y - 45, '방패!', '#4d9bff', 1.1);
 });
+socket.on('special:gain', ({ playerId, id, delta }) => {
+  if (playerId !== myId()) return;
+  renderer.text(800, 200, `${ABILITY[id].name} +${delta}`, '#ffd166', 0.9);
+});
 socket.on('gold:got', ({ circleId, by, gained, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
   const who = nameOf(by);
@@ -658,7 +662,8 @@ function updateHud(now: number) {
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
   renderCombo(m?.combo ?? 0);
-  renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id], RULES.sabotage.ms);
+  const cbMult = m?.comeback && isLast(m, players) ? ARCADE.comeback.roomMult[players.length] ?? 0 : 0;
+  renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id], RULES.sabotage.ms, cbMult);
   // 점수판의 버프 아이콘은 1초마다 다시 그려 끝난 것을 지운다
   const sec = Math.floor(now / 1000);
   if (playing && sec !== lastBuffSec) { lastBuffSec = sec; renderScores(); }

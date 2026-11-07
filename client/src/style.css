@@ -392,3 +392,16 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .cx-tiers span { display: inline-block; min-width: 46px; font-weight: 700; }
 .cx-tiers .t0 span { color: #fff; } .cx-tiers .t1 span { color: var(--t1); } .cx-tiers .t2 span { color: #b26cff; } .cx-tiers .t3 span { color: var(--yellow); }
 .cx-gain { color: #8ce99a !important; } .cx-cost { color: var(--red) !important; }
+
+/* 특별 카드 (역전 기회): 검붉은 바탕 + 금빛 테두리 */
+.acard.special { --tc: #ffd166; border-color: #ffd166; background: radial-gradient(circle at 50% 0%, #5a1420, #1a0508 75%); box-shadow: 0 0 26px rgba(255, 209, 102, .45); }
+.acard.special .tier { color: #ffd166; }
+.acard.special .aicon { color: #ffd166; background: rgba(255, 209, 102, .12); border-color: rgba(255, 209, 102, .5); }
+.acard.special b:not(.aname) { color: #ffd166; }
+.pk.special { border-color: #ffd166; color: #ffd166; background: #2a0b10; }
+.build li.special .ic { border-color: #ffd166; background: #2a0b10; color: #ffd166; }
+.cx-ic.cx-special { border-color: #ffd166; color: #ffd166; background: #2a0b10; }
+/* 두 장 고르기 안내, 역전 기회 띠, 게임 중 역전 배율 칩 */
+.pick-title .need { margin-left: 8px; padding: 2px 10px; border-radius: 999px; background: rgba(255, 212, 59, .15); color: var(--yellow); font: 600 13px var(--body); }
+.boost.comeback { color: #ffd166; border-color: rgba(255, 209, 102, .5); background: rgba(90, 20, 32, .5); }
+.buff.comeback { width: auto; padding: 0 8px; color: #ffd166; border-color: #ffd166; background: #2a0b10; font: 700 13px var(--body); }

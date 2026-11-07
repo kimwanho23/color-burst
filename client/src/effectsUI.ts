@@ -68,9 +68,11 @@ export function popOnChip(scoresEl: HTMLElement, playerId: string, iconHtml: str
 /** 방해 디버프 → 아이콘으로 보여 줄 아이템 */
 const DEBUFF_ITEM: Record<DebuffId, ItemId> = { slow: 'slowCursor', invert: 'invertCursor', blind: 'blind' };
 
-export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: number, durOf: (id: BuffId) => number, debuffMs: number) {
+export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: number, durOf: (id: BuffId) => number, debuffMs: number, comebackMult = 0) {
   if (!p) { el.innerHTML = ''; return; }
   const items: string[] = [];
+  // 역전 기회 배율 (꼴찌인 동안)
+  if (comebackMult > 1) items.push(`<span class="buff comeback" title="역전 기회: 꼴찌인 동안 점수 배율">×${comebackMult}</span>`);
   // 방해 (붉은 테두리)
   for (const id of Object.keys(DEBUFF_ITEM) as DebuffId[]) {
     const left = (p.debuffs[id] ?? 0) - now;

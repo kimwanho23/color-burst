@@ -1,11 +1,11 @@
 /** 도감: 증강(등급별 수치)·저주·아이템·보스를 한 화면에서 본다 (처음 화면·대기실에서 연다) */
-import { ABILITIES, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, TIERS, type AbilityCategory } from '@color-burst/shared';
+import { ABILITIES, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, SPECIALS, TIERS, type AbilityCategory } from '@color-burst/shared';
 import { abilityIcon, categoryIcon, itemIcon } from './icons.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-type Tab = 'ability' | 'curse' | 'item' | 'boss';
-const TABS: [Tab, string][] = [['ability', '증강'], ['curse', '저주'], ['item', '아이템'], ['boss', '보스']];
+type Tab = 'ability' | 'curse' | 'special' | 'item' | 'boss';
+const TABS: [Tab, string][] = [['ability', '증강'], ['curse', '저주'], ['special', '특별'], ['item', '아이템'], ['boss', '보스']];
 
 /** 보스 종류 설명 (README '보스 종류'와 같은 내용) */
 const BOSSES: [string, string][] = [
@@ -28,6 +28,11 @@ function curseTab() {
     <li><span class="cx-ic">${abilityIcon(c.id, 22)}</span><div><b>${esc(c.name)}</b><p class="cx-gain">${esc(c.curse!.gain)}</p><p class="cx-cost">대가: ${esc(c.curse!.cost)}</p></div></li>`).join('')}</ul>`;
 }
 
+function specialTab() {
+  return `<p class="hint">역전 기회(꼴찌 점수가 1등의 60% 미만)인 꼴찌만 3라운드가 끝난 뒤 선택에서 1장을 받아요. 효과는 게임 끝까지</p><ul class="cx-list">${SPECIALS.map((c) => `
+    <li><span class="cx-ic cx-special">${abilityIcon(c.id, 22)}</span><div><b>${esc(c.name)}</b><p>${esc(c.desc(1))}</p></div></li>`).join('')}</ul>`;
+}
+
 function itemTab() {
   return `<p class="hint"><code>?</code> 아이템 원을 잡으면 그 자리에서 바로 발동. 테두리 색이 등급</p>${ITEM_TIERS.map((tier, t) => `<h3 class="it${t}">${tier.name}</h3><ul class="cx-list">${ITEM_IDS.filter((id) => ITEMS[id].tier === t).map((id) => `
     <li><span class="cx-ic it${t}">${itemIcon(id, 22)}</span><div><b>${esc(ITEMS[id].name)}</b>${ITEMS[id].sabotage ? '<em class="cx-sab">방해</em>' : ''}<p>${esc(ITEMS[id].desc)}</p></div></li>`).join('')}</ul>`).join('')}`;
@@ -37,7 +42,7 @@ function bossTab() {
   return `<ul class="cx-list">${BOSSES.map(([n, d]) => `<li><div><b>${n}</b><p>${esc(d)}</p></div></li>`).join('')}</ul>`;
 }
 
-const BODY: Record<Tab, () => string> = { ability: abilityTab, curse: curseTab, item: itemTab, boss: bossTab };
+const BODY: Record<Tab, () => string> = { ability: abilityTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTab };
 
 /** 열려 있는 도감을 닫는 함수 */
 let closeCurrent: (() => void) | null = null;

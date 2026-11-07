@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, EVENTS, THEMES, TIERS, abilityText, groupPicks, modsOf,
+  ABILITY, ARCADE, EVENTS, THEMES, TIERS, abilityText, groupPicks, modsOf,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, eventIcon, icon } from './icons.ts';
@@ -10,8 +10,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const emph = (s: string) => esc(s).replace(/([+−\-×]?\d+(?:\.\d+)?(?:%|초|점|콤보|번|타)?)/g, '<b>$1</b>');
 
 /** 등급 표시용 클래스: t0 노말, t1 레어, t2 에픽, t3 레전드, curse 저주 */
-export const tierClass = (p: Pick) => (ABILITY[p.id].curse ? 'curse' : `t${p.tier}`);
-const tierLabel = (p: Pick) => (ABILITY[p.id].curse ? '저주' : TIERS[p.tier].name);
+export const tierClass = (p: Pick) => (ABILITY[p.id].curse ? 'curse' : ABILITY[p.id].special ? 'special' : `t${p.tier}`);
+const tierLabel = (p: Pick) => (ABILITY[p.id].curse ? '저주' : ABILITY[p.id].special ? '특별' : TIERS[p.tier].name);
 const tipOf = (p: Pick) => `${tierLabel(p)} ${ABILITY[p.id].name}: ${abilityText(p)}`;
 
 /** 점수판·결과 화면에 붙는 작은 능력 아이콘 (같은 능력은 하나로 묶고 ×N, 설명은 합친 수치) */
@@ -88,6 +88,14 @@ export interface PickView {
   opening: boolean;
 }
 
+/** 두 장 고르는 차례: "2장 고르기" / 한 장 고른 뒤 "1장 더" */
+function needText(state: ArcadeState, offer: ArcadeOffer | null, chosen: boolean) {
+  if (!offer || chosen) return '';
+  const total = ARCADE.picksPerRound[Math.min(state.round - 1, ARCADE.picksPerRound.length - 1)];
+  if (total <= 1) return '';
+  return `<span class="need">${offer.need < total ? `${offer.need}장 더` : `${total}장 고르기`}</span>`;
+}
+
 /** 능력 선택 화면 그리기 (상태가 바뀔 때만) */
 export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: number) => void; reroll: () => void }) {
   const { state, offer, me, chosen } = v;
@@ -99,13 +107,15 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
   el.innerHTML = `
     <div class="card wide pickcard${v.opening ? ' enter' : ''}">
       <div class="pick-head">
-        <div class="pick-title">${roundPips(state)}<h2>능력 선택</h2></div>
+        <div class="pick-title">${roundPips(state)}<h2>능력 선택</h2>${needText(state, offer, chosen)}</div>
         <div class="pick-timer" id="pickTimer"></div>
       </div>
       ${state.event ? `<p class="event-now">${eventIcon(state.event.id, 16)}<b>랜덤 이벤트 · ${EVENTS[state.event.id].name}</b><span>${esc(state.event.text)}</span></p>` : ''}
       ${state.theme ? `<p class="theme-next">${icon(UI.event, 15)} 다음 라운드: <b>${THEMES[state.theme].name}</b> · ${THEMES[state.theme].desc}</p>` : ''}
       ${effects ? `<ul class="effects">${effects}</ul>` : ''}
-      ${offer?.lastPlace && !chosen ? `<p class="boost">${icon(UI.up, 15)} 꼴찌 보너스: 높은 등급·저주 카드가 더 잘 나와요</p>` : ''}
+      ${offer?.comeback && !chosen
+        ? `<p class="boost comeback">${icon(UI.up, 15)} 역전 기회! 꼴찌인 동안 내 점수 ×${ARCADE.comeback.roomMult[v.players.length] ?? 1} (꼴찌를 벗어나면 꺼져요)</p>`
+        : offer?.lastPlace && !chosen ? `<p class="boost">${icon(UI.up, 15)} 꼴찌 보너스: 높은 등급 카드가 꼭 나오고 저주 카드도 더 잘 나와요</p>` : ''}
       ${chosen || !offer
         ? `<div class="waiting">${waiting.length
             ? waiting.map((p) => `<span class="who-wait">${icon(p.bot ? UI.bot : UI.classic, 14)}${esc(p.name)}</span>`).join('') + '<span class="hint">고르는 중…</span>'
