@@ -410,3 +410,12 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .acard .alegend { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
 .acard .alegend.on { color: #ffd43b; font-weight: 700; }
 .cx-legend { color: #ffd43b !important; font-size: 13px !important; }
+
+/* 조합: 카드 띠, 선택 화면 진행 목록 */
+.acard .acombo { font-size: 11.5px; font-weight: 700; color: #1b1500; background: #ffd43b; border-radius: 6px; padding: 1px 6px; }
+.combos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.combos li { font-size: 12.5px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
+.combos li b { color: var(--fg); }
+.combos li span { margin-left: 6px; }
+.combos li.done { border-color: #ffd43b; color: #ffd43b; }
+.combos li.done b { color: #ffd43b; }

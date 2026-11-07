@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  ABILITY, ARCADE, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, COMBOS, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -423,7 +423,20 @@ socket.on('boss:escaped', ({ circleId }) => {
   renderer.text(800, 300, '보스가 도망갔어요', '#9ca2d6', 1.1);
 });
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
-socket.on('players', (p) => { players = p; renderScores(); if (picking()) showPick(); });
+/** 내가 완성한 조합 (새로 완성되면 알림) */
+let myCombos = new Set<string>();
+/** 처음 받은 상태(재접속 등)에서는 알리지 않는다 */
+let combosReady = false;
+socket.on('players', (p) => {
+  players = p; renderScores(); if (picking()) showPick();
+  const now = combosOf(me()?.picks);
+  for (const id of now) if (!myCombos.has(id)) {
+    const c = COMBOS.find((x) => x.id === id)!;
+    if (combosReady) { sfx.legend(); pushFeed($('feed'), icon(UI.up, 18), `조합 완성! ${c.name} · ${c.text}`, '#ffd43b'); }
+  }
+  myCombos = now;
+  combosReady = true;
+});
 socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   const claimedKind = circles.get(circleId)?.kind;
   circles.delete(circleId); pending.delete(circleId); pulls.delete(circleId);
@@ -735,7 +748,7 @@ function frame() {
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
     cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView
-      ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now) : 0 }
+      ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now, gameCursor.pos) : 0 }
       : null,
     lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),
     blind: live && m?.blind && (m.debuffs.blind ?? 0) > now ? { ...m.blind, until: m.debuffs.blind! } : null,

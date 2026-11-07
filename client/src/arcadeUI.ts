@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, ARCADE, EVENTS, LEGEND_TEXT, THEMES, TIERS, abilityText, groupPicks, modsOf,
+  ABILITY, ARCADE, EVENTS, LEGEND_TEXT, THEMES, TIERS, abilityText, comboProgress, combosCompletedBy, groupPicks, modsOf,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, eventIcon, icon } from './icons.ts';
@@ -70,6 +70,7 @@ function card(o: Pick, i: number, me: PlayerState | undefined) {
     <b class="aname">${a.name}</b>
     ${body}
     ${owned ? `<span class="stack">보유 ${owned} → ${emph(total)}</span>` : ''}
+    ${combosCompletedBy(me?.picks, o).map((c) => `<span class="acombo">조합 완성: ${esc(c.name)}</span>`).join('')}
     <kbd>${i + 1}</kbd>
   </button>`;
 }
@@ -87,6 +88,13 @@ export interface PickView {
   deal: boolean;
   /** 선택 화면이 처음 열리는 순간인지 */
   opening: boolean;
+}
+
+/** 조합 진행: 하나 이상 가진 조합만, 완성은 금색 */
+function comboList(me: PlayerState | undefined) {
+  const list = comboProgress(me?.picks);
+  if (!list.length) return '';
+  return `<ul class="combos">${list.map((c) => `<li class="${c.have >= c.need ? 'done' : ''}"><b>${esc(c.name)}</b> ${c.have >= c.need ? '완성' : `${c.have}/${c.need}`}<span>${esc(c.text)}</span></li>`).join('')}</ul>`;
 }
 
 /** 두 장 고르는 차례: "2장 고르기" / 한 장 고른 뒤 "1장 더" */
@@ -126,6 +134,7 @@ export function renderPick(el: HTMLElement, v: PickView, on: { choose: (i: numbe
              ${icon(UI.reroll, 16)} 다시 뽑기 ${offer.rerollLeft ? `<em>${offer.rerollLeft}</em>` : ''} <kbd>R</kbd></button>`}
       <div class="lbl">내 능력</div>
       ${buildSummary(me?.picks ?? [], chosen ? me?.picks.at(-1) : undefined)}
+      ${comboList(me)}
     </div>`;
   el.querySelectorAll<HTMLButtonElement>('.acard').forEach((b) => { b.onclick = () => on.choose(Number(b.dataset.i)); });
   const rr = el.querySelector<HTMLButtonElement>('#rerollBtn');
