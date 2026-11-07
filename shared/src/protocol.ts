@@ -160,7 +160,8 @@ export interface ClientToServer {
   'game:pause': () => void;
   'game:resume': () => void;
   /** 아케이드: 선택지 중 index번째 능력 고르기 */
-  'arcade:choose': (index: number) => void;
+  /** cardId: 그 자리의 카드 id (다르면 서버가 무시) */
+  'arcade:choose': (index: number, cardId?: AbilityId) => void;
   /** 아케이드: 선택지 다시 뽑기 (고를 때마다 1번) */
   'arcade:reroll': () => void;
   /** 게임 커서 위치 (필드 좌표, 초당 약 15번) */

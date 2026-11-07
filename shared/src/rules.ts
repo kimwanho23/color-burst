@@ -560,6 +560,11 @@ export function comebackMult(p: PlayerState, players: PlayerState[]) {
   return ARCADE.comeback.roomMult[players.length] ?? 1;
 }
 
+/** 점수가 바뀔 때마다: 역전 기회인데 꼴찌가 아니게 된 사람은 바로 끈다 (다음 라운드 끝 판정까지 다시 안 켜짐) */
+export function sweepComeback(players: PlayerState[]) {
+  for (const p of players) if (p.comeback && !isLast(p, players)) p.comeback = false;
+}
+
 /** 원·보스·황금 원 점수에 더 곱하는 배율: 역전 기회 × 마지막 불꽃 */
 export function extraMult(p: PlayerState, now: number, players: PlayerState[]) {
   const flame = modsOf(p.picks).lastFlame && p.roundEnd && now >= p.roundEnd - SPECIAL.flameMs ? SPECIAL.flameMult : 1;

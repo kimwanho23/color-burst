@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
-import type { ClientToServer, ColorIndex, ServerToClient } from '@color-burst/shared';
+import type { AbilityId, ClientToServer, ColorIndex, ServerToClient } from '@color-burst/shared';
 import { Room } from './room.ts';
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -111,7 +111,7 @@ io.on('connection', (socket) => {
   });
   socket.on('game:pause', () => { const s = here(); if (s) s.room.pause(s.id); });
   socket.on('game:resume', () => { const s = here(); if (s) s.room.resume(s.id); });
-  socket.on('arcade:choose', (i) => { const s = here(); if (s && Number.isInteger(i)) s.room.choose(s.id, i); });
+  socket.on('arcade:choose', (i, cardId) => { const s = here(); if (s && Number.isInteger(i)) s.room.choose(s.id, i, typeof cardId === 'string' ? cardId as AbilityId : undefined); });
   socket.on('arcade:reroll', () => { const s = here(); if (s) s.room.reroll(s.id); });
   socket.on('cursor:move', (d) => {
     const s = here();

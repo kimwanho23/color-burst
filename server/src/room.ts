@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, SPECIAL, applyRankReach, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, SPECIAL, applyRankReach, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
@@ -9,7 +9,7 @@ import {
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
-  type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
+  type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
 
@@ -280,12 +280,13 @@ export class Room {
   }
 
   /** 아케이드: 능력 고르기 */
-  choose(id: string, index: number) {
+  choose(id: string, index: number, cardId?: AbilityId) {
     if (this.phase !== 'play' || this.roundPhase !== 'pick') return;
     const o = this.offers.get(id);
     const p = this.players.find((x) => x.id === id);
     const pick = o?.options[index];
-    if (!o || !p || o.chosen || !pick) return;
+    // 카드 id가 다르면(두 장 차례에 빠르게 두 번 누름 등) 무시
+    if (!o || !p || o.chosen || !pick || (cardId !== undefined && pick.id !== cardId)) return;
     applyPick(p, pick);
     // 두 장 고르는 차례: 고른 카드를 빼고 남은 카드에서 한 장 더
     o.options = o.options.filter((_, k) => k !== index);
@@ -656,7 +657,7 @@ export class Room {
       exclude: this.G.missPenalty ? [] : ['calm' as const],
       minTier: (k >= ARCADE.noNormalFrom ? 1 : 0) as 0 | 1,
       guarantee: o.last ? ARCADE.lastGuarantee[Math.min(k, ARCADE.lastGuarantee.length - 1)] as 0 | 1 | 2 | 3 : undefined,
-      special: o.comeback && k === C.specialAt,
+      special: o.comeback && k === C.specialAt && !p?.picks.some((x) => isSpecial(x.id)),
     };
     return rollOptions(k, o.last, Math.random, opts, ARCADE.optionCount + (o.extra.gift ? 1 : 0));
   }
@@ -907,6 +908,8 @@ export class Room {
     // 하이에나: 1등이 잡으면 하이에나를 가진 사람이 확률로 점수를 얻는다
     for (const g of hyenaGains(p, this.players)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
     // 연쇄 폭발: 확률로 근처 내 원도 함께 (연쇄로 잡힌 원은 다시 연쇄하지 않음)
+    // 점수가 바뀌었으니 꼴찌를 벗어난 역전 기회는 바로 끈다 (조용한 연속 획득 사이에도)
+    sweepComeback(this.players);
     if (via !== 'blast' && modsOf(p.picks).chainBlast && Math.random() < SPECIAL.chainChance) {
       for (const o of [...this.circles.values()]) {
         if (!isMine(o.kind, p.color) || isGuarded(o, now)) continue;
@@ -1028,6 +1031,7 @@ export class Room {
 
   /** 플레이어 상태를 보낸다 (넓은 손 순위 보정을 먼저 다시 계산) */
   private emitPlayers() {
+    sweepComeback(this.players);
     applyRankReach(this.players, this.G);
     this.io.to(this.code).emit('players', this.players);
   }

@@ -102,3 +102,15 @@ test('rollOptions forceCurse: 저주 1장 포함', () => {
   const opts = rollOptions(0, false, seq(0.5, 0.3, 0.7, 0.1, 0.9), { forceCurse: true });
   assert.equal(opts.filter((o) => isCurse(o.id)).length, 1);
 });
+
+test('능력 교환·강등은 특별 카드를 건드리지 않음', () => {
+  for (let n = 0; n < 50; n++) {
+    const a = newPlayer('a', 'A', 0), b = newPlayer('b', 'B', 1);
+    a.picks = [{ id: 'comebackBoost', tier: 0 }, { id: 'hammer', tier: 1 }];
+    b.picks = [{ id: 'jackpot', tier: 2 }];
+    a.score = 100; b.score = 1000;
+    applyEvent('abilitySwap', [a, b], toGameRules(DEFAULT_RULES));
+    assert.ok(a.picks.some((x) => x.id === 'comebackBoost'));
+    assert.ok(!b.picks.some((x) => x.id === 'comebackBoost'));
+  }
+});

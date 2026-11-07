@@ -3,7 +3,7 @@
  * 수치는 RANDOM_EVENT(등장·점수)와 rules.ts의 RULES.themes(라운드 테마)에 있다.
  */
 import { ranking, isLast, type GameRules, type PlayerState, type ThemeId } from './rules.ts';
-import { ABILITY, ARCADE, isCurse, type AbilityId, type RoundEffect, type Tier } from './arcade.ts';
+import { ABILITY, ARCADE, isCurse, isSpecial, type AbilityId, type RoundEffect, type Tier } from './arcade.ts';
 
 export const RANDOM_EVENT = {
   /** 라운드 사이마다 등장 확률, 한 게임 최대 횟수 */
@@ -58,7 +58,8 @@ export interface EventResult {
   demoted?: { playerId: string; id: AbilityId };
 }
 
-const plainPicks = (p: PlayerState) => p.picks.filter((x) => !isCurse(x.id));
+/** 이벤트가 건드릴 수 있는 능력: 저주·특별 카드 제외 */
+const plainPicks = (p: PlayerState) => p.picks.filter((x) => !isCurse(x.id) && !isSpecial(x.id));
 const curseCount = (p: PlayerState) => p.picks.filter((x) => isCurse(x.id)).length;
 /** 저주 배달을 받을 수 있는 사람: 저주 상한이 아니고, 다음 선택이 전부 레전드(악마의 계약)가 아님 */
 const canGetCurse = (p: PlayerState) => curseCount(p) < ARCADE.maxCurses && !p.legendNext;

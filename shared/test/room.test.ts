@@ -607,3 +607,44 @@ test('연쇄 폭발: 근처 내 원을 함께 잡음', (t) => {
   assert.deepEqual([circles.has(71), circles.has(72), circles.has(73)], [false, false, true]);
   room.destroy();
 });
+
+// ---------- 3-1 리뷰 수정 ----------
+test('역전 배율: 꼴찌를 벗어났다가 다시 꼴찌가 돼도 그 라운드에는 다시 안 켜짐', () => {
+  const { room, me, circles } = playingRoom();
+  const other = room.players.find((p) => p.id !== me.id)!;
+  const now = Date.now();
+  me.score = 100; other.score = 105; me.comeback = true;
+  circles.set(61, slowAt(61, me.color, 1500, 450, now));
+  room.click(me.id, { circleId: 61, x: 1500, y: 450 }); // 가장자리 9 × 1.1 = 10 → 110, 꼴찌 탈출
+  me.score = 110; other.score = 120; // 다른 사람이 다시 앞질러 다시 꼴찌
+  circles.set(62, slowAt(62, me.color, 1500, 450, now));
+  room.click(me.id, { circleId: 62, x: 1500, y: 450 });
+  assert.equal(me.comeback, false);
+  assert.equal(me.score, 119, '배율 없이 +9 (켜져 있었다면 +10)');
+  room.destroy();
+});
+
+test('특별 카드를 고른 뒤 다시 뽑아도 특별 카드는 다시 안 나옴', () => {
+  const { room, me, other, r } = arcadeRoom();
+  me.score = 100; other.score = 1000;
+  openPick(r, 3);
+  const o = r.offers.get(me.id)!;
+  room.choose(me.id, o.options.findIndex((x) => isSpecial(x.id)));
+  for (let n = 0; n < 20; n++) {
+    (o as unknown as { rerolls: number }).rerolls = 1;
+    room.reroll(me.id);
+    assert.equal(o.options.some((x) => isSpecial(x.id)), false);
+  }
+  room.destroy();
+});
+
+test('카드 id가 다르면 고르지 않음 (겹친 클릭)', () => {
+  const { room, me, r } = arcadeRoom();
+  openPick(r, 3);
+  const o = r.offers.get(me.id)!;
+  const first = o.options[0].id;
+  room.choose(me.id, 0, first);
+  room.choose(me.id, 0, first); // 같은 클릭이 한 번 더 — 그 자리는 이제 다른 카드
+  assert.equal(me.picks.length, 1);
+  room.destroy();
+});

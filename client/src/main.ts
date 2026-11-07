@@ -97,14 +97,17 @@ function holdRender(ms: number) {
 }
 /** 랜덤 이벤트 룰렛이 도는 동안은 카드를 고를 수 없다 */
 let eventShowing = false;
+/** 카드를 골라 서버 답을 기다리는 중 (겹친 클릭 방지, 다음 arcade:offer·선택 종료 때 풀림) */
+let choosePending = false;
 function chooseCard(i: number) {
-  if (eventShowing || picked || !offer?.options[i] || performance.now() < animUntil) return;
+  if (eventShowing || picked || choosePending || !offer?.options[i] || performance.now() < animUntil) return;
+  choosePending = true;
   const cards = $('pickOv').querySelector('.acards');
   cards?.classList.add('choosing');
   cards?.querySelectorAll('.acard')[i]?.classList.add('picked');
   sfx.pickChoose();
   holdRender(700);
-  socket.emit('arcade:choose', i);
+  socket.emit('arcade:choose', i, offer.options[i].id);
 }
 function rerollCards() {
   if (eventShowing || picked || !offer?.rerollLeft || performance.now() < animUntil) return;
@@ -116,6 +119,7 @@ function showPick() {
   if (!arcade || arcade.phase !== 'pick') { $('pickOv').hidden = true; return; }
   if (performance.now() < animUntil) { renderQueued = true; return; }
   picked = !arcade.waiting.includes(myId());
+  if (picked) choosePending = false;
   const key = offer ? JSON.stringify(offer.options) : '';
   // 내가 고르는 중에는 다른 사람의 선택 현황이 바뀌어도 다시 그리지 않는다 (카드 연출 유지)
   const sig = JSON.stringify([key, picked, effects.length, offer?.rerollLeft, picked ? arcade.waiting : 0, me()?.picks.length]);
@@ -158,6 +162,7 @@ socket.on('arcade:event', (r) => {
 });
 socket.on('arcade:offer', (o) => {
   offer = o;
+  choosePending = false;
   if (o.options.some((x) => x.tier === 3)) sfx.legend();
   showPick();
 });
