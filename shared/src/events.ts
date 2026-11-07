@@ -16,6 +16,9 @@ export const RANDOM_EVENT = {
   lottery: 30,
   /** 순위 역전 룰렛만 드물게 (다른 이벤트 가중치는 1) */
   swapWeight: 0.2,
+  /** 대평등: 이 라운드가 끝난 뒤부터, 한 게임 한 번. 평균 쪽으로 움직이는 비율 */
+  equalityFrom: 3,
+  equalityPct: 50,
 } as const;
 
 export const THEMES: Record<ThemeId, { name: string; desc: string }> = {
@@ -28,7 +31,7 @@ export const THEMES: Record<ThemeId, { name: string; desc: string }> = {
 };
 const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 
-export type EventId = 'robinHood' | 'tax' | 'lottery' | 'swap' | 'abilitySwap' | 'demote' | 'gift' | 'curseDelivery' | 'theme';
+export type EventId = 'robinHood' | 'tax' | 'lottery' | 'swap' | 'abilitySwap' | 'demote' | 'gift' | 'curseDelivery' | 'theme' | 'equality';
 
 export const EVENTS: Record<EventId, { name: string }> = {
   robinHood: { name: '로빈 후드' },
@@ -40,6 +43,7 @@ export const EVENTS: Record<EventId, { name: string }> = {
   gift: { name: '선물' },
   curseDelivery: { name: '저주 배달' },
   theme: { name: '라운드 테마' },
+  equality: { name: '대평등' },
 };
 export const EVENT_IDS = Object.keys(EVENTS) as EventId[];
 
@@ -67,7 +71,7 @@ const lastOf = (players: PlayerState[]) => players.find((p) => isLast(p, players
 const pickOne = <T,>(list: readonly T[], rand: () => number) => list[Math.floor(rand() * list.length)];
 
 /** 지금 상황에서 일으킬 수 있는 이벤트 */
-function available(players: PlayerState[]): EventId[] {
+function available(players: PlayerState[], ctx?: EventCtx): EventId[] {
   const hasLast = !!lastOf(players);
   const top = ranking(players)[0];
   return EVENT_IDS.filter((id) => {
@@ -75,15 +79,20 @@ function available(players: PlayerState[]): EventId[] {
     if (id === 'abilitySwap') return players.filter((p) => plainPicks(p).length).length >= 2;
     if (id === 'demote') return !!top && plainPicks(top).some((x) => x.tier > 0);
     if (id === 'curseDelivery') return players.some(canGetCurse);
+    // 대평등: 3라운드가 끝난 뒤부터, 한 게임 한 번, 점수 차가 있을 때만 (라운드 정보가 없으면 안 나옴)
+    if (id === 'equality') return !!ctx && ctx.round >= RANDOM_EVENT.equalityFrom && !ctx.usedIds.has('equality') && hasLast;
     return true;
   });
 }
 
 /** 라운드 사이: 이벤트가 일어날지, 일어나면 어떤 이벤트인지. used: 이번 게임에 이미 나온 횟수 */
 /** chance: 등장 확률 (카오스는 RULES.chaos.eventChance) */
-export function rollEvent(players: PlayerState[], used: number, rand = Math.random, chance: number = RANDOM_EVENT.chance): EventId | null {
+/** 이벤트 후보를 정할 때 쓰는 게임 상황: 방금 끝난 라운드, 이번 게임에 이미 나온 이벤트 */
+export interface EventCtx { round: number; usedIds: ReadonlySet<EventId> }
+
+export function rollEvent(players: PlayerState[], used: number, rand = Math.random, chance: number = RANDOM_EVENT.chance, ctx?: EventCtx): EventId | null {
   if (used >= RANDOM_EVENT.maxPerGame || !(rand() < chance)) return null;
-  const ids = available(players);
+  const ids = available(players, ctx);
   const w = ids.map((id) => (id === 'swap' ? RANDOM_EVENT.swapWeight : 1));
   let r = rand() * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < ids.length; i++) { r -= w[i]; if (r < 0) return ids[i]; }
@@ -158,6 +167,14 @@ export function applyEvent(id: EventId, players: PlayerState[], G: GameRules, ra
       const ids = THEME_IDS.filter((t) => !(t === 'bossRush' && !G.boss) && !(t === 'itemRush' && !G.items));
       res.theme = pickOne(ids, rand);
       res.text = `다음 라운드는 ${THEMES[res.theme].name}! ${THEMES[res.theme].desc}`;
+      break;
+    }
+    case 'equality': {
+      // 모두의 점수가 평균 쪽으로 절반만 움직인다
+      const avg = players.reduce((a, p) => a + p.score, 0) / players.length;
+      const deltas = players.map((p) => Math.round(((avg - p.score) * RANDOM_EVENT.equalityPct) / 100));
+      players.forEach((p, i) => { p.score += deltas[i]; res.changes.push({ playerId: p.id, delta: deltas[i] }); });
+      res.text = '모두의 점수가 평균 쪽으로 절반 움직였어요';
       break;
     }
   }

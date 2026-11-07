@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ABILITY, DEFAULT_RULES, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
-  resolveClaim, resolveMiss, rollOptions, startRound, toGameRules, type AbilityId, type Pick,
+  ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
+  resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type EventId, type Pick,
 } from '../src/index.ts';
 
 const G = toGameRules(DEFAULT_RULES);
@@ -67,3 +67,27 @@ test('빌드 가중치: 같은 분류가 더 자주, 다른 분류도 나오고 
   assert.ok(other > 0);
 });
 
+test('대평등: 평균 쪽으로 절반, 음수도', () => {
+  const a = newPlayer('a', 'A', 0), b = newPlayer('b', 'B', 1);
+  a.score = 1000; b.score = 200;
+  applyEvent('equality', [a, b], G);
+  assert.deepEqual([a.score, b.score], [800, 400]);
+  const c = newPlayer('c', 'C', 0), d = newPlayer('d', 'D', 1), e = newPlayer('e', 'E', 2);
+  c.score = 100; d.score = -50; e.score = 10;
+  applyEvent('equality', [c, d, e], G);
+  assert.deepEqual([c.score, d.score, e.score], [60, -15, 15]); // 평균 20
+});
+
+test('대평등은 3라운드가 끝난 뒤부터, 한 게임 한 번', () => {
+  const a = newPlayer('a', 'A', 0), b = newPlayer('b', 'B', 1);
+  a.score = 1000; b.score = 200;
+  const roll = (round: number, used: EventId[]) => {
+    const seen = new Set<EventId>();
+    for (let n = 0; n < 400; n++) { const id = rollEvent([a, b], 0, Math.random, 1, { round, usedIds: new Set(used) }); if (id) seen.add(id); }
+    return seen.has('equality');
+  };
+  assert.equal(roll(2, []), false);
+  assert.equal(roll(3, []), true);
+  assert.equal(roll(4, ['equality']), false);
+  assert.equal(rollEvent([a, b], 0, () => 0.5, 1) === 'equality', false, '라운드 정보가 없으면 안 나옴');
+});

@@ -9,7 +9,7 @@ import {
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
   Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
-  HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone,
+  HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId } from '@color-burst/shared';
 
@@ -41,7 +41,7 @@ export const ITEM_ICON: Record<ItemId, IconNode> = {
 
 export const EVENT_ICON: Record<EventId, IconNode> = {
   robinHood: HandCoins, tax: Landmark, lottery: Ticket, swap: ArrowLeftRight, abilitySwap: Repeat,
-  demote: TrendingDown, gift: Gift, curseDelivery: Skull, theme: Palette,
+  demote: TrendingDown, gift: Gift, curseDelivery: Skull, theme: Palette, equality: Scale,
 };
 
 export const UI = {

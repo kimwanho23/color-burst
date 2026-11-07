@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, luckyMods, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
@@ -70,6 +70,8 @@ export class Room {
   // ---------- 랜덤 이벤트 ----------
   /** 이번 게임에 랜덤 이벤트가 일어난 횟수 */
   private eventsUsed = 0;
+  /** 이번 게임에 나온 랜덤 이벤트 (대평등은 한 번만) */
+  private eventsUsedIds = new Set<EventId>();
   /** 이번 라운드 테마 / 다음 라운드 테마 (능력 선택 중에 공개) */
   private theme: ThemeId | null = null;
   private nextTheme: ThemeId | null = null;
@@ -234,6 +236,7 @@ export class Room {
     this.history = Object.fromEntries(this.players.map((p) => [p.id, [0]]));
     this.round = 1;
     this.eventsUsed = 0;
+    this.eventsUsedIds.clear();
     this.theme = null;
     this.nextTheme = null;
     this.taxPot = 0;
@@ -585,12 +588,13 @@ export class Room {
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
     // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
-    const eventId = this.G.randomEvents ? rollEvent(this.players, this.eventsUsed, Math.random, this.G.chaos ? RULES.chaos.eventChance : undefined) : null;
+    const eventId = this.G.randomEvents ? rollEvent(this.players, this.eventsUsed, Math.random, this.G.chaos ? RULES.chaos.eventChance : undefined, { round: this.round, usedIds: this.eventsUsedIds }) : null;
     const ev = eventId ? applyEvent(eventId, this.players, this.G) : null;
     this.lastEvent = ev;
     let delay = 0;
     if (ev) {
       this.eventsUsed++;
+      this.eventsUsedIds.add(ev.id);
       this.nextTheme = ev.theme ?? null;
       this.taxPot += ev.pot ?? 0;
       delay = RANDOM_EVENT.pickBonusMs;
