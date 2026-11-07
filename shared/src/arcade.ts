@@ -47,6 +47,11 @@ export const LEGEND = {
   collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1, counterFever: 20,
 } as const;
 
+/** 증강 조합 보너스 수치 */
+export const COMBO = { feverAdd: 1, comboBonusAdd: 5, bossDmgAdd: 1, stealAdd: 2, jackpotAdd: 10, outskirtsMult: 1.5, ironPerRound: 1 } as const;
+/** 빌드 가중치: 가진 증강과 같은 분류 ×sameCat, 가진 조합의 나머지 ×comboPart (곱함) */
+export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
+
 /** 새 증강 수치 */
 export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000 } as const;
 
@@ -177,6 +182,48 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   collector: '아이템 원을 잡으면 50% 확률로 한 등급 위', chainCombo: '5콤보마다', centerKing: '중앙에서 잡으면 콤보 +2',
   ignite: '화면의 내 원 전부', vanguard: '보스 등장 후 3초 동안 주는 피해 2배', taunt: '피버 중인 상대를 견제하면 그 피버가 1초 짧아짐',
 };
+
+export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall';
+/** 증강 조합: 필요한 증강을 모두 가지면(등급 무관) 보너스. 같은 조합은 한 번 */
+export const COMBOS: readonly { id: ComboId; name: string; needs: readonly AbilityId[]; text: string }[] = [
+  { id: 'feverMaster', name: '피버 마스터', needs: ['preheat', 'overtime', 'frenzy'], text: `피버 배율 +${COMBO.feverAdd}` },
+  { id: 'comboMachine', name: '콤보 머신', needs: ['comboArtist', 'insurance'], text: `콤보 보너스 +${COMBO.comboBonusAdd}` },
+  { id: 'bossHunter', name: '보스 헌터', needs: ['hammer', 'hunter', 'crusher'], text: `보스에게 주는 피해 +${COMBO.bossDmgAdd}` },
+  { id: 'stealKing', name: '견제왕', needs: ['plunder', 'counterPro', 'thickSkin'], text: `견제할 때마다 +${COMBO.stealAdd}` },
+  { id: 'lucky', name: '행운아', needs: ['jackpot', 'rainbowHunt'], text: `잭팟 확률 +${COMBO.jackpotAdd}%` },
+  { id: 'outskirts', name: '변두리', needs: ['edge', 'magnet'], text: `커서가 가장자리 구역이면 자석 범위 ×${COMBO.outskirtsMult}` },
+  { id: 'gourmet', name: '미식가', needs: ['picky', 'yellowTaste'], text: '편식가의 노란색 −1 대가가 없어짐' },
+  { id: 'ironWall', name: '철옹성', needs: ['shield', 'insurance', 'rebound'], text: `라운드마다 ${COMBO.ironPerRound}번 콤보 끊김을 막음` },
+];
+
+/** 완성한 조합 */
+export function combosOf(picks: readonly Pick[] | undefined): Set<ComboId> {
+  const have = new Set((picks ?? []).map((p) => p.id));
+  return new Set(COMBOS.filter((c) => c.needs.every((n) => have.has(n))).map((c) => c.id));
+}
+
+/** 조합 진행도: 하나 이상 가진 조합만 */
+export function comboProgress(picks: readonly Pick[] | undefined) {
+  const have = new Set((picks ?? []).map((p) => p.id));
+  return COMBOS.map((c) => ({ id: c.id, name: c.name, text: c.text, have: c.needs.filter((n) => have.has(n)).length, need: c.needs.length }))
+    .filter((c) => c.have > 0);
+}
+
+/** 이 카드를 고르면 새로 완성되는 조합 */
+export function combosCompletedBy(picks: readonly Pick[] | undefined, card: Pick) {
+  const before = combosOf(picks), after = combosOf([...(picks ?? []), card]);
+  return COMBOS.filter((c) => after.has(c.id) && !before.has(c.id));
+}
+
+/** 빌드 가중치: 같은 분류 ×2, 가진 조합(미완성)의 나머지 ×3 */
+export function buildWeight(id: AbilityId, owned: readonly Pick[] | undefined) {
+  if (!owned?.length) return 1;
+  const have = new Set(owned.map((p) => p.id));
+  const cats = new Set(owned.map((p) => ABILITY[p.id]?.cat));
+  let w = cats.has(ABILITY[id].cat) ? WEIGHT.sameCat : 1;
+  if (COMBOS.some((c) => !c.needs.every((n) => have.has(n)) && c.needs.some((n) => have.has(n)) && c.needs.includes(id) && !have.has(id))) w *= WEIGHT.comboPart;
+  return w;
+}
 
 /** 레전드로 한 번이라도 고른 능력 */
 export function legendOf(picks: readonly Pick[] | undefined): Set<AbilityId> {
@@ -321,6 +368,8 @@ export interface RollOpts {
   guarantee?: Tier;
   /** 역전 기회: 1장을 무작위 특별 카드로 (저주와 다른 자리) */
   special?: boolean;
+  /** 지금 가진 능력 (빌드 가중치) */
+  owned?: readonly Pick[];
 }
 
 export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.random, opts: RollOpts = {}, count: number = ARCADE.optionCount): Pick[] {
@@ -332,8 +381,13 @@ export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.r
   if (odds.every((w) => w === 0)) odds = base.map((_, t) => (t === base.length - 1 ? 1 : 0));
   const pool = ABILITIES.filter((a) => !opts.exclude?.includes(a.id));
   const out: Pick[] = [];
+  // 빌드 가중치에 비례해 하나씩 뽑고 풀에서 뺀다 (중복 없음)
+  const weights = pool.map((a) => buildWeight(a.id, opts.owned));
   while (out.length < count && pool.length) {
-    const a = pool.splice(Math.floor(rand() * pool.length), 1)[0];
+    let r = rand() * weights.reduce((x, y) => x + y, 0), k = pool.length - 1;
+    for (let j = 0; j < pool.length; j++) { r -= weights[j]; if (r < 0) { k = j; break; } }
+    const a = pool.splice(k, 1)[0];
+    weights.splice(k, 1);
     out.push({ id: a.id, tier: opts.allLegend ? 3 : rollTier(odds, rand) });
   }
   let curseAt = -1;

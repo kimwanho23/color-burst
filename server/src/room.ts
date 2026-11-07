@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, luckyMods, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
@@ -485,7 +485,7 @@ export class Room {
     // 배율 순서: 피버(보스 상한) → 점수 2배·황금 손 → 잭팟 (타격과 막타는 잭팟을 따로 굴린다)
     const mult = bossMult(p, now, this.G) * info.boost * itemMult(p, now, true) * extraMult(p, now, this.players);
     const m = modsOf(p.picks);
-    const hitJp = jackpotMult(m, Math.random, hasLegend(p, 'jackpot'));
+    const hitJp = jackpotMult(luckyMods(p, m), Math.random, hasLegend(p, 'jackpot'));
     let gained = Math.round(info.hit * mult * hitJp) + (first ? m.vanguard : 0);
 
     if (c.hp > 0) {
@@ -499,7 +499,7 @@ export class Room {
     this.circles.delete(c.id);
     this.bossHits.delete(c.id);
     this.bossKilledAt = now;
-    const killJp = jackpotMult(m, Math.random, hasLegend(p, 'jackpot'));
+    const killJp = jackpotMult(luckyMods(p, m), Math.random, hasLegend(p, 'jackpot'));
     gained += Math.round(info.kill * mult * killJp);
     p.score += gained;
     p.stats.bossKills++;
@@ -668,6 +668,7 @@ export class Room {
       minTier: (k >= ARCADE.noNormalFrom ? 1 : 0) as 0 | 1,
       guarantee: o.last ? ARCADE.lastGuarantee[Math.min(k, ARCADE.lastGuarantee.length - 1)] as 0 | 1 | 2 | 3 : undefined,
       special: o.comeback && k === C.specialAt && !p?.picks.some((x) => isSpecial(x.id)),
+      owned: p?.picks,
     };
     return rollOptions(k, o.last, Math.random, opts, ARCADE.optionCount + (o.extra.gift ? 1 : 0));
   }
@@ -867,7 +868,7 @@ export class Room {
     }
     for (const p of order) {
       const cur = this.freshCursor(p.id, now);
-      const radius = magnetOf(p, now);
+      const radius = magnetOf(p, now, cur);
       if (p.bot || !cur || radius <= 0 || isStunned(p, now)) continue;
       const log = (this.pullLog.get(p.id) ?? []).filter((t) => now - t < 1000);
       this.pullLog.set(p.id, log);
