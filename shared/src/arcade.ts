@@ -155,6 +155,16 @@ export function modsOf(picks: readonly Pick[] | undefined): Mods {
   return m;
 }
 
+/** 같은 능력을 하나로 묶는다: 처음 고른 순서대로, 그중 가장 높은 등급, 고른 횟수 */
+export function groupPicks(picks: readonly Pick[]): { id: AbilityId; tier: Tier; count: number }[] {
+  const out = new Map<AbilityId, { id: AbilityId; tier: Tier; count: number }>();
+  for (const p of picks) {
+    const g = out.get(p.id);
+    if (g) { g.count++; if (p.tier > g.tier) g.tier = p.tier; } else out.set(p.id, { id: p.id, tier: p.tier, count: 1 });
+  }
+  return [...out.values()];
+}
+
 export const abilityValue = (p: Pick) => ABILITY[p.id].values[p.tier];
 export const abilityText = (p: Pick) => ABILITY[p.id].desc(abilityValue(p));
 

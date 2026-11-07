@@ -4,6 +4,7 @@ import {
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
+import { openCodex } from './codex.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
@@ -189,6 +190,7 @@ const entered = (r: { ok: true; code: string; you: string } | { ok: false; error
   if (r.ok) { myPlayerId = r.you; store('cb-room', r.code); renderScores(); renderLobby(); }
 };
 $('createBtn').onclick = () => socket.emit('room:create', { name: getName(), key: KEY }, entered);
+$('codexBtn').onclick = $('codexBtn2').onclick = () => openCodex($('stage'));
 $('soloBtn').onclick = () => { initAudio(); socket.emit('room:solo', { name: getName(), key: KEY }, entered); };
 const join = () => socket.emit('room:join', { code: codeInput.value, name: getName(), key: KEY }, entered);
 $('joinBtn').onclick = join;

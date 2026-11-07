@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_RULES, addBuff, jackpotMult, magnetOf, modsOf, newPlayer, reachOf, resolveClaim, toGameRules,
+  DEFAULT_RULES, addBuff, groupPicks, jackpotMult, magnetOf, modsOf, newPlayer, reachOf, resolveClaim, toGameRules,
   type PlayerState,
 } from '../src/index.ts';
 
@@ -65,4 +65,10 @@ test('reachOf·magnetOf: 능력 + 아이템, 능력 상한', () => {
   assert.equal(magnetOf(c, 0), 90);
   c.picks = [{ id: 'magnet', tier: 3 }];
   assert.equal(magnetOf(c, 0), 200);
+});
+
+test('groupPicks: 같은 증강은 하나로, 가장 높은 등급, 개수', () => {
+  assert.deepEqual(groupPicks([{ id: 'hammer', tier: 0 }, { id: 'jackpot', tier: 1 }, { id: 'hammer', tier: 2 }]),
+    [{ id: 'hammer', tier: 2, count: 2 }, { id: 'jackpot', tier: 1, count: 1 }]);
+  assert.deepEqual(groupPicks([]), []);
 });

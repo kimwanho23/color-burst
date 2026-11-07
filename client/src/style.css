@@ -354,3 +354,27 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 }
 .reduce-fx #stage.feverOn, .reduce-fx .feedrow, .reduce-fx .chippop { animation: none; }
 @media (prefers-reduced-motion: reduce) { #stage.feverOn, .feedrow, .chippop { animation: none; } }
+
+/* 점수판 능력 칩: 같은 능력은 하나로 묶고 ×N */
+.picks-mini .pk { position: relative; }
+.picks-mini .pk em { position: absolute; right: -6px; bottom: -5px; font: 700 9px var(--body); font-style: normal; color: var(--fg); background: var(--bg); border-radius: 6px; padding: 0 2px; line-height: 1.2; }
+/* 도감 */
+.codex { z-index: 40; }
+.cx-card { max-height: calc(100% - 16px); }
+.cx-head { display: flex; justify-content: space-between; align-items: center; font: 400 24px var(--display); }
+.cx-note { margin: 0; }
+.cx-tabs { align-self: flex-start; }
+.cx-body { overflow: auto; max-height: 60vh; padding-right: 4px; }
+.cx-body h3 { display: flex; align-items: center; gap: 6px; margin: 14px 0 6px; font: 400 18px var(--display); }
+.cx-body h3.it1 { color: var(--t1); } .cx-body h3.it2 { color: var(--yellow); }
+.cx-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cx-list > li { display: flex; gap: 10px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.cx-list p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.cx-ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line); }
+.cx-ic.it1 { border-color: var(--t1); color: var(--t1); } .cx-ic.it2 { border-color: var(--yellow); color: var(--yellow); }
+.cx-cap, .cx-sab { margin-left: 8px; font-size: 12px; font-style: normal; color: var(--muted); }
+.cx-sab { color: var(--red); }
+.cx-tiers { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; font-size: 13px; color: var(--muted); }
+.cx-tiers span { display: inline-block; min-width: 46px; font-weight: 700; }
+.cx-tiers .t0 span { color: #fff; } .cx-tiers .t1 span { color: var(--t1); } .cx-tiers .t2 span { color: #b26cff; } .cx-tiers .t3 span { color: var(--yellow); }
+.cx-gain { color: #8ce99a !important; } .cx-cost { color: var(--red) !important; }

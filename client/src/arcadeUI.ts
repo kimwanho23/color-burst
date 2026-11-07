@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, EVENTS, THEMES, TIERS, abilityText, modsOf,
+  ABILITY, EVENTS, THEMES, TIERS, abilityText, groupPicks, modsOf,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, eventIcon, icon } from './icons.ts';
@@ -14,25 +14,27 @@ export const tierClass = (p: Pick) => (ABILITY[p.id].curse ? 'curse' : `t${p.tie
 const tierLabel = (p: Pick) => (ABILITY[p.id].curse ? '저주' : TIERS[p.tier].name);
 const tipOf = (p: Pick) => `${tierLabel(p)} ${ABILITY[p.id].name}: ${abilityText(p)}`;
 
-/** 점수판·결과 화면에 붙는 작은 능력 아이콘 */
+/** 점수판·결과 화면에 붙는 작은 능력 아이콘 (같은 능력은 하나로 묶고 ×N, 설명은 합친 수치) */
 export function pickChips(picks: readonly Pick[], size = 13) {
   if (!picks.length) return '';
-  return `<span class="picks-mini">${picks.map((p) =>
-    `<span class="pk ${tierClass(p)}" title="${esc(tipOf(p))}">${abilityIcon(p.id, size)}</span>`).join('')}</span>`;
+  const m = modsOf(picks);
+  return `<span class="picks-mini">${groupPicks(picks).map((g) => {
+    const a = ABILITY[g.id];
+    const tip = a.curse ? tipOf(g) : `${TIERS[g.tier].name} ${a.name}${g.count > 1 ? ` ×${g.count}` : ''}: ${a.desc(m[g.id])}`;
+    return `<span class="pk ${tierClass(g)}" title="${esc(tip)}">${abilityIcon(g.id, size)}${g.count > 1 ? `<em>×${g.count}</em>` : ''}</span>`;
+  }).join('')}</span>`;
 }
 
 /** 내 능력: 아이콘 타일 (같은 능력은 하나로 합치고 개수 표시, 설명은 마우스를 올리면) */
 export function buildSummary(picks: readonly Pick[], newest?: Pick) {
   if (!picks.length) return '<p class="hint">아직 고른 능력이 없어요</p>';
   const m = modsOf(picks);
-  const ids = [...new Set(picks.map((p) => p.id))];
-  return `<ul class="build">${ids.map((id) => {
-    const mine = picks.filter((p) => p.id === id);
-    const best = mine.reduce((a, b) => (b.tier > a.tier ? b : a));
+  return `<ul class="build">${groupPicks(picks).map((g) => {
+    const id = g.id;
     const a = ABILITY[id];
     const desc = a.curse ? `${a.curse.gain} / 대가: ${a.curse.cost}` : a.desc(m[id]);
-    return `<li class="${tierClass(best)}${newest?.id === id ? ' new' : ''}" title="${esc(`${a.name}: ${desc}`)}">
-      <span class="ic">${abilityIcon(id, 22)}${mine.length > 1 ? `<em>×${mine.length}</em>` : ''}</span>
+    return `<li class="${tierClass(g)}${newest?.id === id ? ' new' : ''}" title="${esc(`${a.name}: ${desc}`)}">
+      <span class="ic">${abilityIcon(id, 22)}${g.count > 1 ? `<em>×${g.count}</em>` : ''}</span>
       <span class="nm">${a.name}</span></li>`;
   }).join('')}</ul>`;
 }
