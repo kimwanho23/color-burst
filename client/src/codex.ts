@@ -38,9 +38,15 @@ function bossTab() {
 
 const BODY: Record<Tab, () => string> = { ability: abilityTab, curse: curseTab, item: itemTab, boss: bossTab };
 
+/** 열려 있는 도감을 닫는 함수 */
+let closeCurrent: (() => void) | null = null;
+
+/** 도감이 열려 있으면 닫는다 (게임이 시작될 때) */
+export function closeCodex() { closeCurrent?.(); }
+
 /** 도감 창을 연다. 닫기 버튼·Esc·바깥 클릭으로 닫힌다 */
 export function openCodex(host: HTMLElement) {
-  host.querySelector('.codex')?.remove();
+  closeCodex();
   const el = document.createElement('div');
   el.className = 'overlay codex';
   el.innerHTML = `<div class="card wide cx-card" role="dialog" aria-label="도감">
@@ -57,7 +63,8 @@ export function openCodex(host: HTMLElement) {
     el.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
   };
   show('ability');
-  const close = () => { el.remove(); window.removeEventListener('keydown', onKey, true); };
+  const close = () => { el.remove(); window.removeEventListener('keydown', onKey, true); if (closeCurrent === close) closeCurrent = null; };
+  closeCurrent = close;
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
   window.addEventListener('keydown', onKey, true);
   el.addEventListener('click', (e) => {
