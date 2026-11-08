@@ -4,6 +4,7 @@ import {
   type BuffId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
 import { UI, eventIcon, icon, itemIcon } from './icons.ts';
+import { comboTip } from './arcadeUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -19,7 +20,7 @@ export function renderComboBar(el: HTMLElement, p: PlayerState | undefined) {
   el.innerHTML = ids.map((id) => {
     const c = COMBOS.find((x) => x.id === id)!;
     const n = id === 'ironWall' ? ` ${p!.ironLeft}` : '';
-    return `<span class="cbchip${id === 'ironWall' && !p!.ironLeft ? ' spent' : ''}" data-c="${id}">${icon(UI.combo, 13)}<b>${esc(c.name)}${n}</b><span>${esc(c.text)}</span></span>`;
+    return `<span class="cbchip${id === 'ironWall' && !p!.ironLeft ? ' spent' : ''}" data-c="${id}" data-tip="${esc(comboTip(id, p!.picks))}">${icon(UI.combo, 13)}<b>${esc(c.name)}${n}</b><span>${esc(c.text)}</span></span>`;
   }).join('');
 }
 

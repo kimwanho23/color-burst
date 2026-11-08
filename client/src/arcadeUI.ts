@@ -13,32 +13,74 @@ const emph = (s: string) => esc(s).replace(/([+−\-×]?\d+(?:\.\d+)?(?:%|초|�
 /** 등급 표시용 클래스: t0 노말, t1 레어, t2 에픽, t3 레전드, curse 저주 */
 export const tierClass = (p: Pick) => (ABILITY[p.id].curse ? 'curse' : ABILITY[p.id].special ? 'special' : `t${p.tier}`);
 const tierLabel = (p: Pick) => (ABILITY[p.id].curse ? '저주' : ABILITY[p.id].special ? '특별' : TIERS[p.tier].name);
-const tipOf = (p: Pick) => `${tierLabel(p)} ${ABILITY[p.id].name}: ${abilityText(p)}`;
+const COMBO_OF = (id: string) => COMBOS.filter((c) => (c.needs as readonly string[]).includes(id));
+/** data-tip 속성 값 (설명 카드 HTML, tooltip.ts가 띄움) */
+const tipAttr = (html: string) => `data-tip="${esc(html)}"`;
+
+/**
+ * 증강 설명 카드: 이름·등급, (가진 사람이면 합친) 수치 설명, 레전드 효과, 이 증강이 들어가는 조합과 진행도.
+ * picks: 그 증강을 가진(또는 고를) 사람의 증강, card: 아직 안 고른 선택지 카드면 그 카드
+ */
+export function augTip(id: Pick['id'], picks: readonly Pick[] = [], card?: Pick) {
+  const a = ABILITY[id];
+  const mine = picks.filter((p) => p.id === id);
+  const tier = card?.tier ?? Math.max(0, ...mine.map((p) => p.tier)) as Pick['tier'];
+  const pk: Pick = { id, tier };
+  const legendOn = card ? card.tier === 3 : mine.some((p) => p.tier === 3);
+  const desc = a.curse
+    ? `<p class="tg">${emph(a.curse.gain)}</p><p class="tc">대가: ${emph(a.curse.cost)}</p>`
+    : `<p>${emph(card ? abilityText(card) : a.desc(modsOf(picks)[id]))}${!card && mine.length > 1 ? ` <em>(${mine.length}개 합침)</em>` : ''}</p>`;
+  const lg = LEGEND_TEXT[id] && !a.curse && !a.special
+    ? `<p class="tl${legendOn ? ' on' : ''}">${legendOn ? '레전드 효과' : '레전드면'}: ${esc(LEGEND_TEXT[id]!)}</p>` : '';
+  const combos = COMBO_OF(id).map((c) => comboLine(c.id, picks, card)).join('');
+  return `<div class="tip-h ${tierClass(pk)}">${abilityIcon(id, 18)}<b>${esc(a.name)}</b><span>${tierLabel(pk)}${a.cat !== '저주' && a.cat !== '특별' ? ` · ${a.cat}` : ''}</span></div>${desc}${lg}${combos ? `<div class="tip-c">${combos}</div>` : ''}`;
+}
+
+/** 조합 한 줄: 이름·진행 (카드를 고르면 오르는 진행은 2→3/3) */
+function comboLine(cid: string, picks: readonly Pick[], card?: Pick) {
+  const c = COMBOS.find((x) => x.id === cid)!;
+  const have = new Set(picks.map((p) => p.id));
+  const n = c.needs.filter((x) => have.has(x)).length;
+  const up = card && !have.has(card.id) && (c.needs as readonly string[]).includes(card.id) ? n + 1 : n;
+  const done = up >= c.needs.length;
+  return `<span class="${done ? 'done' : ''}">${icon(UI.combo, 12)}${esc(c.name)} ${up !== n ? `${n}→${up}` : n}/${c.needs.length}</span>`;
+}
+
+/** 조합 설명 카드: 이름·효과, 필요한 증강 (가진 것 ✓ 밝게, 없는 것 흐리게), 진행 */
+export function comboTip(cid: string, picks: readonly Pick[] = [], card?: Pick) {
+  const c = COMBOS.find((x) => x.id === cid)!;
+  const have = new Set(picks.map((p) => p.id));
+  if (card) have.add(card.id);
+  const n = c.needs.filter((x) => have.has(x)).length;
+  return `<div class="tip-h combo">${icon(UI.combo, 16)}<b>${esc(c.name)}</b><span>${n >= c.needs.length ? '완성' : `${n}/${c.needs.length}`}</span></div>
+    <p>${esc(c.text)}</p>
+    <ul class="tip-needs">${c.needs.map((x) => `<li class="${have.has(x) ? 'have' : ''}">${have.has(x) ? '✓' : '·'} ${abilityIcon(x, 14)} ${esc(ABILITY[x].name)}${card?.id === x && !picks.some((p) => p.id === x) ? ' <em>이 카드</em>' : ''}</li>`).join('')}</ul>
+    <p class="tip-note">필요한 증강을 모두 가지면(등급 무관) 완성</p>`;
+}
+
+/** 완성한 조합 목록 설명 카드 (점수판 "조합 N" 배지) */
+const combosTip = (picks: readonly Pick[]) => {
+  const done = COMBOS.filter((c) => combosOf(picks).has(c.id));
+  return `<div class="tip-h combo">${icon(UI.combo, 16)}<b>완성한 조합</b></div>${done.map((c) => `<p><b>${esc(c.name)}</b> · ${esc(c.text)}</p>`).join('')}`;
+};
 
 /** 점수판에 붙는 작은 능력 아이콘 (같은 능력은 하나로 묶고 ×N). 특별 카드·완성 조합은 배지로 따로 */
 export function pickChips(picks: readonly Pick[], size = 16) {
   if (!picks.length) return '';
-  const m = modsOf(picks);
   const combos = combosOf(picks).size;
-  const special = picks.some((p) => isSpecial(p.id));
-  return `<span class="picks-mini">${special ? `<span class="pk badge sp" title="특별 카드">${icon(UI.special, 12)}</span>` : ''}${combos ? `<span class="pk badge cb" title="완성한 조합">${icon(UI.combo, 11)}${combos}</span>` : ''}${groupPicks(picks).map((g) => {
-    const a = ABILITY[g.id];
-    const tip = a.curse ? tipOf(g) : `${TIERS[g.tier].name} ${a.name}${g.count > 1 ? ` ×${g.count}` : ''}: ${a.desc(m[g.id])}`;
-    return `<span class="pk ${tierClass(g)}" title="${esc(tip)}">${abilityIcon(g.id, size)}${g.count > 1 ? `<em>×${g.count}</em>` : ''}</span>`;
-  }).join('')}</span>`;
+  const special = picks.find((p) => isSpecial(p.id));
+  return `<span class="picks-mini">${special ? `<span class="pk badge sp" ${tipAttr(augTip(special.id, picks))}>${icon(UI.special, 12)}</span>` : ''}${combos ? `<span class="pk badge cb" ${tipAttr(combosTip(picks))}>${icon(UI.combo, 11)}${combos}</span>` : ''}${groupPicks(picks).map((g) =>
+    `<span class="pk ${tierClass(g)}" ${tipAttr(augTip(g.id, picks))}>${abilityIcon(g.id, size)}${g.count > 1 ? `<em>×${g.count}</em>` : ''}</span>`).join('')}</span>`;
 }
 
-/** 빌드 타일: 증강 아이콘·이름 (같은 증강은 묶어 ×N), 레전드 ★, 특별·저주는 색을 따로. 설명은 마우스를 올리면 (레전드 효과 포함) */
+/** 빌드 타일: 증강 아이콘·이름 (같은 증강은 묶어 ×N), 레전드 ★, 특별·저주는 색을 따로. 설명은 마우스를 올리면 */
 export function buildTiles(picks: readonly Pick[], size = 18) {
   if (!picks.length) return '';
-  const m = modsOf(picks);
   const legend = new Set(picks.filter((p) => p.tier === 3).map((p) => p.id));
   return `<ul class="tiles">${groupPicks(picks).map((g) => {
     const a = ABILITY[g.id];
-    const desc = a.curse ? `${a.curse.gain} / 대가: ${a.curse.cost}` : a.desc(m[g.id]);
-    const lg = legend.has(g.id) && LEGEND_TEXT[g.id] ? ` · 레전드 효과: ${LEGEND_TEXT[g.id]}` : '';
     const star = legend.has(g.id) && !a.curse && !a.special ? '<i>★</i>' : '';
-    return `<li class="${tierClass(g)}" title="${esc(`${tierLabel(g)} ${a.name}${g.count > 1 ? ` ×${g.count}` : ''}: ${desc}${lg}`)}">${abilityIcon(g.id, size)}<span>${esc(a.name)}</span>${g.count > 1 ? `<em>×${g.count}</em>` : ''}${star}</li>`;
+    return `<li class="${tierClass(g)}" ${tipAttr(augTip(g.id, picks))}>${abilityIcon(g.id, size)}<span>${esc(a.name)}</span>${g.count > 1 ? `<em>×${g.count}</em>` : ''}${star}</li>`;
   }).join('')}</ul>`;
 }
 
@@ -50,7 +92,7 @@ export function buildCard(p: PlayerState, rank: number, meId?: string) {
   const done = COMBOS.filter((c) => combosOf(p.picks).has(c.id));
   return `<div class="bcard${p.id === meId ? ' me' : ''}">
     <div class="bhead">${shapeSVG(p.color, 20)}<b>${esc(p.name)}${p.id === meId ? ' (나)' : ''}</b><span class="brank">${rank}등</span><span class="bscore">${p.score}</span></div>
-    ${done.length ? `<div class="bcombos">${done.map((c) => `<span title="${esc(c.text)}">${icon(UI.combo, 12)}${esc(c.name)} · ${esc(c.text)}</span>`).join('')}</div>` : ''}
+    ${done.length ? `<div class="bcombos">${done.map((c) => `<span ${tipAttr(comboTip(c.id, p.picks))}>${icon(UI.combo, 12)}${esc(c.name)} · ${esc(c.text)}</span>`).join('')}</div>` : ''}
     ${p.picks?.length ? buildTiles(p.picks) : '<p class="hint">아직 고른 증강이 없어요</p>'}
   </div>`;
 }
@@ -65,12 +107,10 @@ export function rivalsPanel(players: readonly PlayerState[], meId?: string) {
 /** 내 능력: 아이콘 타일 (같은 능력은 하나로 합치고 개수 표시, 설명은 마우스를 올리면) */
 export function buildSummary(picks: readonly Pick[], newest?: Pick) {
   if (!picks.length) return '<p class="hint">아직 고른 능력이 없어요</p>';
-  const m = modsOf(picks);
   return `<ul class="build">${groupPicks(picks).map((g) => {
     const id = g.id;
     const a = ABILITY[id];
-    const desc = a.curse ? `${a.curse.gain} / 대가: ${a.curse.cost}` : a.desc(m[id]);
-    return `<li class="${tierClass(g)}${newest?.id === id ? ' new' : ''}" title="${esc(`${a.name}: ${desc}`)}">
+    return `<li class="${tierClass(g)}${newest?.id === id ? ' new' : ''}" ${tipAttr(augTip(id, picks))}>
       <span class="ic">${abilityIcon(id, 22)}${g.count > 1 ? `<em>×${g.count}</em>` : ''}</span>
       <span class="nm">${a.name}</span></li>`;
   }).join('')}</ul>`;
@@ -107,9 +147,23 @@ function card(o: Pick, i: number, me: PlayerState | undefined) {
     <b class="aname">${a.name}</b>
     ${body}
     ${owned ? `<span class="stack">보유 ${owned} → ${emph(total)}</span>` : ''}
-    ${combosCompletedBy(me?.picks, o).map((c) => `<span class="acombo">조합 완성: ${esc(c.name)}</span>`).join('')}
+    ${cardCombos(o, me?.picks ?? [])}
     <kbd>${i + 1}</kbd>
   </button>`;
+}
+
+/** 카드의 조합 배지: 이 증강이 들어가는 조합마다. 고르면 진행이 오르면 2→3/3 강조, 완성되면 "조합 완성" */
+function cardCombos(o: Pick, picks: readonly Pick[]) {
+  const list = COMBO_OF(o.id);
+  if (!list.length) return '';
+  const completes = new Set(combosCompletedBy(picks, o).map((c) => c.id));
+  return `<span class="ctags">${list.map((c) => {
+    const have = new Set(picks.map((p) => p.id));
+    const n = c.needs.filter((x) => have.has(x)).length;
+    const up = !have.has(o.id);
+    const label = completes.has(c.id) ? `조합 완성: ${esc(c.name)}` : `${esc(c.name)} ${up ? `${n}→${n + 1}` : n}/${c.needs.length}`;
+    return `<span class="ctag${completes.has(c.id) ? ' done' : up && n > 0 ? ' up' : ''}" ${tipAttr(comboTip(c.id, picks, o))}>${icon(UI.combo, 11)}${label}</span>`;
+  }).join('')}</span>`;
 }
 
 export interface PickView {
@@ -128,10 +182,20 @@ export interface PickView {
 }
 
 /** 조합 진행: 하나 이상 가진 조합만, 완성은 금색 */
+/**
+ * 조합 패널 (오토체스 시너지처럼): 모든 조합을 늘 보여 준다. 완성은 밝게, 진행 중은 ●●○, 시작 안 한 조합은 흐리게.
+ * 마우스를 올리면 효과와 필요한 증강
+ */
 function comboList(me: PlayerState | undefined) {
-  const list = comboProgress(me?.picks);
-  if (!list.length) return '';
-  return `<ul class="combos">${list.map((c) => `<li class="${c.have >= c.need ? 'done' : ''}"><b>${esc(c.name)}</b> ${c.have >= c.need ? '완성' : `${c.have}/${c.need}`}<span>${esc(c.text)}</span></li>`).join('')}</ul>`;
+  const picks = me?.picks ?? [];
+  const prog = comboProgress(picks);
+  const seen = new Set(prog.map((c) => c.id));
+  const rest = COMBOS.filter((c) => !seen.has(c.id)).map((c) => ({ id: c.id, name: c.name, have: 0, need: c.needs.length }));
+  const pips = (have: number, need: number) => Array.from({ length: need }, (_, k) => `<i class="${k < have ? 'on' : ''}"></i>`).join('');
+  return `<div class="lbl">조합</div><ul class="synergy">${[...prog, ...rest].map((c) => {
+    const cls = c.have >= c.need ? 'done' : c.have > 0 ? 'prog' : 'off';
+    return `<li class="${cls}" ${tipAttr(comboTip(c.id, picks))}>${icon(UI.combo, 13)}<b>${esc(c.name)}</b><span class="pips">${pips(c.have, c.need)}</span></li>`;
+  }).join('')}</ul>`;
 }
 
 /** 두 장 고르는 차례: "2장 고르기" / 한 장 고른 뒤 "1장 더" */

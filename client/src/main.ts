@@ -12,10 +12,12 @@ import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, icon, itemIcon } from './icons.ts';
 import { buffChips, flashCombo, renderComboBar, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
 import { GameCursor, startCursorSync } from './cursor.ts';
+import { hideTip, initTips } from './tooltip.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+initTips();
 const socket: Socket<ServerToClient, ClientToServer> = io();
 
 // ---------- 서버 시각 맞추기 ----------
@@ -337,7 +339,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   setTimeout(() => { if (!picking()) { $('pickOv').hidden = true; renderedSig = ''; } }, wait);
   setPaused(d.pausedBy, d.pauseUntil, d.resumeAt);
 }
-socket.on('game:start', (d) => applyPlay(d, true));
+socket.on('game:start', (d) => { hideTip(); applyPlay(d, true); });
 socket.on('game:sync', (d) => applyPlay(d, false));
 socket.on('game:pause', ({ by, until }) => setPaused(by, until, 0));
 // 일시정지가 풀림: 일시정지 화면을 닫고 at까지 카운트다운 (게임은 그때까지 멈춰 있음)
