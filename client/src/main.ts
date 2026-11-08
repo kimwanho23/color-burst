@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, COMBOS, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
@@ -82,6 +82,13 @@ const canPause = () => !!room && (room.solo || room.hostId === myId());
 // ---------- 아케이드 ----------
 let arcade: ArcadeState | null = null;
 let offer: ArcadeOffer | null = null;
+/** 내가 완성한 조합 (새로 완성되면 알림). 처음 받은 상태(새로고침·재접속)에서는 알리지 않는다 */
+let myCombos = new Set<string>();
+let combosReady = false;
+/** 철옹성 남은 횟수 (줄어들면 발동 표시) */
+let lastIron: number | null = null;
+/** 방을 나가면 조합 알림 기준을 비운다 (다른 방에 들어가 받은 첫 상태는 알리지 않음) */
+function resetComboNotice() { myCombos = new Set(); combosReady = false; lastIron = null; }
 let picked = false;
 /** 방금 끝난 라운드의 저주 결과 */
 let effects: RoundEffect[] = [];
@@ -89,6 +96,14 @@ const picking = () => arcade?.phase === 'pick';
 
 // 카드 연출이 끝날 때까지 다시 그리기를 미룬다
 let animUntil = 0, renderQueued = false, dealtKey = '', renderedSig = '';
+/** 마지막으로 깔아 준 카드들 (두 장 고르기에서 첫 장을 고른 뒤 남은 카드는 다시 깔지 않으려고) */
+let dealtCards: string[] = [];
+const cardKeys = (opts: readonly Pick[]) => opts.map((o) => `${o.id}:${o.tier}`);
+/** 이번 카드들이 방금 깔아 준 카드에서 고른 것만 빠진 것인지 */
+const isLeftover = (opts: readonly Pick[]) => {
+  const k = cardKeys(opts);
+  return k.length > 0 && k.length < dealtCards.length && k.every((x) => dealtCards.includes(x));
+};
 const fxOn = () => !settings.reduceFx && !matchMedia('(prefers-reduced-motion: reduce)').matches;
 function holdRender(ms: number) {
   if (!fxOn()) return;
@@ -125,8 +140,8 @@ function showPick() {
   const sig = JSON.stringify([key, picked, effects.length, offer?.rerollLeft, picked ? arcade.waiting : 0, me()?.picks.length]);
   if (sig === renderedSig && !$('pickOv').hidden) return;
   renderedSig = sig;
-  const deal = !!offer && !picked && key !== dealtKey;
-  if (deal) dealtKey = key;
+  const deal = !!offer && !picked && key !== dealtKey && !isLeftover(offer.options);
+  if (offer && key !== dealtKey) { dealtKey = key; dealtCards = cardKeys(offer.options); }
   const opening = $('pickOv').hidden;
   renderPick($('pickOv'), { state: arcade, offer, me: me(), players, chosen: picked, effects, deal, opening }, {
     choose: chooseCard,
@@ -161,9 +176,10 @@ socket.on('arcade:event', (r) => {
   showRandomEvent($('stage'), r, players, myId(), !fxOn(), (result) => (result ? sfx.eventResult() : sfx.eventTick())).then(() => { eventShowing = false; });
 });
 socket.on('arcade:offer', (o) => {
+  // 남은 카드만 다시 온 것이면 레전드 소리도 다시 내지 않는다
+  if (o.options.some((x) => x.tier === 3) && !isLeftover(o.options)) sfx.legend();
   offer = o;
   choosePending = false;
-  if (o.options.some((x) => x.tier === 3)) sfx.legend();
   showPick();
 });
 document.addEventListener('keydown', (e) => {
@@ -256,6 +272,7 @@ $<HTMLInputElement>('fillBots').onchange = (e) => socket.emit('lobby:options', {
 $('startBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
 function resetToHome(err = '') {
   room = null; players = []; playing = false; circles.clear(); pending.clear();
+  resetComboNotice();
   stopMusic();
   $('roomTag').hidden = true;
   $('netBanner').hidden = true;
@@ -423,19 +440,19 @@ socket.on('boss:escaped', ({ circleId }) => {
   renderer.text(800, 300, '보스가 도망갔어요', '#9ca2d6', 1.1);
 });
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
-/** 내가 완성한 조합 (새로 완성되면 알림) */
-let myCombos = new Set<string>();
-/** 처음 받은 상태(재접속 등)에서는 알리지 않는다 */
-let combosReady = false;
 socket.on('players', (p) => {
   players = p; renderScores(); if (picking()) showPick();
-  const now = combosOf(me()?.picks);
+  const m = me();
+  const now = combosOf(m?.picks);
   for (const id of now) if (!myCombos.has(id)) {
     const c = COMBOS.find((x) => x.id === id)!;
     if (combosReady) { sfx.legend(); pushFeed($('feed'), icon(UI.up, 18), `조합 완성! ${c.name} · ${c.text}`, '#ffd43b'); }
   }
   myCombos = now;
-  combosReady = true;
+  combosReady = !!m;
+  // 철옹성 조합이 콤보 끊김을 막았으면 (라운드 시작에는 늘어나기만 함)
+  if (m && lastIron !== null && m.ironLeft < lastIron) { sfx.bossBlock(); renderer.text(800, 330, '철옹성! 콤보 유지', '#ffd43b', 1.1); }
+  lastIron = m ? m.ironLeft : null;
 });
 socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   const claimedKind = circles.get(circleId)?.kind;
@@ -476,6 +493,11 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   }
   if (result.brokeComboOf === myId()) { sfx.comboBroken(); renderer.text(x, y - 45, '콤보 끊김!', '#ff5d73', 1.1); }
   if (result.shielded && claimedKind === me()?.color) renderer.text(x, y - 45, '방패!', '#4d9bff', 1.1);
+  // 방패 레전드: 견제한 사람 점수를 빼앗음
+  if (result.drained) {
+    if (mine) renderer.text(x, y + 45, `방패 반격 −${result.drained}`, '#ff5d73', 0.9);
+    else if (claimedKind === me()?.color) renderer.text(x, y + 45, `방패 반격 +${result.drained}`, '#4d9bff', 0.9);
+  }
 });
 socket.on('special:gain', ({ playerId, id, delta }) => {
   if (playerId !== myId()) return;
