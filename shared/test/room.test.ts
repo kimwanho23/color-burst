@@ -362,38 +362,53 @@ test('1등 저격 아이템: 대상(1등, 내가 1등이면 2등)이 스턴되�
 /** 가운데에서 오른쪽으로 400 떨어져 멈춰 있는 이동형 보스 (반지름 60, 오오라 140) */
 const runnerAt = (now: number): Circle => ({ id: 77, kind: 'boss', boss: 'runner', angle: 0, speed: 0.004, r: 60, born: now - 100_000_000, hp: 10, maxHp: 10 });
 
-test('오오라: 커서가 고리 안이면 0.5초마다 −1, 몸통 안이면 감점 없음', () => {
+test('오오라: 고리 안이면 들어갈 때 바로, 그 뒤 1초마다 피버 게이지 −15·콤보 70%. 점수는 그대로, 몸통 안은 없음', () => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
   circles.set(77, runnerAt(now));
   const pos = circlePosOf(circles.get(77)!, now);
-  me.score = 5;
+  me.score = 5; me.fever = 50; me.combo = 10;
   const cursors = (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors;
   const r = room as unknown as { updateAura(now: number): void };
   cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now });
   r.updateAura(now);
-  assert.equal(me.score, 4);
-  r.updateAura(now + 200);
-  assert.equal(me.score, 4);
-  cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now + 500 });
+  assert.deepEqual([me.score, me.fever, me.combo], [5, 35, 7]);
   r.updateAura(now + 500);
-  assert.equal(me.score, 3);
-  cursors.set(me.id, { x: pos.x + 10, y: pos.y, at: now + 1000 });
+  assert.deepEqual([me.fever, me.combo], [35, 7]);
+  cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now + 1000 });
   r.updateAura(now + 1000);
-  assert.equal(me.score, 3);
+  assert.deepEqual([me.fever, me.combo], [20, 4]);
+  cursors.set(me.id, { x: pos.x + 10, y: pos.y, at: now + 2000 });
+  r.updateAura(now + 2000);
+  assert.deepEqual([me.fever, me.combo], [20, 4]);
   room.destroy();
 });
 
-test('오오라를 클릭하면 −2 (헛클릭 아님)', () => {
+test('오오라: 피버 중이면 들어갈 때 한 번만 남은 피버 시간 절반', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(77, runnerAt(now));
+  const pos = circlePosOf(circles.get(77)!, now);
+  me.feverUntil = now + 6000;
+  const cursors = (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors;
+  const r = room as unknown as { updateAura(now: number): void };
+  cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now });
+  r.updateAura(now);
+  assert.equal(me.feverUntil, now + 3000);
+  cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now + 1000 });
+  r.updateAura(now + 1000);
+  assert.equal(me.feverUntil, now + 3000);
+  room.destroy();
+});
+
+test('오오라를 클릭하면 아무 일 없음 (감점·헛클릭 아님)', () => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
   circles.set(77, runnerAt(now));
   const pos = circlePosOf(circles.get(77)!, now);
   me.score = 5; me.combo = 3;
-  sent.length = 0;
   room.click(me.id, { circleId: null, x: pos.x + 100, y: pos.y });
-  assert.deepEqual([me.score, me.combo, me.stats.misses], [3, 3, 0]);
-  assert.ok(sent.includes('aura:hit'));
+  assert.deepEqual([me.score, me.combo, me.stats.misses], [5, 3, 0]);
   room.destroy();
 });
 

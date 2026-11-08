@@ -9,21 +9,21 @@ const G = toGameRules(DEFAULT_RULES);
 const four = (...scores: number[]): PlayerState[] =>
   scores.map((s, i) => Object.assign(newPlayer(`p${i}`, `P${i}`, i as 0 | 1 | 2 | 3), { score: s }));
 
-test('감도 감소: 잡은 사람 뺀 모두 5초, 다시 맞으면 10초까지', () => {
+test('감도 감소: 잡은 사람 뺀 모두 3초, 다시 맞으면 6초까지', () => {
   const ps = four(10, 20, 30, 40);
   applyItem(ps[0], 'slowCursor', 100, G, ps);
   assert.equal(ps[0].debuffs.slow, undefined);
-  assert.deepEqual(ps.slice(1).map((p) => p.debuffs.slow), [5100, 5100, 5100]);
+  assert.deepEqual(ps.slice(1).map((p) => p.debuffs.slow), [3100, 3100, 3100]);
   applyItem(ps[0], 'slowCursor', 200, G, ps);
-  assert.equal(ps[1].debuffs.slow, 10_100);
-  assert.equal(debuffOn(ps[1], 'slow', 10_099), true);
-  assert.equal(debuffOn(ps[1], 'slow', 10_100), false);
+  assert.equal(ps[1].debuffs.slow, 6_100);
+  assert.equal(debuffOn(ps[1], 'slow', 6_099), true);
+  assert.equal(debuffOn(ps[1], 'slow', 6_100), false);
 });
 
 test('마우스 반대·시야 방해도 잡은 사람 뺀 모두, 시야 방해 종류는 넷 중 하나', () => {
   const ps = four(10, 20, 30, 40);
   applyItem(ps[2], 'invertCursor', 0, G, ps);
-  assert.deepEqual(ps.map((p) => p.debuffs.invert ?? 0), [5000, 5000, 0, 5000]);
+  assert.deepEqual(ps.map((p) => p.debuffs.invert ?? 0), [3000, 3000, 0, 3000]);
   applyItem(ps[2], 'blind', 0, G, ps, () => 0.6);
   assert.equal(ps[2].blind, null);
   for (const p of [ps[0], ps[1], ps[3]]) {

@@ -99,13 +99,15 @@ test('철벽: 견제한 사람의 흡혈을 막고, 자기 흡혈 저주 대가�
   assert.equal(resolveClaim(a, 1, [a, self], 100, G).plundered, CURSE.vampire.drain);
 });
 
-test('카드 풀: 레이저·아이템이 꺼진 방에는 레이저 내성·수집가가 없음', () => {
+test('카드 풀: 레이저·방해 아이템·맵 패턴이 모두 꺼지면 방해 내성 없음, 아이템이 꺼지면 수집가 없음', () => {
   const io = { to: () => ({ emit() {} }), sockets: { sockets: new Map() } } as never;
   const room = new Room(io, 'POOL', () => {});
   const r = room as unknown as { G: GameRules; offPool(): AbilityId[] };
   r.G = { ...G, laser: true, items: true };
   assert.deepEqual(r.offPool(), []);
   r.G = { ...G, laser: false, items: false };
+  assert.deepEqual(r.offPool(), ['collector'], '방해 아이템·맵 패턴이 켜져 있으면 방해 내성은 남음');
+  r.G = { ...G, laser: false, sabotage: false, mapChance: 0, items: false };
   assert.deepEqual(r.offPool(), ['laserProof', 'collector']);
   room.destroy();
 });

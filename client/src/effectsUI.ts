@@ -94,7 +94,7 @@ export function popOnChip(scoresEl: HTMLElement, playerId: string, iconHtml: str
 /** 방해 디버프 → 아이콘으로 보여 줄 아이템 */
 const DEBUFF_ITEM: Record<DebuffId, ItemId> = { slow: 'slowCursor', invert: 'invertCursor', blind: 'blind' };
 
-export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: number, durOf: (id: BuffId) => number, debuffMs: number, comebackMult = 0) {
+export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: number, durOf: (id: BuffId) => number, debuffMs: (id: DebuffId) => number, comebackMult = 0) {
   if (!p) { el.innerHTML = ''; return; }
   const items: string[] = [];
   // 역전 기회 배율 (꼴찌인 동안)
@@ -104,7 +104,7 @@ export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: 
     const left = (p.debuffs[id] ?? 0) - now;
     if (left <= 0) continue;
     const it = DEBUFF_ITEM[id];
-    items.push(`<span class="buff debuff${left < 1000 ? ' blink' : ''}" style="--f:${Math.min(1, left / debuffMs)}" title="${ITEMS[it].name}">${itemIcon(it, 18)}</span>`);
+    items.push(`<span class="buff debuff${left < 1000 ? ' blink' : ''}" style="--f:${Math.min(1, left / debuffMs(id))}" title="${ITEMS[it].name}">${itemIcon(it, 18)}</span>`);
   }
   for (const id of BUFF_IDS) {
     const left = (p.buffs[id] ?? 0) - now;

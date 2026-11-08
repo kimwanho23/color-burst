@@ -50,9 +50,9 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   bomb: { name: '폭죽', tier: 1, desc: '주변 원을 남의 색까지 전부 터뜨림' },
   timeStop: { name: '시간 정지', tier: 2, desc: `모든 원이 ${S(RULES.items.freezeMs)} 멈춤` },
   fieldClear: { name: '필드 클리어', tier: 2, desc: '화면의 원을 남의 색까지 전부 터뜨림' },
-  slowCursor: { name: '감도 감소', tier: 0, sabotage: true, desc: `잡은 사람 뺀 모두의 커서가 ${S(RULES.sabotage.ms)}간 느려짐` },
-  invertCursor: { name: '마우스 반대', tier: 0, sabotage: true, desc: `잡은 사람 뺀 모두의 커서가 ${S(RULES.sabotage.ms)}간 반대로 움직임` },
-  blind: { name: '시야 방해', tier: 1, sabotage: true, desc: `잡은 사람 뺀 모두의 화면을 ${S(RULES.sabotage.ms)}간 가림 (잉크·반코트·낙서·렌즈)` },
+  slowCursor: { name: '감도 감소', tier: 0, sabotage: true, desc: `잡은 사람 뺀 모두의 커서가 ${S(RULES.sabotage.slowMs)}간 느려짐` },
+  invertCursor: { name: '마우스 반대', tier: 0, sabotage: true, desc: `잡은 사람 뺀 모두의 커서가 ${S(RULES.sabotage.invertMs)}간 반대로 움직임` },
+  blind: { name: '시야 방해', tier: 1, sabotage: true, desc: `잡은 사람 뺀 모두의 화면을 ${S(RULES.sabotage.blindMs)}간 가림 (잉크·반코트·낙서·렌즈)` },
   snipe: { name: '1등 저격', tier: 2, sabotage: true, desc: `1등(내가 1등이면 2등)을 ${S(RULES.sabotage.snipeStunMs)} 스턴, 콤보 끊김` },
 };
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[];
@@ -106,9 +106,12 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
     case 'blind': {
       const debuff = id === 'slowCursor' ? 'slow' : id === 'invertCursor' ? 'invert' : 'blind';
       for (const o of players) {
-        // 철벽은 방해에 걸리지 않는다
+        // 철벽은 방해에 걸리지 않는다. 방해 내성만큼 시간이 줄고 100%면 안 걸림
         if (o === p || modsOf(o.picks).fortress) continue;
-        addDebuff(o, debuff, RULES.sabotage.ms, now);
+        const base = debuff === 'slow' ? RULES.sabotage.slowMs : debuff === 'invert' ? RULES.sabotage.invertMs : RULES.sabotage.blindMs;
+        const ms = base * (1 - modsOf(o.picks).laserProof / 100);
+        if (ms <= 0) continue;
+        addDebuff(o, debuff, ms, now);
         if (debuff === 'blind') o.blind = { kind: BLIND_KINDS[Math.floor(rand() * BLIND_KINDS.length)], seed: Math.floor(rand() * 1e9) };
       }
       return null;

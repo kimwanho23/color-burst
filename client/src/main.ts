@@ -627,10 +627,10 @@ socket.on('stun', ({ playerId, by }) => {
     renderer.text(800, 120, snipe ? `${p.name} 저격!` : `${p.name} 스턴!`, COLORS[p.color].hex, snipe ? 1.1 : 0.8);
   }
 });
-socket.on('aura:hit', ({ by, x, y, lose }) => {
+socket.on('aura:hit', ({ by, x, y }) => {
   if (by !== myId()) return;
   sfx.aura();
-  renderer.text(x, y, lose ? `-${lose} 오오라` : '오오라', '#c39bff', 0.9);
+  renderer.text(x, y, `오오라 · 피버 −${RULES.aura.feverLoss} · 콤보 −${100 - RULES.aura.comboKeepPct}%`, '#c39bff', 0.9);
 });
 socket.on('circle:pull', (pl) => { pulls.set(pl.circleId, pl); if (pl.by === myId()) sfx.pull(); });
 // 커서 위치는 게임 중에만 보낸다 (캔버스 밖·탭 전환이면 서버가 판정에서 뺀다)
@@ -812,7 +812,7 @@ function updateHud(now: number) {
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
   renderCombo(m?.combo ?? 0);
   const cbMult = m?.comeback && isLast(m, players) ? ARCADE.comeback.roomMult[players.length] ?? 0 : 0;
-  renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id], RULES.sabotage.ms, cbMult);
+  renderBuffBar($('buffs'), playing && !picking() ? m : undefined, now, (id) => RULES.items.ms[id], (id) => (id === 'slow' ? RULES.sabotage.slowMs : id === 'invert' ? RULES.sabotage.invertMs : RULES.sabotage.blindMs), cbMult);
   // 점수판의 버프 아이콘은 1초마다 다시 그려 끝난 것을 지운다
   const sec = Math.floor(now / 1000);
   if (playing && sec !== lastBuffSec) { lastBuffSec = sec; renderScores(); }

@@ -147,7 +147,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'insurance', name: '보험', cat: '유지', values: [20, 40, 60, 100], cap: 100, desc: (v) => `콤보가 끊겨도 ${v}% 유지` },
   { id: 'shield', name: '방패', cat: '유지', values: [1, 2, 3, 6], desc: (v) => `견제당해도 콤보 유지, 라운드당 ${v}번` },
   { id: 'rebound', name: '리바운드', cat: '유지', values: [30, 50, 70, 120], cap: 200, desc: (v) => `콤보가 끊긴 뒤 ${AUG.reboundMs / 1000}초 동안 점수 +${v}%` },
-  { id: 'laserProof', name: '레이저 내성', cat: '유지', values: [25, 40, 60, 100], cap: 100, desc: (v) => (v >= 100 ? '레이저에 스턴되지 않음' : `레이저 스턴 시간 −${v}%`) },
+  { id: 'laserProof', name: '방해 내성', cat: '유지', values: [25, 40, 60, 100], cap: 100, desc: (v) => (v >= 100 ? '레이저·위험 패턴·방해 아이템에 걸리지 않음' : `레이저·위험 패턴 스턴과 방해 아이템 시간 −${v}%`) },
   // 견제
   { id: 'thickSkin', name: '철면피', cat: '견제', values: [1, 2, 3, 99], provisional: true, desc: (v) => (v >= 99 ? '견제해도 표적이 되지 않음' : `표적 시간 −${v}초`) },
   { id: 'plunder', name: '강탈', cat: '견제', values: [1, 1, 2, 4], provisional: true, desc: (v) => `견제하면 상대 점수 ${v}점을 빼앗음` },
@@ -183,7 +183,7 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   counterPro: `반격하면 피버 게이지 +${L_.counterFever}`, reflect: '횟수 제한 없음', jammer: `내 피버가 터지면 상대 커서 ${sec(L_.jammerSlowMs)} 감도 감소`,
   wideHand: `범위로 같이 잡은 원 점수 ×${L_.wideHandMult}`, magnet: `1초에 ${L_.magnetPerSec}개까지 끌어옴`, missSave: `대신 잡은 원 점수 ×${L_.missSaveMult}`,
   rebound: `끊긴 콤보의 절반을 그 ${sec(AUG.reboundMs)} 안에 되찾음`, rapid: `연속 ${L_.rapidStreak}개면 다음 원 잭팟 확정`,
-  laserProof: `레이저에 닿으면 피버 게이지 +${L_.laserFever}`,
+  laserProof: `레이저·위험 패턴에 닿으면 피버 게이지 +${L_.laserFever}`,
   collector: `아이템 원을 잡으면 ${pct(L_.collectorUp)} 확률로 한 등급 위`, chainCombo: `${L_.chainEvery}콤보마다`,
   centerKing: `중앙에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
   ignite: '화면의 내 원 전부', vanguard: `보스 등장 후 ${sec(AUG.vanguardMs)} 동안 주는 피해 ${L_.vanguardMult}배`,

@@ -129,9 +129,10 @@ export interface ServerToClient {
   /** 레이저 예고 (at에 발사) */
   'laser:warn': (d: LaserVolley) => void;
   /** 스턴: until까지 클릭 불가 */
-  stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' }) => void;
+  stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' | 'spike' | 'ring' }) => void;
   /** 이동형 보스 오오라를 클릭해 점수를 잃음 */
-  'aura:hit': (d: { by: string; x: number; y: number; lose: number }) => void;
+  /** 이동형 보스 오오라에 닿음: 피버 게이지 −, 콤보 감소 (피버 중이면 들어갈 때 피버 절반) */
+  'aura:hit': (d: { by: string; x: number; y: number }) => void;
   /** 커서 자석이 원을 끌기 시작함 */
   'circle:pull': (d: Pull) => void;
   /** 발사 패턴 예고: at(서버 시각)에 웨이브가 나온다 */

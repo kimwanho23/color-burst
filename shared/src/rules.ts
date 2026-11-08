@@ -56,9 +56,9 @@ export const RULES = {
   magnet: { pullMs: 250, perSec: 2 },
   /** 방해 아이템: 효과 시간, 감도 감소 배율, 1등 저격 스턴, 효과가 끝난 뒤 커서가 마우스로 돌아오는 시간 */
   /** 방해: 효과 시간, 감도 감소 때 커서가 진짜 마우스를 따라가는 시간 상수(ms), 저격 스턴, 효과가 바뀔 때 미끄러지는 시간 */
-  sabotage: { ms: 5_000, slowLagMs: 350, snipeStunMs: 3_000, slideMs: 150 },
+  sabotage: { slowMs: 3_000, invertMs: 3_000, blindMs: 5_000, slowLagMs: 350, snipeStunMs: 3_000, slideMs: 150 },
   /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
-  aura: { extra: 80, pullSpeed: 120, tickMs: 500, touchPenalty: 1, clickPenalty: 2 },
+  aura: { extra: 80, pullSpeed: 120, tickMs: 1_000, feverLoss: 15, comboKeepPct: 70 },
   /**
    * 점수 구역: 가운데에서의 타원 거리 e = √(((x−800)/800)² + ((y−450)/450)²)로 나눈다.
    * e < bounds[0] 중앙, e < bounds[1] 사이, 그 밖은 가장자리. 일반 원 점수에 mult를 곱한다
@@ -641,6 +641,28 @@ export function extraMult(p: PlayerState, now: number, players: PlayerState[]) {
   // 출발 신호 레전드: 라운드 처음 10초 ×1.5
   const start = hasLegend(p, 'headStart') && now < p.roundBegin + LEGEND.headStartMs ? LEGEND.headStartMult : 1;
   return comebackMult(p, players) * flame * start;
+}
+
+/** 피버 중 피격: 남은 피버 시간을 절반으로 (여운도 같이 당김). 줄였으면 true */
+export function halveFever(p: PlayerState, now: number) {
+  if (!isFever(p, now)) return false;
+  shiftFeverEnd(p, -(p.feverUntil - now) / 2);
+  return true;
+}
+
+/**
+ * 위험 스턴 공통 (레이저·가시 공·좁아지는 링): 철벽이거나 무적 중(스턴이 끝나고 RULES.laser.immuneMs 안)이면 0.
+ * 아니면 방해 내성 레전드 피버 게이지 +, 피버 중이면 피버 절반, 방해 내성만큼 줄인 스턴을 건다. 건 스턴 ms (0이면 스턴 없음)
+ */
+export function hazardStun(p: PlayerState, now: number, baseMs: number, G: GameRules, players: PlayerState[]) {
+  const m = modsOf(p.picks);
+  if (m.fortress || now < p.stunUntil + RULES.laser.immuneMs) return 0;
+  if (hasLegend(p, 'laserProof')) addFever(p, LEGEND.laserFever, now, G, players, true);
+  halveFever(p, now);
+  const ms = baseMs * (1 - m.laserProof / 100);
+  if (ms <= 0) return 0;
+  p.stunUntil = now + ms;
+  return ms;
 }
 
 /** 피버가 끝나는 시각을 옮긴다 (여운도 같은 만큼 옮겨 길이를 지킴) */

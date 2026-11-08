@@ -1,11 +1,11 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, crossedCombo, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, crossedCombo, hazardStun, halveFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
-  FIELD, zoneOf, goldTimes, makeGold, canLaserStun, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
+  FIELD, zoneOf, goldTimes, makeGold, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
@@ -413,13 +413,8 @@ export class Room {
       if (save) { this.claim(p, save, now, 'save'); got = true; }
     }
     if (!got && d.circleId === null) {
-      // 이동형 보스 오오라를 눌렀으면 헛클릭 대신 감점
-      if (this.auraUnder(d, now)) {
-        const lose = Math.min(p.score, RULES.aura.clickPenalty);
-        p.score -= lose;
-        this.io.to(this.code).emit('aura:hit', { by: p.id, x: d.x, y: d.y, lose });
-        this.emitPlayers();
-      } else if (now - this.bossKilledAt >= RULES.boss.killGraceMs) {
+      // 이동형 보스 오오라를 눌렀으면 아무 일 없음 (헛클릭도 아님, 닿아 있는 동안의 벌은 updateAura)
+      if (!this.auraUnder(d, now) && now - this.bossKilledAt >= RULES.boss.killGraceMs) {
         resolveMiss(p, now, this.G, this.players);
         this.emitPlayers();
       }
@@ -435,17 +430,24 @@ export class Room {
     return false;
   }
 
-  /** 오오라: 커서가 이동형 보스 오오라 안이면 tickMs마다 감점 (봇은 커서가 없어 제외) */
+  /**
+   * 오오라: 커서가 이동형 보스 오오라 안이면 tickMs마다 피버 게이지 −feverLoss, 콤보 comboKeepPct%로.
+   * 처음 들어갈 때 바로 한 번 적용하고, 피버 중이면 그때 한 번만 피버 절반 (봇은 커서가 없어 제외)
+   */
   private updateAura(now: number) {
+    const A = RULES.aura;
     let changed = false;
     for (const p of this.players) {
       const cur = this.freshCursor(p.id, now);
       if (p.bot || !cur || !this.auraUnder(cur, now)) { this.auraLast.delete(p.id); continue; }
       const last = this.auraLast.get(p.id);
-      if (last !== undefined && now - last < RULES.aura.tickMs) continue;
+      if (last !== undefined && now - last < A.tickMs) continue;
+      if (last === undefined) halveFever(p, now);
       this.auraLast.set(p.id, now);
-      const lose = Math.min(p.score, RULES.aura.touchPenalty);
-      if (lose > 0) { p.score -= lose; changed = true; }
+      addFever(p, -A.feverLoss, now, this.G, this.players);
+      p.combo = Math.floor((p.combo * A.comboKeepPct) / 100);
+      this.io.to(this.code).emit('aura:hit', { by: p.id, x: cur.x, y: cur.y });
+      changed = true;
     }
     if (changed) this.emitPlayers();
   }
@@ -742,7 +744,9 @@ export class Room {
 
   /** 이 방에서 효과가 없는 증강 (레이저·아이템이 꺼진 방) */
   private offPool(): AbilityId[] {
-    return [...(this.G.laser ? [] : ['laserProof' as const]), ...(this.G.items ? [] : ['collector' as const])];
+    // 방해 내성: 레이저·방해 아이템·맵 패턴이 모두 꺼진 방에서만 뺀다
+    const noHazard = !this.G.laser && !this.G.sabotage && this.G.mapChance <= 0;
+    return [...(noHazard ? ['laserProof' as const] : []), ...(this.G.items ? [] : ['collector' as const])];
   }
 
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
@@ -915,15 +919,11 @@ export class Room {
       if (now < l.at) continue;
       for (const p of this.players) {
         const cur = this.freshCursor(p.id, now);
-        if (p.bot || l.hit.has(p.id) || !cur || !canLaserStun(p, now) || !volleyHits(cur, l.lines, this.G.laserHalf)) continue;
+        if (p.bot || l.hit.has(p.id) || !cur || !volleyHits(cur, l.lines, this.G.laserHalf)) continue;
         l.hit.add(p.id);
+        // 위험 스턴 공통: 철벽·무적 시간, 방해 내성, 피버 중이면 피버 절반
+        if (!hazardStun(p, now, L.stunMs, this.G, this.players)) continue;
         stunned = true;
-        // 레이저 내성 레전드: 닿으면 피버 게이지 +20
-        if (hasLegend(p, 'laserProof')) addFever(p, LEGEND.laserFever, now, this.G, this.players, true);
-        // 레이저 내성: 스턴 시간 감소 (100%면 스턴 없음)
-        const ms = L.stunMs * (1 - modsOf(p.picks).laserProof / 100);
-        if (ms <= 0) continue;
-        p.stunUntil = now + ms;
         this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
       }
     }
