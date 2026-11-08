@@ -1109,9 +1109,8 @@ export function resolveClaim(
   const own = (P.own + m.picky) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
   if (kind === 'rainbow') {
     res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; claimer.combo++;
-    // 무지개 사냥 레전드: 즉시 피버
-    if (L.has('rainbowHunt') && !fever) { burstFever(claimer, now, G, m, players); res.feverStarted = true; }
-    else res.feverStarted = addFever(claimer, RULES.fever.rainbow, now, G, players);
+    // 무지개 사냥 레전드: 피버 게이지 2배
+    res.feverStarted = addFever(claimer, RULES.fever.rainbow * (L.has('rainbowHunt') ? LEGEND.rainbowFeverMult : 1), now, G, players);
   } else if (kind === 'y' && !fever && buffOn(claimer, 'paint', now)) {
     // 물들이기: 노란 원을 내 색으로 계산 (외길이면 그대로 0점)
     res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;

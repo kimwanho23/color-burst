@@ -42,7 +42,7 @@ export const LEGEND = {
   preheatMult: 2, overtimeMs: 100, overchargeKeep: 50, afterglowMult: 2, shieldDrain: 3, plunderTopMult: 2,
   jammerSlowMs: 2_000, wideHandMult: 1.5, magnetPerSec: 4, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
   collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1, counterFever: 20,
-  pickyFeverMult: 2, frenzyComboMult: 2, vanguardMult: 2,
+  pickyFeverMult: 2, frenzyComboMult: 2, vanguardMult: 2, rainbowFeverMult: 2,
 } as const;
 
 /** 증강 조합 보너스 수치 */
@@ -173,7 +173,7 @@ const L_ = LEGEND;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   picky: `내 색 원을 잡으면 피버 게이지가 ${L_.pickyFeverMult}배로 참`, yellowTaste: '노란 원도 피버 게이지가 내 색 원만큼 참',
-  rainbowHunt: '무지개 원을 잡으면 즉시 피버', comboArtist: `콤보 보너스 점수 +${L_.comboBonusAdd}`,
+  rainbowHunt: `무지개 원의 피버 게이지 ${L_.rainbowFeverMult}배`, comboArtist: `콤보 보너스 점수 +${L_.comboBonusAdd}`,
   headStart: `라운드 처음 ${sec(L_.headStartMs)} 동안 점수 ×${L_.headStartMult}`, jackpot: `잭팟 배율 ×${L_.jackpotMults[0]}~×${L_.jackpotMults.at(-1)}`,
   edge: `가장자리에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
   preheat: `라운드 첫 피버 배율 +${L_.preheatMult}`, overtime: `피버 중 원을 잡을 때마다 피버 시간 +${sec(L_.overtimeMs)}`,
