@@ -604,16 +604,24 @@ export class Room {
     }
     const { x, y } = circlePos(c, now);
     if (!r.killed) {
-      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: r.gained, jackpot: r.jackpot });
+      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: r.gained, jackpot: r.jackpot, feverStarted: r.feverStarted, comboBonus: r.comboBonus });
     } else {
       this.circles.delete(c.id);
       this.bossHits.delete(c.id);
       this.bossKilledAt = now;
+      const mySolo = r.solos.find((s) => s.id === p.id)?.gained ?? 0;
       this.io.to(this.code).emit('boss:killed', {
-        circleId: c.id, by: p.id, gained: r.gained + r.killGained, mvp: r.mvp, mvpGained: r.mvpGained, x, y, jackpot: r.killJackpot, solo: r.solo ? p.id : null,
+        circleId: c.id, by: p.id, gained: r.gained + r.killGained + mySolo, mvp: r.mvp, mvpGained: r.mvpGained, x, y, jackpot: r.killJackpot,
+        solo: r.solos.map((s) => s.id), soloFever: r.solos.filter((s) => s.feverStarted).map((s) => s.id), feverStarted: r.feverStarted, comboBonus: r.comboBonus,
       });
       // 사냥꾼 레전드: 막타 때 화면의 내 원 전부
       if (hasLegend(p, 'hunter')) this.autoClaim(p, { x, y }, Infinity, Infinity, now);
+      // 막타를 안 친 독식자도 보스 헌터 게이지로 피버가 터지면 점화
+      for (const s of r.solos) {
+        const q = this.players.find((o) => o.id === s.id);
+        const qm = q && modsOf(q.picks);
+        if (q && q !== p && s.feverStarted && qm!.ignite > 0) this.autoClaim(q, { x, y }, Infinity, hasLegend(q, 'ignite') ? Infinity : qm!.ignite, now);
+      }
     }
     // 점화: 보스 타격으로 피버가 터져도 화면의 내 원 자동 획득 (레전드는 전부)
     const m = modsOf(p.picks);

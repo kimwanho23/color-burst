@@ -33,7 +33,7 @@ test('출처: 자석·견제(강탈 포함)·보스(타격·막타·독식·MVP)
   assert.ok(r.plundered > 0);
   const b = pl('b', 0), x = pl('x', 1);
   const s = strikeBoss(b, boss(1), new Map([['b', 11], ['x', 1]]), [b, x], NOW, G, no);
-  assert.equal(b.stats.src.boss, s.gained + s.killGained + s.mvpGained);
+  assert.equal(b.stats.src.boss, s.gained + s.killGained + s.mvpGained + s.solos.reduce((a, x) => a + x.gained, 0));
   assert.equal(b.score, b.stats.src.boss);
 });
 

@@ -487,7 +487,7 @@ function missSaveNear(m: PlayerState, x: number, y: number, now: number) {
 /** 점수 글자 단계: 잭팟 ×3·보스 막타 5, 잭팟·황금 원 4, 피버 3, 콤보 보너스·반격 2, 평소 1 */
 const scoreTier = (o: { jackpot?: number; fever?: boolean; special?: boolean; kill?: boolean; gold?: boolean }): ScoreTier =>
   o.kill || (o.jackpot ?? 1) >= 3 ? 5 : o.gold || (o.jackpot ?? 1) > 1 ? 4 : o.fever ? 3 : o.special ? 2 : 1;
-socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged }) => {
+socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged, feverStarted, comboBonus }) => {
   const c = circles.get(circleId);
   if (c) c.hp = hp;
   if (by === myId() && c && (blocked || enraged)) {
@@ -504,12 +504,19 @@ socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged }) 
     const p = circlePos(c, serverNow());
     if (jackpot > 1) { renderer.jackpot(p.x, p.y, jackpot, true); sfx.jackpot(jackpot); }
     const mm = me();
-    if (gained > 0) renderer.scoreText(p.x + 60, p.y - 70, `+${gained}`, scoreTier({ jackpot, fever: !!mm && isFever(mm, serverNow()) }), 0.7);
+    if (gained > 0) renderer.scoreText(p.x + 60, p.y - 70, `+${gained}${comboBonus ? ' 콤보!' : ''}`, scoreTier({ jackpot, fever: !!mm && isFever(mm, serverNow()), special: comboBonus }), 0.7);
   }
+  if (by === myId()) bossFeedback(!!feverStarted, !!comboBonus);
 });
+/** 보스 타격으로 콤보 보너스·피버가 터졌을 때 (원 획득과 같은 표시) */
+function bossFeedback(feverStarted: boolean, comboBonus: boolean) {
+  const bar = $('comboBar');
+  if (comboBonus) flashCombo(bar, 'comboMachine');
+  if (feverStarted) { sfx.fever(); renderer.text(CX, CY + -50, 'FEVER!', '#ff9f1c', 2); flashCombo(bar, 'feverMaster'); }
+}
 /** 마지막으로 보스가 터진 서버 시각 */
 let bossKilledAt = 0;
-socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot, solo }) => {
+socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot, solo, soloFever, feverStarted, comboBonus }) => {
   bossKilledAt = serverNow();
   circles.delete(circleId);
   const killer = nameOf(by), mvpP = nameOf(mvp);
@@ -523,9 +530,14 @@ socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot,
   if (jackpot > 1) { renderer.jackpot(x, y, jackpot, true); if (by === myId()) sfx.jackpot(jackpot); }
   if (killer) renderer.scoreText(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, 5, 0.8);
   if (mvpP && mvpGained) renderer.text(x, y + 50, `최다 타격 ${mvp === myId() ? '나' : mvpP.name} +${mvpGained}`, '#fff', 0.85);
-  // 독식: 체력 절반 이상을 혼자 깎고 처치
-  const soloP = nameOf(solo);
-  if (soloP) renderer.text(x, y + 95, `${solo === myId() ? '내' : soloP.name} 독식!`, COLORS[soloP.color].hex, 1.15);
+  // 독식: 체력 절반 이상을 깎은 사람 (막타와 따로, 정확히 절반씩이면 둘)
+  solo.forEach((id, i) => {
+    const s = nameOf(id);
+    if (s) renderer.text(x, y + 95 + i * 45, `${id === myId() ? '내' : s.name} 독식!`, COLORS[s.color].hex, 1.15);
+  });
+  if (by === myId()) bossFeedback(feverStarted, comboBonus);
+  // 막타를 안 친 독식자도 보스 헌터 게이지로 피버가 터졌으면 표시
+  else if (soloFever.includes(myId())) bossFeedback(true, false);
 });
 socket.on('boss:escaped', ({ circleId }) => {
   circles.delete(circleId);

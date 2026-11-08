@@ -1110,3 +1110,45 @@ test('화면 밖으로 나간 보스는 독식·막타 없음, 피해 기록도 
   assert.ok(!sent.includes('boss:killed'));
   assert.equal(me.score, before);
 });
+
+/** 보낸 이벤트 이름과 내용을 함께 기록하는 가짜 io */
+function payloadRoom() {
+  const log: { ev: string; d: Record<string, unknown> }[] = [];
+  const io = { to: () => ({ emit(ev: string, d: Record<string, unknown>) { log.push({ ev, d }); } }), sockets: { sockets: new Map() } } as never;
+  const room = new Room(io, 'TEST', () => {});
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  const b = room.join('s2', 'k2', 'B') as { id: string };
+  room.fillBots = false;
+  assert.equal(room.start(a.id), null);
+  const r = room as unknown as { startAt: number; circles: Map<number, Circle> };
+  r.startAt = 0;
+  const me = room.players.find((p) => p.id === a.id)!, other = room.players.find((p) => p.id === b.id)!;
+  return { room, me, other, circles: r.circles, log };
+}
+
+test('보스 타격으로 피버가 터지면 알림에 feverStarted·comboBonus가 실림', (t) => {
+  const { room, me, circles, log } = payloadRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  const b: Circle = { ...slowAt(97, 'boss', CX + 300, CY, now), boss: 'normal', r: 90, hp: 24, maxHp: 24 };
+  circles.set(97, b);
+  me.fever = 99; me.combo = 9;
+  const p0 = circlePosOf(b, now);
+  room.click(me.id, { circleId: 97, x: p0.x, y: p0.y });
+  const hit = log.find((e) => e.ev === 'boss:hit')!;
+  assert.deepEqual([hit.d.feverStarted, hit.d.comboBonus], [true, true]);
+});
+
+test('막타를 못 친 사람도 독식하면 boss:killed의 solo 목록에 들어감', (t) => {
+  const { room, me, other, circles, log } = payloadRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  const b: Circle = { ...slowAt(98, 'boss', CX + 300, CY, now), boss: 'normal', r: 90, hp: 1, maxHp: 24 };
+  circles.set(98, b);
+  (room as unknown as { bossHits: Map<number, Map<string, number>> }).bossHits.set(98, new Map([[other.id, 14], [me.id, 9]]));
+  const p0 = circlePosOf(b, now);
+  room.click(me.id, { circleId: 98, x: p0.x, y: p0.y });
+  const killed = log.find((e) => e.ev === 'boss:killed')!;
+  assert.deepEqual(killed.d.solo, [other.id]);
+  assert.equal(other.score, RULES.boss.solo.points * 2 + RULES.boss.mvp); // 사이 구역 ×2, 최다 타격 +5
+});

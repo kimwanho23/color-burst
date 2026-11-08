@@ -4,7 +4,7 @@
  */
 import { AUG, COMBO, LEGEND, combosOf, hasLegend, jackpotMult, modsOf } from './arcade.ts';
 import {
-  RULES, addFever, addLost, addSrc, afterMultOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
+  RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
   luckyMods, ragePenalty, settleFever, zoneMult, zoneOf, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 
@@ -19,11 +19,13 @@ export interface BossStrike {
   gained: number;
   jackpot: number;
   killed: boolean;
-  /** 막타 + 독식 점수 */
+  /** 막타 점수 (독식 보너스는 solos) */
   killGained: number;
   killJackpot: number;
-  /** 최대 체력의 RULES.boss.solo.pct% 이상을 혼자 깎고 처치 */
+  /** 막타 친 사람이 독식했는지 (막타 점수 ×killMult) */
   solo: boolean;
+  /** 독식한 사람들 (처치될 때 최대 체력의 RULES.boss.solo.pct% 이상을 깎음, 막타와 따로). 그 사람 배율로 받은 점수 */
+  solos: { id: string; gained: number; feverStarted: boolean }[];
   mvp: string | null;
   mvpGained: number;
   feverStarted: boolean;
@@ -35,14 +37,14 @@ export interface BossStrike {
  * - 보호막: 파쇄 레전드가 아니면 막힘. 붉은 공격형: 보스 헌터 조합이 아니면 감점
  * - 피해(남은 체력까지)만큼 타격 점수, 콤보 +1·피버 게이지 +RULES.boss.feverGain, 콤보 보너스
  * - 배율은 일반 원과 같고(상한 RULES.multCap), 잭팟은 그 위. 선봉은 보스마다 내 첫 타 ×N
- * - 막타: 독식이면 막타 점수 ×killMult와 독식 보너스, 보스 헌터면 독식 때 피버 게이지. MVP는 고정 점수
+ * - 막타: 막타 친 사람이 독식했으면 막타 점수 ×killMult. 독식 보너스는 막타와 따로 절반 이상 깎은 사람 모두(보스 헌터면 피버 게이지). MVP는 고정 점수
  */
 export function strikeBoss(
   p: PlayerState, c: Circle, hits: Map<string, number>, players: PlayerState[], now: number, G: GameRules, rand: () => number = Math.random,
 ): BossStrike {
   const out: BossStrike = {
     blocked: false, enraged: false, damage: 0, gained: 0, jackpot: 1, killed: false, killGained: 0, killJackpot: 1,
-    solo: false, mvp: null, mvpGained: 0, feverStarted: false, comboBonus: false,
+    solo: false, solos: [], mvp: null, mvpGained: 0, feverStarted: false, comboBonus: false,
   };
   const B = RULES.boss;
   const st = bossState(c, now);
@@ -91,13 +93,28 @@ export function strikeBoss(
     out.killed = true;
     p.stats.bossKills++;
     const S = B.solo;
-    out.solo = (hits.get(p.id) ?? 0) * 100 >= (c.maxHp ?? hp) * S.pct;
+    const isSolo = (id: string) => (hits.get(id) ?? 0) * 100 >= (c.maxHp ?? hp) * S.pct;
+    out.solo = isSolo(p.id);
     out.killJackpot = jackpotMult(lucky, rand, jl);
-    out.killGained = Math.round(info.kill * (out.solo ? S.killMult : 1) * mult * out.killJackpot) + (out.solo ? Math.round(S.points * mult) : 0);
+    out.killGained = Math.round(info.kill * (out.solo ? S.killMult : 1) * mult * out.killJackpot);
     p.score += out.killGained;
     addSrc(p, 'boss', out.killGained, { fever, jackpot: out.killJackpot });
-    // 보스 헌터 조합: 독식하면 피버 게이지
-    if (out.solo && K.has('bossHunter') && addFever(p, COMBO.bossSoloFever, now, G, players, true)) out.feverStarted = true;
+    // 독식: 막타와 따로, 절반 이상 깎은 사람마다 그 사람 배율로 (막타 친 사람은 이번 타격 배율). 보스 헌터 조합이면 피버 게이지
+    const zone = zoneOf(circlePos(c, now));
+    for (const [id] of hits) {
+      const q = players.find((x) => x.id === id);
+      if (!q || !isSolo(id)) continue;
+      const qFever = isFever(q, now);
+      const qMult = q === p ? mult : capMult((qFever ? feverMultOf(q, G) : now < q.afterUntil ? afterMultOf(q) : 1)
+        * scoreBoostOf(modsOf(q.picks)) * itemMult(q, now, false) * zoneMult(zone, modsOf(q.picks)) * extraMult(q, now, players));
+      const gained = Math.round(S.points * qMult);
+      q.score += gained;
+      addSrc(q, 'boss', gained, { fever: q === p ? fever : qFever });
+      const started = combosOf(q.picks).has('bossHunter') && addFever(q, COMBO.bossSoloFever, now, G, players, true);
+      if (started && q === p) out.feverStarted = true;
+      else if (started) q.stats.fevers++;
+      out.solos.push({ id, gained, feverStarted: started });
+    }
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
     let best = 0;
     for (const [pid, n] of hits) if (n > best || (n === best && pid === p.id)) { best = n; out.mvp = pid; }

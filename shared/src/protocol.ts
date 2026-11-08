@@ -149,10 +149,13 @@ export interface ServerToClient {
   'circles:hold': (d: { ids: number[]; at: number; ms: number }) => void;
   /** 보스를 때림 (hp: 남은 체력) */
   /** blocked: 방어형 보호막에 막힘 / enraged: 붉은 공격형을 때려 점수를 잃음 (gained가 음수) */
-  'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number; jackpot: number; blocked?: boolean; enraged?: boolean }) => void;
+  'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number; jackpot: number; blocked?: boolean; enraged?: boolean; feverStarted?: boolean; comboBonus?: boolean }) => void;
   /** 보스 처치: by가 막타, mvp가 최다 타격 */
-  /** solo: 독식한 사람 id (없으면 null) */
-  'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number; solo: string | null }) => void;
+  /**
+   * solo: 독식한 사람 id들 (막타와 따로, 없으면 빈 배열). soloFever: 그중 독식 게이지(보스 헌터)로 피버가 터진 사람.
+   * gained: 막타 친 사람의 타격 + 막타 + 독식. feverStarted·comboBonus: 막타 친 사람
+   */
+  'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number; solo: string[]; soloFever: string[]; feverStarted: boolean; comboBonus: boolean }) => void;
   'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
   'game:over': (d: GameOver) => void;

@@ -54,29 +54,29 @@ test('타격 점수는 피해 비례: 파쇄 3타면 3배, 남은 체력보다 �
 test('독식: 최대 체력 50% 이상이면 +60×배율, 49%면 없음', () => {
   // 4인 체력 24: 마지막 1을 깎아 12가 되면 독식
   const p = pl('p', 0), x = pl('x', 1);
-  const r = strikeBoss(p, boss(0, 1), new Map([['p', 11], ['x', 12]]), [p, x], NOW, G, no);
-  assert.deepEqual([r.solo, r.killGained], [true, RULES.boss.kill * RULES.boss.solo.killMult + RULES.boss.solo.points]);
+  const r = strikeBoss(p, boss(0, 1), new Map([['p', 11], ['x', 1]]), [p, x], NOW, G, no);
+  assert.deepEqual([r.solo, r.killGained, r.solos], [true, RULES.boss.kill * RULES.boss.solo.killMult, [{ id: 'p', gained: RULES.boss.solo.points, feverStarted: false }]]);
   const q = pl('q', 0);
-  const r2 = strikeBoss(q, boss(0, 1), new Map([['q', 10], ['x', 13]]), [q, x], NOW, G, no);
-  assert.deepEqual([r2.solo, r2.killGained], [false, RULES.boss.kill]);
+  const r2 = strikeBoss(q, boss(0, 1), new Map([['q', 10], ['y', 3]]), [q, x], NOW, G, no);
+  assert.deepEqual([r2.solo, r2.killGained, r2.solos], [false, RULES.boss.kill, []]);
 });
 
 test('독식은 실제로 깎은 양 기준: 막타 초과 피해는 세지 않음', () => {
   const p = pl('p', 0, P('crusher', 3)); // 5타
-  const r = strikeBoss(p, boss(0, 1), new Map([['p', 10], ['x', 13]]), [p], NOW, G, no);
+  const r = strikeBoss(p, boss(0, 1), new Map([['p', 10], ['y', 3]]), [p], NOW, G, no);
   assert.deepEqual([r.damage, r.solo], [1, false]); // 10 + 1 = 11 < 12
 });
 
 test('독식한 사람이 막타면 막타 점수 2배, 독식 아닌 막타는 그대로, 보스 헌터 ×2와 곱함', () => {
   const p = pl('p', 0, ...HUNTER); // 피해 1 + 1, 막타 (20 + 10) × 2
   p.fever = 0;
-  const r = strikeBoss(p, boss(0, 2), new Map([['p', 11], ['x', 11]]), [p], NOW, G, no);
+  const r = strikeBoss(p, boss(0, 2), new Map([['p', 11], ['y', 9]]), [p], NOW, G, no);
   const kill = (RULES.boss.kill + 10) * COMBO.bossKillMult;
-  assert.deepEqual([r.solo, r.killGained], [true, kill * RULES.boss.solo.killMult + RULES.boss.solo.points]);
+  assert.deepEqual([r.solo, r.killGained, r.solos[0]?.gained], [true, kill * RULES.boss.solo.killMult, RULES.boss.solo.points]);
   // 독식하면 피버 게이지 +25 (타격 +4와 별도)
   assert.equal(p.fever, RULES.boss.feverGain + COMBO.bossSoloFever);
   const q = pl('q', 0, ...HUNTER);
-  const r2 = strikeBoss(q, boss(0, 2), new Map([['q', 5], ['x', 17]]), [q], NOW, G, no);
+  const r2 = strikeBoss(q, boss(0, 2), new Map([['q', 5], ['y', 15]]), [q], NOW, G, no);
   assert.deepEqual([r2.solo, r2.killGained, q.fever], [false, kill, RULES.boss.feverGain]);
 });
 
@@ -105,6 +105,24 @@ test('배율 쌓임 상한은 보스에도 적용, 잭팟은 그 위', () => {
 
 test('MVP: 가장 많이 깎은 사람이 고정 +5', () => {
   const p = pl('p', 0), x = pl('x', 1);
-  const r = strikeBoss(p, boss(0, 1), new Map([['p', 3], ['x', 20]]), [p, x], NOW, G, no);
+  const r = strikeBoss(p, boss(0, 1), new Map([['p', 3], ['x', 11]]), [p, x], NOW, G, no); // x 11 < 절반이라 독식 없음
   assert.deepEqual([r.mvp, r.mvpGained, x.score], ['x', RULES.boss.mvp, RULES.boss.mvp]);
+});
+
+test('독식은 막타와 따로: 막타를 못 쳐도 절반 이상 깎았으면 그 사람 배율로 +60, 보스 헌터면 게이지 +25', () => {
+  const p = pl('p', 0), x = pl('x', 1, ...HUNTER);
+  x.feverUntil = 0; x.buffs.double = NOW + 5000; // x는 점수 2배 중
+  const r = strikeBoss(p, boss(0, 1), new Map([['x', 14], ['p', 9]]), [p, x], NOW, G, no);
+  assert.deepEqual([r.killed, r.solo, r.killGained], [true, false, RULES.boss.kill]);
+  assert.deepEqual(r.solos, [{ id: 'x', gained: RULES.boss.solo.points * 2, feverStarted: false }]);
+  assert.equal(x.score, RULES.boss.solo.points * 2 + RULES.boss.mvp); // 독식 + 최다 타격
+  assert.equal(x.fever, COMBO.bossSoloFever);
+});
+
+test('정확히 절반씩이면 둘 다 독식, 막타 친 쪽은 막타 2배', () => {
+  const p = pl('p', 0), x = pl('x', 1);
+  const r = strikeBoss(p, boss(0, 1), new Map([['x', 12], ['p', 11]]), [p, x], NOW, G, no);
+  assert.equal(r.solo, true);
+  assert.equal(r.killGained, RULES.boss.kill * RULES.boss.solo.killMult);
+  assert.deepEqual(r.solos.map((s) => s.id).sort(), ['p', 'x']);
 });
