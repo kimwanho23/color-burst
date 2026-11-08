@@ -35,8 +35,9 @@ test('콤보 보너스: 중앙의 왕 레전드로 9 → 11이 돼도 10콤보 �
   assert.equal(r.comboBonus, true);
 });
 
-test('무지개 사냥 레전드로 터진 피버도 방해 전파가 걸림', () => {
+test('무지개 사냥 레전드로 게이지가 차서 터진 피버도 방해 전파가 걸림', () => {
   const p = pl('p', 0, L('rainbowHunt'), N('jammer')), o = pl('o', 1);
+  p.fever = 60;
   const r = resolveClaim(p, 'rainbow', [p, o], 100, G);
   assert.equal(r.feverStarted, true);
   assert.ok(o.blurUntil > 100);
@@ -68,12 +69,17 @@ test('피버가 끝나면 예열 레전드 배율을 지우고, 과충전 채움
   assert.equal(q.fever, LEGEND.overchargeKeep);
 });
 
-test('철옹성: 보험 100%면 횟수를 쓰지 않음', () => {
+test('철옹성: 보험 100%면 보험 쪽(그대로), 아니면 80% 유지', () => {
   const p = pl('p', 0, N('shield'), L('insurance'), N('rebound'));
   startRound(p, 0, G);
   p.combo = 5;
   resolveMiss(p, 100, G, [p]);
-  assert.deepEqual([p.combo, p.ironLeft], [5, 1]);
+  assert.equal(p.combo, 5);
+  const q = pl('q', 0, N('shield'), N('insurance'), N('rebound'));
+  startRound(q, 0, G);
+  q.combo = 10;
+  resolveMiss(q, 100, G, [q]);
+  assert.equal(q.combo, 8);
 });
 
 test('해머 레전드 3타 뒤에도 보스 헌터 +1', () => {

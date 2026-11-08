@@ -34,11 +34,12 @@ test('편식가·노란 맛 레전드: 피버 게이지', () => {
   assert.ok(Math.abs(c.fever - d.fever) < 1e-9);
 });
 
-test('무지개 사냥 레전드: 즉시 피버', () => {
-  const p = pl('a', 0, 'rainbowHunt');
+test('무지개 사냥 레전드: 피버 게이지 2배 (즉시 피버 아님)', () => {
+  const a = newPlayer('a', 'A', 0), p = pl('b', 0, 'rainbowHunt');
+  resolveClaim(a, 'rainbow', [a], 1000, G);
   const r = resolveClaim(p, 'rainbow', [p], 1000, G);
-  assert.equal(r.feverStarted, true);
-  assert.ok(p.feverUntil > 1000);
+  assert.equal(r.feverStarted, false);
+  assert.equal(p.fever, a.fever * 2);
 });
 
 test('콤보 장인 레전드: 콤보 보너스 +15, 폭주 레전드는 피버 중 2배', () => {

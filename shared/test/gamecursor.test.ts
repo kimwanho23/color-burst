@@ -14,33 +14,33 @@ const round = (p: { x: number; y: number } | null) => p && { x: Math.round(p.x),
 test('GameCursor: 반대가 걸리면 미끄러져 거울 위치로', (t) => {
   const c = clock(t);
   const g = new GameCursor();
-  g.move({ x: 1200, y: 300 }, { x: 0, y: 0 });
+  g.move({ x: 900, y: 300 }, { x: 0, y: 0 });
   g.frame(null, 16, false);
   g.frame({ invert: true }, 16, false);
-  assert.deepEqual(round(g.pos), { x: 1200, y: 300 });
+  assert.deepEqual(round(g.pos), { x: 900, y: 300 });
   c.now += RULES.sabotage.slideMs / 2;
   g.frame({ invert: true }, 16, false);
-  assert.deepEqual(round(g.pos), { x: 800, y: 450 });
+  assert.deepEqual(round(g.pos), { x: 550, y: 550 });
   c.now += RULES.sabotage.slideMs;
   g.frame({ invert: true }, 16, false);
-  assert.deepEqual(round(g.pos), { x: 400, y: 600 });
+  assert.deepEqual(round(g.pos), { x: 200, y: 800 });
 });
 
 test('GameCursor: 반대 중에도 오오라 끌림이 유지되고, 오오라를 벗어나면 미끄러져 돌아옴', (t) => {
   const c = clock(t);
   const g = new GameCursor();
-  g.move({ x: 1200, y: 300 }, { x: 0, y: 0 });
+  g.move({ x: 900, y: 300 }, { x: 0, y: 0 });
   g.frame({ invert: true }, 16, false);
   c.now += RULES.sabotage.slideMs * 2;
-  g.frame({ invert: true }, 16, false); // (400, 600)
-  g.pull({ x: 400, y: 800 }, 50);
+  g.frame({ invert: true }, 16, false); // (200, 800)
+  g.pull({ x: 200, y: 1000 }, 50);
   g.frame({ invert: true }, 16, true);
   g.frame({ invert: true }, 16, true);
-  assert.deepEqual(round(g.pos), { x: 400, y: 650 });
+  assert.deepEqual(round(g.pos), { x: 200, y: 850 });
   g.frame({ invert: true }, 16, false);
   c.now += RULES.sabotage.slideMs * 2;
   g.frame({ invert: true }, 16, false);
-  assert.deepEqual(round(g.pos), { x: 400, y: 600 });
+  assert.deepEqual(round(g.pos), { x: 200, y: 800 });
 });
 
 test('GameCursor: 감도 감소 중에도 오오라 끌림이 쌓임', (t) => {
@@ -55,13 +55,13 @@ test('GameCursor: 감도 감소 중에도 오오라 끌림이 쌓임', (t) => {
 test('GameCursor: 누르는 순간(터치)에는 이번 위치의 거울 자리로 바로', (t) => {
   const c = clock(t);
   const g = new GameCursor();
-  g.move({ x: 1200, y: 300 }, { x: 0, y: 0 });
+  g.move({ x: 900, y: 300 }, { x: 0, y: 0 });
   g.frame({ invert: true }, 16, false);
   c.now += RULES.sabotage.slideMs * 2;
   g.frame({ invert: true }, 16, false);
   g.move({ x: 1000, y: 200 }, { x: 0, y: 0 });
   g.snap({ invert: true });
-  assert.deepEqual(round(g.pos), { x: 600, y: 700 });
+  assert.deepEqual(round(g.pos), { x: 100, y: 900 });
 });
 
 // ---------- 맵 패턴 ----------
@@ -119,15 +119,15 @@ test('GameCursor 패턴 + 반대: 이동이 반대로, 패턴이 끝나면 미�
   const c = clock(t);
   const v = { id: 'walls' as const, warnAt: -3000, at: 0, until: 8000, walls: [{ x: 10, y: 10, w: 40, h: 40 }] }; // 멀리 있는 벽
   const g = new GameCursor();
-  g.move({ x: 800, y: 450 }, { x: 0, y: 0 });
+  g.move({ x: 550, y: 550 }, { x: 0, y: 0 });
   g.frame({ invert: true }, 16, false, { pattern: v, t: 100 });
-  g.move({ x: 900, y: 450 }, { x: 100, y: 0 });
+  g.move({ x: 650, y: 550 }, { x: 100, y: 0 });
   g.frame({ invert: true }, 16, false, { pattern: v, t: 116 });
-  assert.equal(Math.round(g.pos!.x), 700, '반대로 100');
+  assert.equal(Math.round(g.pos!.x), 450, '반대로 100');
   g.frame({ invert: true }, 16, false, { pattern: v, t: 8000 });
   c.now += RULES.sabotage.slideMs * 2;
   g.frame({ invert: true }, 16, false, { pattern: v, t: 8100 });
-  assert.deepEqual(round(g.pos), { x: 700, y: 450 }, '진짜 900의 거울 위치');
+  assert.deepEqual(round(g.pos), { x: 450, y: 550 }, '진짜 650의 거울 위치');
 });
 
 test('리뷰: 벽은 진짜 위치를 따라가며 막힐 뿐, 마우스를 되돌리면 어긋남 없이 진짜 위치로', (t) => {

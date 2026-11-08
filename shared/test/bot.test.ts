@@ -12,7 +12,7 @@ test('봇은 황금 원에 늦게 반응하고, 노려도 놓칠 수 있다', (t
   assert.equal(bot.think(me, [], [me], t0), null); // 첫 클릭 시각 예약 (t0 + 800)
   const young = makeGold(1, t0 + 800 - 1000);
   assert.equal(bot.think(me, [young], [me], t0 + 800), null, '나온 지 1초면 아직 반응 안 함');
-  const old = makeGold(2, t0 + 2000 - 2000);
+  const old = makeGold(2, t0 + 2000 - 2500); // 나온 지 2.5초 (가운데 발사 보호 구역 밖)
   rnd = 0.69; // 명중 확률 0.7 안
   assert.equal(bot.think(me, [old], [me], t0 + 2000)?.id, 2);
   rnd = 0.7; // 명중 확률 밖 → 놓침

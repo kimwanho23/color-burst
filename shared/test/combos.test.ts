@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { COMBO,
   ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
   resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type EventId, type Pick,
 } from '../src/index.ts';
@@ -24,12 +24,17 @@ test('조합 효과: 피버 마스터·콤보 머신·보스 헌터·견제왕·
   assert.equal(feverMultOf(f, G), G.feverMult + 0.5 + 1);
   const c = pl(0, 'comboArtist', 'insurance');
   c.combo = 8; // 주기 9
-  assert.equal(resolveClaim(c, 0, [c], 100, G).gained, 3 + 5 + 5);
-  assert.equal(bossHitInfo(pl(0, 'hammer', 'hunter', 'crusher'), () => 0.99).damage, 2); // 기본 1 + 파쇄 0.5(이번엔 안 터짐) + 조합 1
+  assert.equal(resolveClaim(c, 0, [c], 100, G).gained, 3 + 5 * COMBO.comboBonusMult, '콤보 머신: 콤보 보너스 ×2');
+  const h = bossHitInfo(pl(0, 'hammer', 'hunter', 'crusher'), () => 0.99);
+  assert.equal(h.damage, 2); // 기본 1 + 파쇄 0.5(이번엔 안 터짐) + 조합 1
+  const hb = bossHitInfo(pl(0, 'hammer', 'hunter'), () => 0.99);
+  assert.equal(h.hit, hb.hit * COMBO.bossHitMult, '보스 헌터: 타격 점수 ×1.5');
+  assert.equal(h.kill, hb.kill * COMBO.bossKillMult, '막타 ×2');
   const s = pl(0, 'plunder', 'counterPro', 'thickSkin'), o = newPlayer('o', 'O', 1);
-  assert.equal(resolveClaim(s, 1, [s, o], 100, G).gained, 1 + 2);
+  assert.equal(resolveClaim(s, 1, [s, o], 100, G).gained, 1 * COMBO.stealMult, '견제왕: 견제 점수 ×3');
+  assert.equal(s.markedUntil, 100 + G.markMs - 1000 - COMBO.stealMarkCutMs, '표적 시간: 철면피 1초 + 견제왕 1초');
   const g = pl(0, 'picky', 'yellowTaste');
-  assert.equal(resolveClaim(g, 'y', [g], 100, G).gained, 2 + 1);
+  assert.equal(resolveClaim(g, 'y', [g], 100, G).gained, 3 + 1 + 1, '미식가: 노란 원 = 내 색 (편식가 +1, 노란 맛 +1)');
 });
 
 test('행운아: 잭팟 확률 +10 / 변두리: 가장자리 커서면 자석 ×1.5', () => {
@@ -42,19 +47,19 @@ test('행운아: 잭팟 확률 +10 / 변두리: 가장자리 커서면 자석 ×
   assert.equal(magnetOf(m, 0, { x: 30, y: 450 }), 90);
 });
 
-test('철옹성: 라운드마다 한 번만 콤보 끊김을 막고, 기세로 이미 안 끊기면 안 씀', () => {
+test('철옹성: 끊길 때마다 80% 유지 (보험 20%보다 많이), 기세면 안 줄어듦', () => {
   const p = pl(0, 'shield', 'insurance', 'rebound');
   startRound(p, 0, G);
-  p.combo = 5;
+  p.combo = 10;
   resolveMiss(p, 100, G, [p]);
-  assert.deepEqual([p.combo, p.ironLeft], [5, 0]);
+  assert.equal(p.combo, 8);
   resolveMiss(p, 200, G, [p]);
-  assert.equal(p.combo, 1); // 보험 20%
+  assert.equal(p.combo, 6);
   const q = pl(0, 'shield', 'insurance', 'rebound', 'momentum');
   startRound(q, 0, G);
   q.combo = 5;
   resolveMiss(q, 100, G, [q]);
-  assert.deepEqual([q.combo, q.ironLeft], [5, 1]);
+  assert.equal(q.combo, 5);
 });
 
 test('빌드 가중치: 같은 분류가 더 자주, 다른 분류도 나오고 3장은 서로 다름', () => {

@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { RULES, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type MapPattern, type Pick } from '../src/index.ts';
+import { FIELD, RULES, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type MapPattern, type Pick } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
+/** 판 중앙 (예전 1600×900 판의 (800, 450) 자리) */
+const CX = FIELD.w / 2, CY = FIELD.h / 2;
 const fakeIo = () => ({ to: () => ({ emit(ev: string) { sent.push(ev); } }), sockets: { sockets: new Map() } }) as never;
 
 function playingRoom() {
@@ -21,7 +23,7 @@ function playingRoom() {
 test('이미 가져간 원을 늦게 누르면 거절만 하고 빈 곳 페널티는 없다', () => {
   const { room, me } = playingRoom();
   me.combo = 12; me.fever = 40;
-  room.click(me.id, { circleId: 999, x: 800, y: 450 });
+  room.click(me.id, { circleId: 999, x: 550, y: 550 });
   assert.deepEqual([me.combo, me.fever, me.stats.misses], [12, 40, 0]);
   room.destroy();
 });
@@ -34,7 +36,7 @@ test('필드 클리어: 원이 많아도 플레이어 상태는 한 번만 보�
   circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
   t.mock.method(Math, 'random', () => 0.5); // 전설 [시간 정지, 필드 클리어, 1등 저격] 중 필드 클리어
   sent.length = 0;
-  room.click(me.id, { circleId: 1, x: 1100, y: 450 });
+  room.click(me.id, { circleId: 1, x: 850, y: 550 });
   assert.equal(sent.filter((e) => e === 'circle:claimed').length, 20);
   assert.equal(sent.filter((e) => e === 'players').length, 1);
   room.destroy();
@@ -66,7 +68,7 @@ test('발사 보호 구역: 필드 클리어·장판도 가운데 원은 못 잡
   circles.set(201, { id: 201, kind: 0, angle: 0, speed: 300, r: 40, born: now - 1000 }); // 바깥
   circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 2, speed: 300, r: 34, born: now - 1000 });
   t.mock.method(Math, 'random', () => 0.5); // 전설 [시간 정지, 필드 클리어, 1등 저격] 중 필드 클리어
-  const q = { x: 800 + Math.cos(2) * 300, y: 450 + Math.sin(2) * 300 };
+  const q = { x: CX + Math.cos(2) * 300, y: CY + Math.sin(2) * 300 };
   room.click(me.id, { circleId: 1, x: q.x, y: q.y });
   assert.equal(circles.has(200), true);
   assert.equal(circles.has(201), false);
@@ -78,14 +80,14 @@ test('보스를 터뜨린 직후 1초 동안은 빈 곳 클릭 페널티 없음'
   const now = Date.now();
   // 가운데 밖에 멈춰 있는 체력 1짜리 보스
   circles.set(50, { id: 50, kind: 'boss', angle: 0, speed: 300, r: 90, born: now - 1000, hp: 1, maxHp: 1 });
-  room.click(me.id, { circleId: 50, x: 1100, y: 450 });
+  room.click(me.id, { circleId: 50, x: 850, y: 550 });
   assert.equal(circles.has(50), false);
   me.combo = 7;
-  room.click(me.id, { circleId: null, x: 10, y: 10 });
+  room.click(me.id, { circleId: null, x: -240, y: 110 });
   assert.deepEqual([me.combo, me.stats.misses], [7, 0]);
   // 1초가 지나면 다시 페널티
   (room as unknown as { bossKilledAt: number }).bossKilledAt = Date.now() - 1001;
-  room.click(me.id, { circleId: null, x: 10, y: 10 });
+  room.click(me.id, { circleId: null, x: -240, y: 110 });
   assert.equal(me.combo, 0);
   room.destroy();
 });
@@ -119,7 +121,7 @@ test('방어형 보스: 보호막 중에 때리면 피해·점수 없음, 헛클
   circles.set(60, { id: 60, kind: 'boss', boss: 'guard', angle: 0, speed: 120, r: 90, born: now - 2500, hp: 5, maxHp: 5 });
   me.combo = 4;
   sent.length = 0;
-  room.click(me.id, { circleId: 60, x: 800 + 300, y: 450 });
+  room.click(me.id, { circleId: 60, x: CX + 300, y: CY });
   assert.deepEqual([circles.get(60)!.hp, me.score, me.combo, me.stats.misses], [5, 0, 4, 0]);
   assert.ok(sent.includes('boss:hit'));
   room.destroy();
@@ -131,9 +133,9 @@ test('공격형 보스: 붉을 때 때리면 −2, 다시 때리면 −4, 피해
   // 태어난 지 3초: 붉은 상태 (4초마다 마지막 1.5초)
   circles.set(61, { id: 61, kind: 'boss', boss: 'rage', angle: 0, speed: 100, r: 90, born: now - 3000, hp: 5, maxHp: 5 });
   me.score = 20;
-  room.click(me.id, { circleId: 61, x: 800 + 300, y: 450 });
+  room.click(me.id, { circleId: 61, x: CX + 300, y: CY });
   assert.equal(me.score, 18);
-  room.click(me.id, { circleId: 61, x: 800 + 300, y: 450 });
+  room.click(me.id, { circleId: 61, x: CX + 300, y: CY });
   assert.equal(me.score, 14);
   assert.equal(circles.get(61)!.hp, 5);
   room.destroy();
@@ -152,7 +154,7 @@ test('보스 등장: 한 번에 여러 마리여도 화면에는 최대 3마리'
 test('빈 곳 클릭은 지금처럼 페널티', () => {
   const { room, me } = playingRoom();
   me.combo = 12;
-  room.click(me.id, { circleId: null, x: 10, y: 10 });
+  room.click(me.id, { circleId: null, x: -240, y: 110 });
   assert.equal(me.combo, 0);
   assert.equal(me.stats.misses, 1);
   room.destroy();
@@ -171,17 +173,17 @@ type Priv = {
 const priv = (room: Room) => room as unknown as Priv;
 /** now에 (x, y)에 있고 거의 안 움직이는 원 */
 const slowAt = (id: number, kind: Circle['kind'], x: number, y: number, now: number): Circle => {
-  const d = Math.hypot(x - 800, y - 450);
-  return { id, kind, angle: Math.atan2(y - 450, x - 800), speed: d / 100, r: 40, born: now - 100_000 };
+  const d = Math.hypot(x - CX, y - CY);
+  return { id, kind, angle: Math.atan2(y - CY, x - CX), speed: d / 100, r: 40, born: now - 100_000 };
 };
 
 test('스턴 중에는 빈 곳·원 클릭 모두 무시', () => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
   me.stunUntil = now + 1000; me.combo = 5;
-  circles.set(70, slowAt(70, 0, 1200, 450, now));
-  room.click(me.id, { circleId: null, x: 10, y: 10 });
-  room.click(me.id, { circleId: 70, x: 1200, y: 450 });
+  circles.set(70, slowAt(70, 0, 950, 550, now));
+  room.click(me.id, { circleId: null, x: -240, y: 110 });
+  room.click(me.id, { circleId: 70, x: 950, y: 550 });
   assert.deepEqual([me.combo, me.stats.misses, circles.has(70)], [5, 0, true]);
   room.destroy();
 });
@@ -190,9 +192,9 @@ test('레이저: 선 위에 커서가 있는 사람만 1.5초 스턴, 한 레이
   const { room, me } = playingRoom();
   const other = room.players.find((p) => p.id !== me.id)!;
   const now = Date.now();
-  room.cursor(me.id, { x: 800, y: 300 });
-  room.cursor(other.id, { x: 800, y: 600 });
-  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }], at: now - 10, hit: new Set() }];
+  room.cursor(me.id, { x: 550, y: 400 });
+  room.cursor(other.id, { x: 550, y: 700 });
+  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1350, y: 400 } }], at: now - 10, hit: new Set() }];
   priv(room).nextLaserAt = Infinity;
   sent.length = 0;
   priv(room).updateLaser(now);
@@ -208,10 +210,10 @@ test('레이저: 선 위에 커서가 있는 사람만 1.5초 스턴, 한 레이
 test('레이저: 0.5초 넘게 소식 없는 커서는 안 맞는다', (t) => {
   const { room, me } = playingRoom();
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
-  room.cursor(me.id, { x: 800, y: 300 });
+  room.cursor(me.id, { x: 550, y: 400 });
   t.mock.timers.tick(600);
   const now = Date.now();
-  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }], at: now - 10, hit: new Set() }];
+  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1350, y: 400 } }], at: now - 10, hit: new Set() }];
   priv(room).nextLaserAt = Infinity;
   priv(room).updateLaser(now);
   assert.equal(me.stunUntil, 0);
@@ -223,19 +225,19 @@ test('자석: 커서 근처 내 원을 1초에 2개까지 끌어와 0.25초 뒤 
   const other = room.players.find((p) => p.id !== me.id)!;
   me.picks = [{ id: 'magnet', tier: 0 }]; // 반경 60
   const now = Date.now();
-  room.cursor(me.id, { x: 1200, y: 450 });
-  for (const [id, x] of [[81, 1220], [82, 1240], [83, 1180]] as const) circles.set(id, slowAt(id, me.color, x, 450, now));
+  room.cursor(me.id, { x: CX + 300, y: CY });
+  for (const [id, x] of [[81, CX + 320], [82, CX + 340], [83, CX + 280]] as const) circles.set(id, slowAt(id, me.color, x, CY, now));
   sent.length = 0;
   priv(room).updatePulls(now);
   assert.equal(sent.filter((e) => e === 'circle:pull').length, 2);
   // 가장 가까운 81(20)과 83(20) 중 둘이 끌림 → 82는 남음
-  room.click(other.id, { circleId: 81, x: 1220, y: 450 });
+  room.click(other.id, { circleId: 81, x: CX + 320, y: CY });
   assert.equal(other.score, 0);
   priv(room).updatePulls(now + 300);
   assert.equal(me.score, 12); // 원 2개 × 3점 × 사이 구역 ×2
   assert.equal(circles.has(82), true);
   // 1.1초 뒤에도 커서를 계속 움직이고 있다고 본다 (커서가 오래되면 끌지 않음)
-  (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors.set(me.id, { x: 1200, y: 450, at: now + 1100 });
+  (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors.set(me.id, { x: CX + 300, y: CY, at: now + 1100 });
   priv(room).updatePulls(now + 1100);
   assert.equal(sent.filter((e) => e === 'circle:pull').length, 3);
   room.destroy();
@@ -245,8 +247,8 @@ test('자석: 스턴 중이거나 커서가 오래되면 끌지 않는다', () =
   const { room, me, circles } = playingRoom();
   me.picks = [{ id: 'magnet', tier: 0 }];
   const now = Date.now();
-  circles.set(91, slowAt(91, me.color, 1220, 450, now));
-  room.cursor(me.id, { x: 1200, y: 450 });
+  circles.set(91, slowAt(91, me.color, 970, 550, now));
+  room.cursor(me.id, { x: 950, y: 550 });
   me.stunUntil = now + 1000;
   sent.length = 0;
   priv(room).updatePulls(now);
@@ -286,10 +288,10 @@ test('라운드가 끝날 때 끌려오던 원은 끄는 사람이 잡은 것으
   const r = room as unknown as { circles: Map<number, Circle>; pulls: Map<number, unknown>; endRound(): void; startAt: number };
   r.startAt = 0;
   const now = Date.now();
-  r.circles.set(95, slowAt(95, me.color, 1200, 450, now));
-  r.pulls.set(95, { circleId: 95, by: me.id, from: { x: 1200, y: 450 }, at: now, ms: 250 });
+  r.circles.set(95, slowAt(95, me.color, CX + 300, CY, now));
+  r.pulls.set(95, { circleId: 95, by: me.id, from: { x: CX + 300, y: CY }, at: now, ms: 250 });
   r.endRound();
-  assert.equal(me.score, 6); // 3점 × 사이 구역 ×2 (1200, 450)
+  assert.equal(me.score, 6); // 3점 × 사이 구역 ×2 (가운데에서 300)
   assert.equal(r.pulls.size, 0);
 });
 
@@ -301,7 +303,7 @@ test('시간 정지를 잡으면 예고 중인 레이저도 정지 시간만큼 
   // 아직 안 쏜 볼리만 밀리고, 이미 쏘고 있는 볼리는 그대로
   priv(room).lasers = [{ lines: [lineAB], at, hit: new Set() }, { lines: [lineAB], at: now - 50, hit: new Set() }];
   t.mock.method(Math, 'random', () => 0); // 전설 [시간 정지, 필드 클리어] 중 시간 정지
-  room.click(me.id, { circleId: 1, x: 1100, y: 450 });
+  room.click(me.id, { circleId: 1, x: 850, y: 550 });
   assert.deepEqual(priv(room).lasers.map((l) => l.at), [at + RULES.items.freezeMs, now - 50]);
   room.destroy();
 });
@@ -309,9 +311,9 @@ test('시간 정지를 잡으면 예고 중인 레이저도 정지 시간만큼 
 test('봇은 남의 자석에 끌려가는 원을 후보에서 뺀다', () => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
-  circles.set(96, slowAt(96, 'y', 1200, 450, now));
-  circles.set(97, slowAt(97, 'y', 400, 450, now));
-  (room as unknown as { pulls: Map<number, unknown> }).pulls.set(96, { circleId: 96, by: me.id, from: { x: 1200, y: 450 }, at: now, ms: 250 });
+  circles.set(96, slowAt(96, 'y', 950, 550, now));
+  circles.set(97, slowAt(97, 'y', 150, 550, now));
+  (room as unknown as { pulls: Map<number, unknown> }).pulls.set(96, { circleId: 96, by: me.id, from: { x: 950, y: 550 }, at: now, ms: 250 });
   const ids = (room as unknown as { botCandidates(): Circle[] }).botCandidates().map((c) => c.id);
   assert.ok(ids.includes(97) && !ids.includes(96));
   room.destroy();
@@ -323,8 +325,8 @@ test('같은 틱에 두 사람 자석이 같은 원을 노리면 순번이 고�
     const other = room.players.find((p) => p.id !== me.id)!;
     me.picks = [{ id: 'magnet', tier: 0 }]; other.picks = [{ id: 'magnet', tier: 0 }];
     const now = Date.now();
-    circles.set(98, slowAt(98, 'y', 1200, 450, now));
-    room.cursor(me.id, { x: 1210, y: 450 }); room.cursor(other.id, { x: 1190, y: 450 });
+    circles.set(98, slowAt(98, 'y', 950, 550, now));
+    room.cursor(me.id, { x: 960, y: 550 }); room.cursor(other.id, { x: 940, y: 550 });
     const m = t.mock.method(Math, 'random', () => rand);
     priv(room).updatePulls(now);
     m.mock.restore();
@@ -337,7 +339,7 @@ test('같은 틱에 두 사람 자석이 같은 원을 노리면 순번이 고�
 
 test('라운드가 시작되면 커서 기록을 지운다', () => {
   const { room, me } = playingRoom();
-  room.cursor(me.id, { x: 100, y: 100 });
+  room.cursor(me.id, { x: -150, y: 200 });
   (room as unknown as { beginRound(): void }).beginRound();
   assert.equal((room as unknown as { cursors: Map<string, unknown> }).cursors.size, 0);
   room.destroy();
@@ -352,7 +354,7 @@ test('1등 저격 아이템: 대상(1등, 내가 1등이면 2등)이 스턴되�
   circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
   t.mock.method(Math, 'random', () => 0.99); // 전설 [시간 정지, 필드 클리어, 1등 저격] 중 1등 저격
   sent.length = 0;
-  room.click(me.id, { circleId: 1, x: 1100, y: 450 });
+  room.click(me.id, { circleId: 1, x: 850, y: 550 });
   assert.ok(other.stunUntil > now);
   assert.equal(other.combo, 0);
   assert.equal(sent.filter((e) => e === 'stun').length, 1);
@@ -429,10 +431,10 @@ test('여러 줄·겹친 볼리에도 스턴은 한 번, 스턴 중인 사람은
   const { room, me } = playingRoom();
   const other = room.players.find((p) => p.id !== me.id)!;
   const now = Date.now();
-  room.cursor(me.id, { x: 800, y: 300 });
-  room.cursor(other.id, { x: 400, y: 300 });
+  room.cursor(me.id, { x: 550, y: 400 });
+  room.cursor(other.id, { x: 150, y: 400 });
   other.stunUntil = now + 2000; // 저격 스턴 중
-  const h = { a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }, v = { a: { x: 800, y: 0 }, b: { x: 800, y: 900 } };
+  const h = { a: { x: 0, y: 300 }, b: { x: 1350, y: 400 } }, v = { a: { x: 550, y: 0 }, b: { x: 550, y: 1000 } };
   priv(room).lasers = [{ lines: [h, v], at: now - 10, hit: new Set() }, { lines: [h], at: now - 10, hit: new Set() }];
   priv(room).nextLaserAt = Infinity;
   sent.length = 0;
@@ -479,40 +481,41 @@ test('카오스도 시작·끝 조용한 시간을 지키고, 다음은 0.6초�
 test('잡는 방법과 상관없이 원 위치로 구역', () => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
-  circles.set(81, slowAt(81, me.color, 1500, 450, now));
-  room.click(me.id, { circleId: 81, x: 1500, y: 450 });
+  circles.set(81, slowAt(81, me.color, CX + 500, CY, now));
+  room.click(me.id, { circleId: 81, x: CX + 500, y: CY });
   assert.equal(me.score, 9, '가장자리 클릭 3×3');
-  circles.set(82, slowAt(82, me.color, 1000, 450, now));
-  room.click(me.id, { circleId: 82, x: 1000, y: 450 });
+  circles.set(82, slowAt(82, me.color, CX + 100, CY, now));
+  room.click(me.id, { circleId: 82, x: CX + 100, y: CY });
   assert.equal(me.score, 12, '중앙 3×1');
-  const c = slowAt(83, me.color, 1500, 450, now);
+  const c = slowAt(83, me.color, CX + 500, CY, now);
   circles.set(83, c);
   (room as unknown as { claim(p: unknown, c: Circle, now: number, via: string, quiet: boolean): void }).claim(me, c, now, 'blast', true);
   assert.equal(me.score, 21, '폭죽도 가장자리 3×3');
   room.destroy();
 });
 
-test('황금 원은 직접 클릭으로만, +20 고정', (t) => {
+test('황금 원은 직접 클릭으로만, 다른 원처럼 배율 (피버·아이템·구역)', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
-  const gold = (id: number): Circle => ({ id, kind: 'gold', angle: 0, speed: 7000, r: 22, born: now - 100 }); // 지금 (1500, 450)
+  const gold = (id: number): Circle => ({ id, kind: 'gold', angle: 0, speed: 7000, r: 22, born: now - 100 }); // 지금 오른쪽 벽에서 튕겨 (906, 550): 사이 구역
   me.feverUntil = now + 5000; me.buffs.double = now + 5000; me.combo = 4; me.fever = 30;
   circles.set(91, gold(91));
   sent.length = 0;
-  room.click(me.id, { circleId: 91, x: 1500, y: 450 });
-  assert.deepEqual([me.score, me.combo, me.fever, circles.has(91)], [20, 4, 30, false]);
+  room.click(me.id, { circleId: 91, x: 906, y: 550 });
+  // 20 × 피버 3 × 점수 2배 2 × 사이 구역 2 = 240, 콤보·게이지 그대로
+  assert.deepEqual([me.score, me.combo, me.fever, circles.has(91)], [240, 4, 30, false]);
   assert.ok(sent.includes('gold:got'));
   // 넓은 손 범위 안이어도 안 잡힘
   circles.set(92, gold(92));
   me.buffs.wideHand = now + 5000;
-  room.click(me.id, { circleId: null, x: 1490, y: 450 });
+  room.click(me.id, { circleId: null, x: 896, y: 550 });
   assert.equal(circles.has(92), true);
   // 필드 클리어로도 안 잡힘
   circles.set(1, { id: 1, kind: 'item', itemTier: 2, angle: 0, speed: 300, r: 34, born: now - 1000 });
   t.mock.method(Math, 'random', () => 0.5); // 전설 중 필드 클리어
-  room.click(me.id, { circleId: 1, x: 1100, y: 450 });
+  room.click(me.id, { circleId: 1, x: 850, y: 550 });
   assert.equal(circles.has(92), true);
-  assert.equal(me.score, 20);
+  assert.equal(me.score, 240);
   room.destroy();
 });
 
@@ -622,11 +625,11 @@ test('연쇄 폭발: 근처 내 원을 함께 잡음', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
   me.picks.push({ id: 'chainBlast', tier: 0 });
-  circles.set(71, slowAt(71, me.color, 1200, 450, now));
-  circles.set(72, slowAt(72, me.color, 1260, 450, now));
-  circles.set(73, slowAt(73, me.color, 400, 450, now));
+  circles.set(71, slowAt(71, me.color, 950, 550, now));
+  circles.set(72, slowAt(72, me.color, 1010, 550, now));
+  circles.set(73, slowAt(73, me.color, 150, 550, now));
   t.mock.method(Math, 'random', () => 0);
-  room.click(me.id, { circleId: 71, x: 1200, y: 450 });
+  room.click(me.id, { circleId: 71, x: 950, y: 550 });
   assert.deepEqual([circles.has(71), circles.has(72), circles.has(73)], [false, false, true]);
   room.destroy();
 });
@@ -637,11 +640,11 @@ test('역전 배율: 꼴찌를 벗어났다가 다시 꼴찌가 돼도 그 라�
   const other = room.players.find((p) => p.id !== me.id)!;
   const now = Date.now();
   me.score = 100; other.score = 105; me.comeback = true;
-  circles.set(61, slowAt(61, me.color, 1500, 450, now));
-  room.click(me.id, { circleId: 61, x: 1500, y: 450 }); // 가장자리 9 × 1.1 = 10 → 110, 꼴찌 탈출
+  circles.set(61, slowAt(61, me.color, 1250, 550, now));
+  room.click(me.id, { circleId: 61, x: 1250, y: 550 }); // 가장자리 9 × 1.1 = 10 → 110, 꼴찌 탈출
   me.score = 110; other.score = 120; // 다른 사람이 다시 앞질러 다시 꼴찌
-  circles.set(62, slowAt(62, me.color, 1500, 450, now));
-  room.click(me.id, { circleId: 62, x: 1500, y: 450 });
+  circles.set(62, slowAt(62, me.color, 1250, 550, now));
+  room.click(me.id, { circleId: 62, x: 1250, y: 550 });
   assert.equal(me.comeback, false);
   assert.equal(me.score, 119, '배율 없이 +9 (켜져 있었다면 +10)');
   room.destroy();
@@ -678,14 +681,14 @@ test('헛손질 보정은 내 원만 (남의 색·끌리는 원·보호 구역 �
   const now = Date.now();
   me.picks = [{ id: 'missSave', tier: 0 }]; // 반경 40
   me.combo = 4;
-  circles.set(51, slowAt(51, (me.color + 1) % 4 as 0, 1230, 450, now)); // 남의 색 (더 가까움)
-  circles.set(52, slowAt(52, me.color, 1270, 450, now)); // 내 원
-  room.click(me.id, { circleId: null, x: 1200, y: 450 });
+  circles.set(51, slowAt(51, (me.color + 1) % 4 as 0, CX + 430, CY, now)); // 남의 색 (더 가까움)
+  circles.set(52, slowAt(52, me.color, 1020, 550, now)); // 내 원
+  room.click(me.id, { circleId: null, x: 950, y: 550 });
   assert.deepEqual([circles.has(51), circles.has(52), me.stats.misses], [true, false, 0]);
   assert.equal(me.combo, 5);
   // 보호 구역 안의 내 원은 안 잡음 → 빈 곳
-  circles.set(53, slowAt(53, me.color, 860, 450, now));
-  room.click(me.id, { circleId: null, x: 830, y: 450 });
+  circles.set(53, slowAt(53, me.color, 610, 550, now));
+  room.click(me.id, { circleId: null, x: 580, y: 550 });
   assert.deepEqual([circles.has(53), me.stats.misses], [true, 1]);
   room.destroy();
 });
@@ -695,10 +698,10 @@ test('자동 획득은 다시 연쇄하지 않음 (점화·연쇄 콤보·연쇄
   const now = Date.now();
   me.picks = [{ id: 'ignite', tier: 3 }, { id: 'chainCombo', tier: 3 }, { id: 'chainBlast', tier: 0 }];
   me.fever = 99; me.combo = 4;
-  for (let i = 0; i < 12; i++) circles.set(100 + i, slowAt(100 + i, me.color, 1000 + i * 40, 200 + (i % 3) * 40, now));
+  for (let i = 0; i < 12; i++) circles.set(100 + i, slowAt(100 + i, me.color, 750 + i * 25, 300 + (i % 3) * 40, now));
   t.mock.method(Math, 'random', () => 0);
   sent.length = 0;
-  room.click(me.id, { circleId: 100, x: 1000, y: 200 });
+  room.click(me.id, { circleId: 100, x: 750, y: 300 });
   assert.equal(circles.size, 0, '점화 레전드: 화면의 내 원 전부');
   assert.equal(sent.filter((e) => e === 'circle:claimed').length, 12);
   room.destroy();
@@ -721,8 +724,8 @@ test('사냥꾼 레전드 막타: 화면의 내 원 전부, 파쇄 레전드: �
   // 방어형 보스, 지금 보호막 중 (주기 3초 중 마지막 1초)
   const boss: Circle = { id: 90, kind: 'boss', boss: 'guard', angle: 0, speed: 160, r: 90, born: now - 2500, hp: 10, maxHp: 10 }; // 지금 (1200, 450), 보호막 중
   circles.set(90, boss);
-  circles.set(91, slowAt(91, me.color, 1200, 300, now));
-  circles.set(92, slowAt(92, me.color, 400, 600, now));
+  circles.set(91, slowAt(91, me.color, 950, 400, now));
+  circles.set(92, slowAt(92, me.color, 150, 700, now));
   const p0 = circlePosOf(boss, now);
   room.click(me.id, { circleId: 90, x: p0.x, y: p0.y });
   assert.equal(boss.hp, 5, '보호막 무시하고 피해 1 + 파쇄 4');
@@ -736,8 +739,8 @@ test('레이저 내성 100: 스턴 없음, 레전드는 피버 +20', () => {
   const { room, me } = playingRoom();
   const now = Date.now();
   me.picks = [{ id: 'laserProof', tier: 3 }];
-  room.cursor(me.id, { x: 800, y: 300 });
-  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1600, y: 300 } }], at: now - 10, hit: new Set() }];
+  room.cursor(me.id, { x: 550, y: 400 });
+  priv(room).lasers = [{ lines: [{ a: { x: 0, y: 300 }, b: { x: 1350, y: 400 } }], at: now - 10, hit: new Set() }];
   priv(room).nextLaserAt = Infinity;
   sent.length = 0;
   priv(room).updateLaser(now);
@@ -752,7 +755,7 @@ test('헛손질 보정은 지연 보정 위치로 판정 (0.1초 전 자리를 �
   me.picks = [{ id: 'missSave', tier: 0 }]; // 반경 40
   // 오른쪽으로 초당 1000: 지금 (1300, 450), 0.1초 전 (1200, 450)
   circles.set(41, { id: 41, kind: me.color, angle: 0, speed: 1000, r: 40, born: now - 500 });
-  room.click(me.id, { circleId: null, x: 1200, y: 450 });
+  room.click(me.id, { circleId: null, x: 950, y: 550 });
   assert.equal(circles.has(41), false);
   room.destroy();
 });

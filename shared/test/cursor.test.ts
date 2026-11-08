@@ -1,23 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULES, auraAt, canLaserStun, holdLasers, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, cursorTarget, followCursor, relativeCursor, nextLaserIn,
+  FIELD, RULES, auraAt, canLaserStun, holdLasers, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, cursorTarget, followCursor, relativeCursor, nextLaserIn,
   pickMagnetTargets, rollLaser, rollVolley, slideBack, volleyHits, type Circle, type Point,
 } from '../src/index.ts';
 
 /** 순서대로 값을 돌려주는 난수 */
 const seq = (v: number[]) => { let i = 0; return () => v[i++ % v.length]; };
+/** 판 크기·중앙 */
+const W = FIELD.w, H = FIELD.h, CX = W / 2, CY = H / 2;
 
 test('cursorTarget: 반대는 화면 가운데 기준 거울 위치, 필드 밖 진짜 위치는 잘라서', () => {
-  assert.deepEqual(cursorTarget({ x: 1600, y: 0 }, { invert: true }), { x: 0, y: 900 });
-  assert.deepEqual(cursorTarget({ x: 1200, y: 300 }, { invert: true }), { x: 400, y: 600 });
-  assert.deepEqual(cursorTarget({ x: 1700, y: -50 }, { invert: true }), { x: 0, y: 900 });
-  assert.deepEqual(cursorTarget({ x: 1700, y: -50 }, null), { x: 1600, y: 0 });
+  assert.deepEqual(cursorTarget({ x: W, y: 0 }, { invert: true }), { x: 0, y: H });
+  assert.deepEqual(cursorTarget({ x: W - 200, y: 300 }, { invert: true }), { x: 200, y: H - 300 });
+  assert.deepEqual(cursorTarget({ x: W + 100, y: -50 }, { invert: true }), { x: 0, y: H });
+  assert.deepEqual(cursorTarget({ x: W + 100, y: -50 }, null), { x: W, y: 0 });
   assert.deepEqual(cursorTarget({ x: 500, y: 300 }, { slow: true }), { x: 500, y: 300 });
 });
 
 test('cursorTarget: 반대 중에도 진짜 마우스가 화면 안을 오가면 네 구석 모두 닿음', () => {
-  for (const [rx, ry, gx, gy] of [[0, 0, 1600, 900], [1600, 0, 0, 900], [0, 900, 1600, 0], [1600, 900, 0, 0]]) {
+  for (const [rx, ry, gx, gy] of [[0, 0, W, H], [W, 0, 0, H], [0, H, W, 0], [W, H, 0, 0]]) {
     assert.deepEqual(cursorTarget({ x: rx, y: ry }, { invert: true }), { x: gx, y: gy });
   }
 });
@@ -35,12 +37,12 @@ test('followCursor: 감도 감소는 늦게 따라가 결국 도착, 아니면 �
 
 test('relativeCursor: 오오라 끌림 중에는 이동량 그대로, 필드 밖으로 안 나감', () => {
   assert.deepEqual(relativeCursor({ x: 500, y: 300 }, { x: 10, y: -20 }), { x: 510, y: 280 });
-  assert.deepEqual(relativeCursor({ x: 1598, y: 10 }, { x: 50, y: -50 }), { x: 1600, y: 0 });
+  assert.deepEqual(relativeCursor({ x: W - 2, y: 10 }, { x: 50, y: -50 }), { x: W, y: 0 });
 });
 
 test('반대가 걸리는 순간: 거울 위치까지 slideMs 동안 미끄러짐', () => {
-  const from = { x: 1200, y: 300 }, to = cursorTarget(from, { invert: true });
-  assert.deepEqual(slideBack(from, to, RULES.sabotage.slideMs / 2), { x: 800, y: 450 });
+  const from = { x: W - 200, y: 300 }, to = cursorTarget(from, { invert: true });
+  assert.deepEqual(slideBack(from, to, RULES.sabotage.slideMs / 2), { x: CX, y: CY });
   assert.deepEqual(slideBack(from, to, RULES.sabotage.slideMs), to);
 });
 
@@ -95,7 +97,7 @@ test('canLaserStun: 스턴 중·스턴 끝나고 1초 안에는 안 됨', () => 
 test('rollLaser: 길이 4000, 필드 안쪽을 지난다', () => {
   const { a, b } = rollLaser(() => 0.5);
   assert.ok(Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - 4000) < 1e-6);
-  assert.ok(distToSegment({ x: 800, y: 450 }, a, b) <= RULES.laser.width);
+  assert.ok(distToSegment({ x: CX, y: CY }, a, b) <= RULES.laser.width);
 });
 
 test('nextLaserIn: 10~15초', () => {
@@ -105,22 +107,22 @@ test('nextLaserIn: 10~15초', () => {
 
 /** 멈춰 있는 원: t=1000에 (x, y) */
 const at = (id: number, kind: Circle['kind'], x: number, y: number): Circle =>
-  ({ id, kind, angle: Math.atan2(y - 450, x - 800), speed: Math.hypot(x - 800, y - 450), r: 40, born: 0 });
+  ({ id, kind, angle: Math.atan2(y - CY, x - CX), speed: Math.hypot(x - CX, y - CY), r: 40, born: 0 });
 
 test('pickMagnetTargets: 내 원만, 가까운 순, 최대 개수, 보호 구역·skip·범위 밖 제외', () => {
-  const cur = { x: 1200, y: 450 };
+  const cur = { x: CX + 400, y: CY };
   const cs = [
-    at(1, 0, 1250, 450), // 내 색, 50
-    at(2, 'y', 1180, 450), // 노란색, 20
-    at(3, 1, 1210, 450), // 남의 색
-    at(4, 0, 1200, 450 + 91), // 범위 밖 (91)
-    at(5, 'rainbow', 1200, 450 + 60), // 무지개, 60
-    at(6, 0, 820, 450), // 가운데 보호 구역
+    at(1, 0, CX + 450, CY), // 내 색, 50
+    at(2, 'y', CX + 380, CY), // 노란색, 20
+    at(3, 1, CX + 410, CY), // 남의 색
+    at(4, 0, CX + 400, CY + 91), // 범위 밖 (91)
+    at(5, 'rainbow', CX + 400, CY + 60), // 무지개, 60
+    at(6, 0, CX + 20, CY), // 가운데 보호 구역
   ];
   assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 2).map((c) => c.id), [2, 1]);
   assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 5).map((c) => c.id), [2, 1, 5]);
   assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 5, new Set([2])).map((c) => c.id), [1, 5]);
-  assert.deepEqual(pickMagnetTargets(cs, 0, { x: 820, y: 450 }, 1000, 90, 5).map((c) => c.id), []);
+  assert.deepEqual(pickMagnetTargets(cs, 0, { x: CX + 20, y: CY }, 1000, 90, 5).map((c) => c.id), []);
 });
 
 test('자석 능력 60 / 90 / 120 / 240(레전드 = 에픽 × 2), 상한 240, 아이템 +90', () => {
@@ -141,9 +143,9 @@ test('cursorActive: 탭이 숨겨졌거나 창이 포커스를 잃으면 커서�
 });
 
 test('pickMagnetTargets: 이미 화면 밖으로 나간 원은 끌지 않는다', () => {
-  // 오른쪽 끝(1600)을 넘어 중심이 1650에 있는 원, 커서는 가장자리
-  const gone = at(7, 0, 1650, 450);
-  assert.deepEqual(pickMagnetTargets([gone], 0, { x: 1600, y: 450 }, 1000, 200, 5), []);
+  // 오른쪽 끝(W)을 넘어 중심이 W+50에 있는 원, 커서는 가장자리
+  const gone = at(7, 0, W + 50, CY);
+  assert.deepEqual(pickMagnetTargets([gone], 0, { x: W, y: CY }, 1000, 200, 5), []);
 });
 
 test('cursorModeOf: 방해 없으면 null, 감도·반대는 합쳐짐, 끝난 방해는 무시', () => {
@@ -166,21 +168,21 @@ test('auraAt·inAura: 이동형 보스만, 몸통 밖 +80 고리 안', () => {
   const runner: Circle = { id: 1, kind: 'boss', boss: 'runner', angle: 0, speed: 0, r: 60, born: 0, hp: 5, maxHp: 5 };
   const normal: Circle = { ...runner, boss: 'normal', r: 90 };
   assert.equal(auraAt(normal, 0), null);
-  assert.equal(auraAt(at(2, 0, 900, 450), 1000), null);
+  assert.equal(auraAt(at(2, 0, CX + 100, CY), 1000), null);
   const a = auraAt(runner, 0)!;
-  assert.deepEqual([a.x, a.y, a.r, a.inner], [800, 450, 140, 60]);
-  assert.equal(inAura({ x: 830, y: 450 }, a), false); // 몸통 안
-  assert.equal(inAura({ x: 900, y: 450 }, a), true); // 고리 안
-  assert.equal(inAura({ x: 941, y: 450 }, a), false); // 밖
+  assert.deepEqual([a.x, a.y, a.r, a.inner], [CX, CY, 140, 60]);
+  assert.equal(inAura({ x: CX + 30, y: CY }, a), false); // 몸통 안
+  assert.equal(inAura({ x: CX + 100, y: CY }, a), true); // 고리 안
+  assert.equal(inAura({ x: CX + 141, y: CY }, a), false); // 밖
 });
 
 test('lensWarp: 렌즈 밖·가운데는 그대로, 볼록은 바깥으로 크게, 오목은 안쪽으로 작게', () => {
-  assert.deepEqual(lensWarp({ x: 800 + 400, y: 450 }, 40, true), { x: 1200, y: 450, size: 40 });
-  const c = lensWarp({ x: 800, y: 450 }, 40, true);
-  assert.deepEqual([c.x, c.y], [800, 450]);
-  const vex = lensWarp({ x: 900, y: 450 }, 40, true), cave = lensWarp({ x: 900, y: 450 }, 40, false);
-  assert.ok(vex.x > 900 && vex.size > 40, JSON.stringify(vex));
-  assert.ok(cave.x < 900 && cave.size < 40, JSON.stringify(cave));
+  assert.deepEqual(lensWarp({ x: CX + 400, y: CY }, 40, true), { x: CX + 400, y: CY, size: 40 });
+  const c = lensWarp({ x: CX, y: CY }, 40, true);
+  assert.deepEqual([c.x, c.y], [CX, CY]);
+  const vex = lensWarp({ x: CX + 100, y: CY }, 40, true), cave = lensWarp({ x: CX + 100, y: CY }, 40, false);
+  assert.ok(vex.x > CX + 100 && vex.size > 40, JSON.stringify(vex));
+  assert.ok(cave.x < CX + 100 && cave.size < 40, JSON.stringify(cave));
 });
 
 test('holdLasers: 아직 안 쏜 볼리만 늦춘다', () => {

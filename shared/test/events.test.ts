@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { FIELD,
   DEFAULT_RULES, applyEvent, bossTimes, payTax, circlePos, isCurse, isOut, newPlayer, rollEvent, rollOptions, toGameRules,
   type Circle, type EventId, type PlayerState,
 } from '../src/index.ts';
@@ -90,12 +90,14 @@ test('보스 러시: 라운드 25%·55%·85% 지점', () => {
 
 test('역발사 원: 가장자리에서 중앙으로, 중앙에 닿으면 나감', () => {
   const c: Circle = { id: 1, kind: 0, angle: 0, speed: 100, r: 40, born: 0, rev: true };
-  assert.equal(circlePos(c, 0).x, 1640);
+  // 오른쪽 끝(판 끝 + 반지름)에서 출발: 중앙까지 FIELD.w/2 + 40
+  assert.equal(circlePos(c, 0).x, FIELD.w + 40);
   assert.ok(circlePos(c, 1000).x < circlePos(c, 0).x);
   assert.equal(isOut(c, 0), false);
-  assert.equal(isOut(c, 8400), true);
-  assert.equal(isOut(c, 9000), true);
-  assert.equal(isOut(c, 8000), false);
+  const reach = ((FIELD.w / 2 + 40) / 100) * 1000;
+  assert.equal(isOut(c, reach), true);
+  assert.equal(isOut(c, reach + 600), true);
+  assert.equal(isOut(c, reach - 400), false);
 });
 
 test('rollOptions forceCurse: 저주 1장 포함', () => {

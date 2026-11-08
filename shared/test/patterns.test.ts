@@ -22,8 +22,9 @@ test('makePattern: 경고 3초 전, 패턴별 유지 시간, 벽은 중앙을 �
     const w = makePattern('walls', 0, Math.random).walls!;
     assert.ok(w.length >= 1 && w.length <= 3);
     for (const r of w) {
-      const nx = Math.max(r.x, Math.min(800, r.x + r.w)), ny = Math.max(r.y, Math.min(450, r.y + r.h));
-      assert.ok(Math.hypot(800 - nx, 450 - ny) >= R.walls.centerClear, '중앙 비움');
+      const cx = FIELD.w / 2, cy = FIELD.h / 2;
+      const nx = Math.max(r.x, Math.min(cx, r.x + r.w)), ny = Math.max(r.y, Math.min(cy, r.y + r.h));
+      assert.ok(Math.hypot(cx - nx, cy - ny) >= R.walls.centerClear, '중앙 비움');
       assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= FIELD.w && r.y + r.h <= FIELD.h);
     }
     for (let i = 0; i < w.length; i++) for (let j = i + 1; j < w.length; j++) {
@@ -120,7 +121,7 @@ test('makePattern 소용돌이: 두 개, 중앙을 피하고 서로 멀리', () 
     const v = makePattern('vortex', 0, Math.random).vortices!;
     assert.equal(v.length, 2);
     assert.ok(Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) >= R.vortex.r + R.vortex.eye);
-    for (const c of v) assert.ok(Math.hypot(c.x - 800, c.y - 450) >= R.vortex.centerClear);
+    for (const c of v) assert.ok(Math.hypot(c.x - FIELD.w / 2, c.y - FIELD.h / 2) >= R.vortex.centerClear);
   }
 });
 

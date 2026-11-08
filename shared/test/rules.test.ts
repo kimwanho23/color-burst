@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_RULES, PRESETS, makeCircle, rollEvent, rollTheme, sanitizeRules, toGameRules, newPlayer } from '../src/index.ts';
+import { DEFAULT_RULES, FIELD, PRESETS, makeCircle, rollEvent, rollTheme, sanitizeRules, toGameRules, newPlayer } from '../src/index.ts';
 
 test('프리셋: 새 키 값과 새 프리셋 2개', () => {
   assert.deepEqual([DEFAULT_RULES.mapPct, DEFAULT_RULES.laserWidth, DEFAULT_RULES.themePct, DEFAULT_RULES.eventPct, DEFAULT_RULES.circleScale], [35, 22, 15, 10, 1]);
@@ -23,10 +23,10 @@ test('sanitizeRules: 선택지 밖 값은 무시, 옛 randomEvents false → eve
   assert.equal(sanitizeRules(DEFAULT_RULES, { randomEvents: true } as never).eventPct, 10);
 });
 
-test('toGameRules: 레이저 반폭 보통 99, 굵게 135, 얇게 67.5 · 확률은 0~1', () => {
-  assert.equal(toGameRules(DEFAULT_RULES).laserHalf, 99);
-  assert.equal(toGameRules({ ...DEFAULT_RULES, laserWidth: 30 }).laserHalf, 135);
-  assert.equal(toGameRules({ ...DEFAULT_RULES, laserWidth: 15 }).laserHalf, 67.5);
+test('toGameRules: 레이저 반폭은 판 높이 비율 (보통 22%·굵게 30%·얇게 15%의 절반) · 확률은 0~1', () => {
+  assert.equal(toGameRules(DEFAULT_RULES).laserHalf, 0.22 * FIELD.h / 2);
+  assert.equal(toGameRules({ ...DEFAULT_RULES, laserWidth: 30 }).laserHalf, 0.3 * FIELD.h / 2);
+  assert.equal(toGameRules({ ...DEFAULT_RULES, laserWidth: 15 }).laserHalf, 0.15 * FIELD.h / 2);
   const G = toGameRules(DEFAULT_RULES);
   assert.deepEqual([G.mapChance, G.themeChance, G.eventChance], [0.35, 0.15, 0.1]);
 });

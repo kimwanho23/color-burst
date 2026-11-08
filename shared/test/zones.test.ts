@@ -1,15 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_RULES, feverMultOf, modsOf, newPlayer, resolveClaim, toGameRules, zoneMult, zoneOf, type Pick } from '../src/index.ts';
+import { DEFAULT_RULES, FIELD, feverMultOf, modsOf, newPlayer, resolveClaim, toGameRules, zoneMult, zoneOf, type Pick } from '../src/index.ts';
 
 const G = toGameRules(DEFAULT_RULES);
 
-test('zoneOf: 타원 0.35 / 0.7 경계', () => {
-  assert.equal(zoneOf({ x: 800, y: 450 }), 0);
-  assert.equal(zoneOf({ x: 800 + 0.34 * 800, y: 450 }), 0);
-  assert.equal(zoneOf({ x: 800 + 0.35 * 800, y: 450 }), 1);
-  assert.equal(zoneOf({ x: 800, y: 450 + 0.69 * 450 }), 1);
-  assert.equal(zoneOf({ x: 800, y: 450 + 0.7 * 450 }), 2);
+test('zoneOf: 정사각형 판이라 원 0.35 / 0.7 경계 (같은 거리면 방향과 상관없이 같은 구역)', () => {
+  const c = FIELD.w / 2;
+  assert.equal(zoneOf({ x: c, y: c }), 0);
+  assert.equal(zoneOf({ x: c + 0.34 * c, y: c }), 0);
+  assert.equal(zoneOf({ x: c + 0.35 * c, y: c }), 1);
+  assert.equal(zoneOf({ x: c, y: c + 0.69 * c }), 1);
+  assert.equal(zoneOf({ x: c, y: c + 0.7 * c }), 2);
+  const d = 0.5 * c;
+  for (let a = 0; a < Math.PI * 2; a += 0.3) assert.equal(zoneOf({ x: c + Math.cos(a) * d, y: c + Math.sin(a) * d }), 1);
   assert.equal(zoneOf({ x: 0, y: 0 }), 2);
 });
 
