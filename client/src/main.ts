@@ -119,10 +119,10 @@ let offer: ArcadeOffer | null = null;
 /** 내가 완성한 조합 (새로 완성되면 알림). 처음 받은 상태(새로고침·재접속)에서는 알리지 않는다 */
 let myCombos = new Set<string>();
 let combosReady = false;
-/** 철옹성 남은 횟수 (줄어들면 발동 표시) */
-let lastIron: number | null = null;
+/** 지난번 내 콤보 (철옹성 발동 표시: 콤보가 0이 아니라 일부만 줄었을 때) */
+let lastCombo: number | null = null;
 /** 방을 나가면 조합 알림 기준을 비운다 (다른 방에 들어가 받은 첫 상태는 알리지 않음) */
-function resetComboNotice() { myCombos = new Set(); combosReady = false; lastIron = null; }
+function resetComboNotice() { myCombos = new Set(); combosReady = false; lastCombo = null; }
 /** 점수판 칩 빌드 카드: 보고 있는 사람, 눌러서 고정했는지 */
 let popFor: string | null = null, popPinned = false;
 const chipPop = document.createElement('div');
@@ -538,12 +538,12 @@ socket.on('players', (p) => {
   }
   myCombos = now;
   combosReady = !!m;
-  // 철옹성 조합이 콤보 끊김을 막았으면 (라운드 시작에는 늘어나기만 함)
-  if (m && lastIron !== null && m.ironLeft < lastIron) {
+  // 철옹성 조합: 콤보가 끊길 때 0이 아니라 일부만 줄었으면 (라운드 시작의 0은 제외)
+  if (m && lastCombo !== null && m.combo < lastCombo && m.combo > 0 && now.has('ironWall')) {
     sfx.bossBlock(); renderer.text(CX, CY + -120, '철옹성! 콤보 유지', '#ffd43b', 1.1);
-    renderComboBar($('comboBar'), m); flashCombo($('comboBar'), 'ironWall');
+    flashCombo($('comboBar'), 'ironWall');
   }
-  lastIron = m ? m.ironLeft : null;
+  lastCombo = m ? m.combo : null;
 });
 socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   const claimedKind = circles.get(circleId)?.kind;

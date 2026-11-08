@@ -491,7 +491,6 @@ export interface PlayerState {
   reboundLost: number;
   reboundUsed: boolean;
   /** 철옹성 조합: 이번 라운드에 남은 콤보 끊김 막기 */
-  ironLeft: number;
   /** 위험 피격 무적이 끝나는 시각 (스턴이 없어도 맞으면 생김) */
   hazardUntil?: number;
   /** 이번 게임에 남은 일시정지 (멀티) */
@@ -591,7 +590,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     picks: [], afterUntil: 0, blurUntil: 0, shieldLeft: 0,
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
-    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, ironLeft: 0,
+    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
     pausesLeft: RULES.pause.perGame,
   };
 }
@@ -619,7 +618,6 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.roundEnd = endAt || startAt + G.roundMs;
   p.roundBegin = startAt; p.firstFever = true; p.feverBonus = 0; p.feverCarry = 0;
   p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false;
-  p.ironLeft = combosOf(p.picks).has('ironWall') ? COMBO.ironPerRound : 0;
   p.score += m.headStart;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
   // 표적 자처: 라운드 내내 표적
@@ -784,15 +782,21 @@ export function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
   p.afterUntil = m.afterglow ? p.feverUntil + m.afterglow * 1000 : 0;
 }
 
+/** 견제한 사람의 표적 시간: 철면피만큼 줄고(99 이상이면 표적 안 됨), 견제왕 조합이면 1초 더 줄어든다 */
+function markMsOf(m: Mods, K: ReadonlySet<string>, G: GameRules) {
+  if (m.thickSkin >= 99) return 0;
+  return Math.max(0, G.markMs - m.thickSkin * 1000 - (K.has('stealKing') ? COMBO.stealMarkCutMs : 0));
+}
+
 /** 콤보 끊기 (보험이 있으면 일부 유지, 콤보 고정 중이면 그대로). 실제로 줄었으면 true */
 /** byOther: 남이 끊었는지 (견제당함). 리바운드는 남이 끊었을 때만 켜진다 */
 function breakCombo(p: PlayerState, m: Mods, now: number, byOther = false) {
   // 콤보 고정 아이템·기세 특별 카드: 끊기지 않음
   if (buffOn(p, 'comboLock', now) || m.momentum) return false;
-  // 철옹성 조합: 라운드마다 한 번 막음 (끊을 콤보가 있을 때만 씀)
-  const before = p.combo, kept = Math.floor((p.combo * m.insurance) / 100);
-  if (kept < before && (p.ironLeft ?? 0) > 0) { p.ironLeft--; return false; }
-  p.combo = kept;
+  // 보험만큼 남기고, 철옹성 조합이면 적어도 80%는 남긴다 (더 많이 남는 쪽 하나만)
+  const before = p.combo;
+  const iron = combosOf(p.picks).has('ironWall') ? Math.floor((before * COMBO.ironKeepPct) / 100) : 0;
+  p.combo = Math.max(Math.floor((before * m.insurance) / 100), iron);
   // 리바운드: 끊긴 뒤 잠깐 점수 보너스 (레전드는 끊긴 콤보 절반을 되찾을 수 있음)
   if (byOther && p.combo < before && m.rebound > 0) { p.reboundUntil = now + AUG.reboundMs; p.reboundLost = before - p.combo; p.reboundUsed = false; }
   return p.combo < before;
@@ -1029,8 +1033,13 @@ export function bossHitInfo(p: PlayerState, rand = Math.random) {
   // 해머 레전드: 15% 확률로 3타, 그다음 보스 헌터 조합 피해 +1
   let dmg = bossDamage(m, rand);
   if (hasLegend(p, 'hammer') && rand() < LEGEND.hammerChance) dmg = Math.max(dmg, LEGEND.hammerDmg);
-  if (combosOf(p.picks).has('bossHunter')) dmg += COMBO.bossDmgAdd;
-  return { damage: dmg * feast, hit: RULES.boss.hit + m.hammer, kill: (RULES.boss.kill + m.hunter) * feast, boost: scoreBoostOf(m) };
+  const hunter = combosOf(p.picks).has('bossHunter');
+  if (hunter) dmg += COMBO.bossDmgAdd;
+  // 보스 헌터 조합: 타격 점수 ×1.5, 막타 점수 ×2
+  return {
+    damage: dmg * feast, hit: (RULES.boss.hit + m.hammer) * (hunter ? COMBO.bossHitMult : 1),
+    kill: (RULES.boss.kill + m.hunter) * feast * (hunter ? COMBO.bossKillMult : 1), boost: scoreBoostOf(m),
+  };
 }
 
 /** 꼴찌인지 (동점이면 모두 꼴찌가 아님) */
@@ -1109,9 +1118,12 @@ export function resolveClaim(
     res.feverStarted = addFever(claimer, RULES.fever.own, now, G, players);
   } else if (kind === 'y' && fever) {
     res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
+  } else if (kind === 'y' && K.has('gourmet')) {
+    // 미식가 조합: 노란 원도 내 색 원처럼 (편식가 보너스 포함, 외길 저주면 노랑은 그대로 0점, 편식가 레전드면 게이지 2배)
+    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
+    res.feverStarted = addFever(claimer, RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1), now, G, players);
   } else if (kind === 'y') {
-    // 미식가 조합: 편식가의 노란색 −1 대가 없음
-    res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky && !K.has('gourmet') ? 1 : 0)); claimer.combo++;
+    res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); claimer.combo++;
     // 노란 맛 레전드: 피버 게이지가 내 색만큼
     res.feverStarted = addFever(claimer, L.has('yellowTaste') ? RULES.fever.own : RULES.fever.yellow, now, G, players);
   } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands)) {
@@ -1130,7 +1142,7 @@ export function resolveClaim(
       res.type = 'steal'; res.reflectedTo = owner.id;
       res.reflected = resolveClaim(owner, kind, players, now, G, opts);
       breakCombo(claimer, m, now);
-      const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
+      const markMs = markMsOf(m, K, G);
       if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
       return res;
     } else {
@@ -1146,7 +1158,7 @@ export function resolveClaim(
         // 철면피 레전드: 견제해도 피버 게이지가 안 깎임
         if (!L.has('thickSkin')) addFever(claimer, RULES.fever.stealCalm, now, G, players);
         // 철면피: 표적 시간 감소 (99 이상이면 표적 안 됨)
-        const markMs = m.thickSkin >= 99 ? 0 : G.markMs - m.thickSkin * 1000;
+        const markMs = markMsOf(m, K, G);
         if (markMs > 0) { claimer.markedUntil = now + markMs; res.marked = true; }
       }
       // 보호막 아이템·철벽 특별 카드: 콤보 끊김·강탈을 막는다
@@ -1180,8 +1192,8 @@ export function resolveClaim(
     }
   }
 
-  // 견제왕 조합: 견제할 때마다 +2 (폭죽·필드 클리어 제외)
-  if (steal && !blast && K.has('stealKing')) pts += COMBO.stealAdd;
+  // 견제왕 조합: 견제·반격 점수 ×3 (폭죽·필드 클리어 제외)
+  if (steal && !blast && K.has('stealKing')) pts *= COMBO.stealMult;
   res.zone = opts.zone ?? 0;
   if (!steal) {
     // 찰나의 순간·중앙의 왕 레전드: 그 구역에서 잡으면 콤보 +1 더
@@ -1204,7 +1216,7 @@ export function resolveClaim(
   const every = m.momentum ? Math.min(SPECIAL.momentumEvery, comboPeriod(m.comboArtist)) : comboPeriod(m.comboArtist);
   if (!steal && crossedCombo(comboBefore, claimer.combo, every)) {
     res.comboBonus = true;
-    pts += (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0) + (K.has('comboMachine') ? COMBO.comboBonusAdd : 0)) * (fever && L.has('frenzy') ? LEGEND.frenzyComboMult : 1);
+    pts += (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0)) * (K.has('comboMachine') ? COMBO.comboBonusMult : 1) * (fever && L.has('frenzy') ? LEGEND.frenzyComboMult : 1);
   }
   const st = claimer.stats;
   st.hits++;

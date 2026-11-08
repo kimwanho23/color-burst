@@ -9,18 +9,17 @@ import { comboTip } from './arcadeUI.ts';
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 /**
- * 게임 중 내 완성 조합 칩: "이름 · 효과" (철옹성은 남은 횟수). p가 없으면 비움.
+ * 게임 중 내 완성 조합 칩: "이름 · 효과". p가 없으면 비움.
  * 원 클릭을 가리지 않게 마우스 반응이 없어서 설명을 칩 안에 글자로 쓴다. 바뀔 때만 다시 그린다
  */
 export function renderComboBar(el: HTMLElement, p: PlayerState | undefined) {
   const ids = p ? [...combosOf(p.picks)] : [];
-  const sig = `${ids.join(',')}|${ids.includes('ironWall') ? p!.ironLeft : ''}`;
+  const sig = ids.join(',');
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   el.innerHTML = ids.map((id) => {
     const c = COMBOS.find((x) => x.id === id)!;
-    const n = id === 'ironWall' ? ` ${p!.ironLeft}` : '';
-    return `<span class="cbchip${id === 'ironWall' && !p!.ironLeft ? ' spent' : ''}" data-c="${id}" data-tip="${esc(comboTip(id, p!.picks))}">${icon(UI.combo, 13)}<b>${esc(c.name)}${n}</b><span>${esc(c.text)}</span></span>`;
+    return `<span class="cbchip" data-c="${id}" data-tip="${esc(comboTip(id, p!.picks))}">${icon(UI.combo, 13)}<b>${esc(c.name)}</b><span>${esc(c.text)}</span></span>`;
   }).join('');
 }
 

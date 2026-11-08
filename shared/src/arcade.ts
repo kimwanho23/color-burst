@@ -46,7 +46,10 @@ export const LEGEND = {
 } as const;
 
 /** 증강 조합 보너스 수치 */
-export const COMBO = { feverAdd: 1, comboBonusAdd: 5, bossDmgAdd: 1, stealAdd: 2, jackpotAdd: 10, outskirtsMult: 1.5, ironPerRound: 1 } as const;
+export const COMBO = {
+  feverAdd: 1, comboBonusMult: 2, bossDmgAdd: 1, bossHitMult: 1.5, bossKillMult: 2, stealMult: 3, stealMarkCutMs: 1_000,
+  jackpotAdd: 10, outskirtsMult: 1.5, ironKeepPct: 80,
+} as const;
 /** 빌드 가중치: 가진 증강과 같은 분류 ×sameCat, 가진 조합의 나머지 ×comboPart (곱함) */
 export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
 
@@ -194,13 +197,13 @@ export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing
 /** 증강 조합: 필요한 증강을 모두 가지면(등급 무관) 보너스. 같은 조합은 한 번 */
 export const COMBOS: readonly { id: ComboId; name: string; needs: readonly AbilityId[]; text: string }[] = [
   { id: 'feverMaster', name: '피버 마스터', needs: ['preheat', 'overtime', 'frenzy'], text: `피버 배율 +${COMBO.feverAdd}` },
-  { id: 'comboMachine', name: '콤보 머신', needs: ['comboArtist', 'insurance'], text: `콤보 보너스 +${COMBO.comboBonusAdd}` },
-  { id: 'bossHunter', name: '보스 헌터', needs: ['hammer', 'hunter', 'crusher'], text: `보스에게 주는 피해 +${COMBO.bossDmgAdd}` },
-  { id: 'stealKing', name: '견제왕', needs: ['plunder', 'counterPro', 'thickSkin'], text: `견제할 때마다 +${COMBO.stealAdd}` },
+  { id: 'comboMachine', name: '콤보 머신', needs: ['comboArtist', 'insurance'], text: `콤보 보너스 ×${COMBO.comboBonusMult}` },
+  { id: 'bossHunter', name: '보스 헌터', needs: ['hammer', 'hunter', 'crusher'], text: `보스 피해 +${COMBO.bossDmgAdd}, 타격 점수 ×${COMBO.bossHitMult}, 막타 점수 ×${COMBO.bossKillMult}` },
+  { id: 'stealKing', name: '견제왕', needs: ['plunder', 'counterPro', 'thickSkin'], text: `견제·반격 점수 ×${COMBO.stealMult}, 표적 시간 −${COMBO.stealMarkCutMs / 1000}초` },
   { id: 'lucky', name: '행운아', needs: ['jackpot', 'rainbowHunt'], text: `잭팟 확률 +${COMBO.jackpotAdd}%` },
   { id: 'outskirts', name: '변두리', needs: ['edge', 'magnet'], text: `커서가 가장자리 구역이면 자석 범위 ×${COMBO.outskirtsMult}` },
-  { id: 'gourmet', name: '미식가', needs: ['picky', 'yellowTaste'], text: '편식가의 노란색 −1 대가가 없어짐' },
-  { id: 'ironWall', name: '철옹성', needs: ['shield', 'insurance', 'rebound'], text: `라운드마다 ${COMBO.ironPerRound}번 콤보 끊김을 막음` },
+  { id: 'gourmet', name: '미식가', needs: ['picky', 'yellowTaste'], text: '노란 원도 내 색 원처럼 (점수·피버 게이지)' },
+  { id: 'ironWall', name: '철옹성', needs: ['shield', 'insurance', 'rebound'], text: `콤보가 끊기지 않고 ${100 - COMBO.ironKeepPct}%만 줄어듦` },
 ];
 
 /** 완성한 조합 */
