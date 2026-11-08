@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { RULES, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type Pick } from '../src/index.ts';
+import { RULES, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type MapPattern, type Pick } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -890,4 +890,126 @@ test('멀티: 카운트다운 중 다시 멈추기는 그대로 무시', (t) => 
   room.pause(me.id);
   t.mock.timers.tick(RULES.pause.resumeMs);
   assert.equal(ps(room).pausedAt, 0);
+});
+
+// ---------- 맵 패턴 ----------
+type MapPriv = {
+  pattern: MapPattern | null; pendingPattern: MapPattern | null; popped: Set<number>; updatePattern(now: number): void;
+  cursors: Map<string, { x: number; y: number; at: number }>; playPayload(): { pattern: MapPattern | null; popped: number[] };
+  endRound(): void; startAt: number; endAt: number;
+};
+const mp = (room: Room) => room as unknown as MapPriv;
+/** 맵 패턴 확률을 정해 시작한 방 (사람 2명) */
+function mapRoom(mapPct: number, mode: 'classic' | 'arcade' = 'classic') {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.fillBots = false;
+  room.setRules(a.id, { rules: { mapPct, mode } });
+  assert.equal(room.start(a.id), null);
+  return { room, me: room.players.find((p) => p.id === a.id)! };
+}
+
+test('맵 패턴: 0%면 안 나옴, 100%면 라운드마다 1번 경고 후 등장·끝나면 사라짐', () => {
+  const off = mapRoom(0);
+  assert.equal(mp(off.room).pendingPattern, null);
+  off.room.destroy();
+  const { room } = mapRoom(100);
+  const r = mp(room);
+  const p = r.pendingPattern!;
+  assert.ok(p, '100%면 반드시');
+  assert.ok(p.at >= r.startAt + RULES.patterns.startMs && p.at <= r.endAt - RULES.patterns.endQuietMs);
+  sent.length = 0;
+  r.updatePattern(p.warnAt - 1);
+  assert.equal(r.pattern, null);
+  r.updatePattern(p.warnAt);
+  assert.equal(r.pattern, p);
+  assert.ok(sent.includes('map:warn'));
+  r.updatePattern(p.until);
+  assert.equal(r.pattern, null);
+  room.destroy();
+});
+
+test('맵 패턴: 가시 공에 닿으면 그 공이 사라지고 1초 스턴, 사라진 공에는 다시 안 맞음', () => {
+  const { room, me } = mapRoom(0);
+  const r = mp(room);
+  const now = Date.now();
+  r.pattern = { id: 'spikes', warnAt: now - 2000, at: now - 500, until: now + 9000, balls: [{ x: 400, y: 400, vx: 0, vy: 0 }] };
+  r.cursors.set(me.id, { x: 410, y: 400, at: now });
+  sent.length = 0;
+  r.updatePattern(now);
+  assert.deepEqual([...r.popped], [0]);
+  assert.equal(me.stunUntil, now + RULES.patterns.spikes.stunMs);
+  assert.ok(sent.includes('map:pop') && sent.includes('stun'));
+  me.stunUntil = 0;
+  r.cursors.set(me.id, { x: 410, y: 400, at: now + 100 });
+  r.updatePattern(now + 100);
+  assert.equal(me.stunUntil, 0);
+  room.destroy();
+});
+
+test('맵 패턴: 링 위험 구역이면 스턴, 풀린 뒤 1초 무적', () => {
+  const { room, me } = mapRoom(0);
+  const r = mp(room);
+  const now = Date.now();
+  r.pattern = { id: 'ring', warnAt: now - 8500, at: now - 7000, until: now + 3000 };
+  const at = (t: number) => { r.cursors.set(me.id, { x: 20, y: 450, at: t }); r.updatePattern(t); };
+  at(now);
+  assert.equal(me.stunUntil, now + RULES.patterns.ring.stunMs);
+  at(now + 1500);
+  assert.equal(me.stunUntil, now + 1000, '무적 중');
+  at(now + 2000);
+  assert.equal(me.stunUntil, now + 3000);
+  room.destroy();
+});
+
+test('맵 패턴: 벽 안을 누르면 아무 일 없음 (빈 곳 감점 없음)', () => {
+  const { room, me } = mapRoom(0);
+  const r = mp(room);
+  (room as unknown as { startAt: number }).startAt = 0;
+  const now = Date.now();
+  r.pattern = { id: 'walls', warnAt: now - 2000, at: now - 500, until: now + 9000, walls: [{ x: 100, y: 100, w: 300, h: 40 }] };
+  me.combo = 5;
+  room.click(me.id, { circleId: null, x: 200, y: 120 });
+  assert.deepEqual([me.combo, me.stats.misses], [5, 0]);
+  room.click(me.id, { circleId: null, x: 200, y: 300 });
+  assert.equal(me.stats.misses, 1, '벽 밖은 그대로 빈 곳');
+  room.destroy();
+});
+
+test('맵 패턴: 일시정지하면 경고·등장·끝 시각이 같이 밀림', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = mapRoom(100);
+  t.after(() => room.destroy());
+  const r = mp(room);
+  const before = r.pendingPattern!;
+  room.pause(me.id);
+  t.mock.timers.tick(2000);
+  room.resume(me.id);
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  const d = 2000 + RULES.pause.resumeMs;
+  assert.deepEqual([r.pendingPattern!.warnAt, r.pendingPattern!.at, r.pendingPattern!.until], [before.warnAt + d, before.at + d, before.until + d]);
+});
+
+test('맵 패턴: 재접속하면 game:sync에 패턴과 사라진 공', () => {
+  const { room } = mapRoom(0);
+  const r = mp(room);
+  const now = Date.now();
+  r.pattern = { id: 'spikes', warnAt: now - 2000, at: now - 500, until: now + 9000, balls: [{ x: 400, y: 400, vx: 0, vy: 0 }, { x: 900, y: 400, vx: 0, vy: 0 }] };
+  r.popped.add(1);
+  const pl = r.playPayload();
+  assert.equal(pl.pattern, r.pattern);
+  assert.deepEqual(pl.popped, [1]);
+  room.destroy();
+});
+
+test('맵 패턴: 아케이드 라운드가 끝나면 지워지고 다음 라운드로 안 넘어감', () => {
+  const { room } = mapRoom(100, 'arcade');
+  const r = mp(room);
+  const now = Date.now();
+  r.pattern = { id: 'ring', warnAt: now - 2000, at: now - 500, until: now + 9000 };
+  r.popped.add(0);
+  r.endRound();
+  assert.deepEqual([r.pattern, r.pendingPattern, r.popped.size], [null, null, 0]);
+  room.destroy();
 });

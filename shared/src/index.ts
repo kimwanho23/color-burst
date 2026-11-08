@@ -5,3 +5,4 @@ export * from './items.ts';
 export * from './events.ts';
 export * from './waves.ts';
 export * from './cursor.ts';
+export * from './patterns.ts';

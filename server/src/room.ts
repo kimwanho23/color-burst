@@ -5,7 +5,7 @@ import {
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
-  FIELD, zoneOf, goldTimes, makeGold, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
+  FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
@@ -102,6 +102,10 @@ export class Room {
   private cursors = new Map<string, { x: number; y: number; at: number }>();
   /** 예고·발사 중인 레이저 볼리들 (hit: 그 볼리에 맞은 플레이어) */
   private lasers: (LaserVolley & { hit: Set<string> })[] = [];
+  /** 맵 패턴: 경고 중이거나 나와 있는 것, 이번 라운드에 나올 예정인 것, 사라진 가시 공 */
+  private pattern: MapPattern | null = null;
+  private pendingPattern: MapPattern | null = null;
+  private popped = new Set<number>();
   /** 다음 레이저 시점(판 시작 후 ms) */
   private nextLaserAt = 0;
   /** 원 id → 커서 자석 끌기 */
@@ -318,6 +322,8 @@ export class Room {
     for (const z of this.zones) z.until += delta;
     for (const l of this.lasers) l.at += delta;
     for (const pl of this.pulls.values()) pl.at += delta;
+    if (this.pattern) this.pattern = shiftPattern(this.pattern, delta);
+    if (this.pendingPattern) this.pendingPattern = shiftPattern(this.pendingPattern, delta);
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
     if (this.freezeUntil > this.pausedAt) this.freezeUntil += delta;
     for (const b of this.bots.values()) b.shift(delta);
@@ -379,6 +385,11 @@ export class Room {
       if (d.circleId !== null) this.rejectTo(id, d.circleId);
       return;
     }
+    // 벽·회전 막대 안을 누르면 아무 일 없음 (커서가 들어갈 수 없는 곳, 빈 곳 감점도 없음)
+    if (blockedAt(this.pattern, d, now)) {
+      if (d.circleId !== null) this.rejectTo(id, d.circleId);
+      return;
+    }
 
     // 판정 순서: ① 직접 맞은 원 ② 넓은 손 범위 안의 내 원 전부 ③ 빈 곳 (원을 노린 클릭이 아닐 때만). 자석은 커서 기준으로 틱마다 (updatePulls)
     let got = false;
@@ -419,6 +430,48 @@ export class Room {
         this.emitPlayers();
       }
     }
+  }
+
+  /** 맵 패턴 지우기 (라운드 시작·끝, 게임 끝) */
+  private clearPattern() {
+    this.pattern = null;
+    this.pendingPattern = null;
+    this.popped.clear();
+  }
+
+  /**
+   * 맵 패턴: 경고 시각이 되면 알리고(현수막), 끝나면 지운다. 나와 있는 동안
+   * 가시 공에 닿으면 그 공이 사라지고 스턴, 좁아지는 링 위험 구역이면 스턴 (봇은 커서가 없어 제외)
+   */
+  private updatePattern(now: number) {
+    if (this.pendingPattern && now >= this.pendingPattern.warnAt) {
+      this.pattern = this.pendingPattern;
+      this.pendingPattern = null;
+      this.popped.clear();
+      this.io.to(this.code).emit('map:warn', this.pattern);
+    }
+    const pt = this.pattern;
+    if (pt && now >= pt.until) { this.pattern = null; this.popped.clear(); return; }
+    if (!patternActive(pt, now) || (pt.id !== 'spikes' && pt.id !== 'ring')) return;
+    const R = RULES.patterns;
+    let changed = false;
+    for (const p of this.players) {
+      const cur = this.freshCursor(p.id, now);
+      if (p.bot || !cur) continue;
+      let by: 'spike' | 'ring' | null = null, ms = 0;
+      if (pt.id === 'spikes') {
+        const i = spikeHit(pt, cur, now, this.popped);
+        if (i < 0) continue;
+        // 닿은 공은 그 자리에서 사라진다 (스턴이 막혀도)
+        this.popped.add(i);
+        this.io.to(this.code).emit('map:pop', { index: i, by: p.id });
+        by = 'spike'; ms = hazardStun(p, now, R.spikes.stunMs, this.G, this.players);
+      } else if (inRingDanger(pt, cur, now)) {
+        by = 'ring'; ms = hazardStun(p, now, R.ring.stunMs, this.G, this.players);
+      }
+      if (by && ms > 0) { this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by }); changed = true; }
+    }
+    if (changed) this.emitPlayers();
   }
 
   /** 이 점이 어떤 이동형 보스의 오오라 안인지 */
@@ -583,6 +636,7 @@ export class Room {
       startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
       rules: this.rules, pausedBy: this.pausedBy, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
       pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
+      pattern: this.pattern, popped: [...this.popped],
     };
   }
 
@@ -611,6 +665,7 @@ export class Room {
     this.nextWaveAt = nextWaveIn(Math.random, this.G.chaos);
     this.lasers = [];
     this.nextLaserAt = nextLaserIn(Math.random, this.G.chaos);
+    this.clearPattern();
     this.pulls.clear();
     this.pullLog.clear();
     this.cursors.clear();
@@ -626,6 +681,11 @@ export class Room {
     this.startAt = now + RULES.countdownMs;
     this.endAt = this.startAt + this.G.roundMs;
     this.lastSpawn = this.startAt;
+    // 맵 패턴: 라운드마다 확률로 최대 1번
+    if (Math.random() < this.G.mapChance) {
+      const at = rollPatternAt(this.startAt, this.endAt);
+      if (at >= 0) this.pendingPattern = rollPattern(at);
+    }
     for (const p of this.players) startRound(p, this.startAt, this.G, this.endAt);
     this.io.to(this.code).emit('game:start', this.playPayload());
   }
@@ -637,6 +697,7 @@ export class Room {
   private endRound() {
     // 끌려오던 원은 끄는 사람이 잡은 것으로 마무리한 뒤 판을 비운다
     this.resolvePulls(Date.now(), true);
+    this.clearPattern();
     this.roundPhase = 'pick';
     this.circles.clear();
     this.bossHits.clear();
@@ -804,6 +865,7 @@ export class Room {
     this.updateLaser(now);
     this.updatePulls(now);
     this.updateAura(now);
+    this.updatePattern(now);
     // 과충전 레전드: 피버가 끝나면 남겨 둔 게이지를 채움
     let settled = false;
     for (const p of this.players) if (settleFever(p, now)) settled = true;
@@ -1118,6 +1180,7 @@ export class Room {
 
   private end() {
     this.resolvePulls(Date.now(), true);
+    this.clearPattern();
     this.stop();
     this.clearPickTimers();
     this.applyRoundCurses();

@@ -57,6 +57,20 @@ export const RULES = {
   /** 방해 아이템: 효과 시간, 감도 감소 배율, 1등 저격 스턴, 효과가 끝난 뒤 커서가 마우스로 돌아오는 시간 */
   /** 방해: 효과 시간, 감도 감소 때 커서가 진짜 마우스를 따라가는 시간 상수(ms), 저격 스턴, 효과가 바뀔 때 미끄러지는 시간 */
   sabotage: { slowMs: 3_000, invertMs: 3_000, blindMs: 5_000, slowLagMs: 350, snipeStunMs: 3_000, slideMs: 150 },
+  /**
+   * 맵 패턴: 라운드마다 확률로 최대 1번. 시작 startMs 뒤 ~ 끝나기 endQuietMs 전 사이에 나타나고, warnMs 전에 경고·현수막.
+   * 패턴마다 유지 시간 ms와 모양·움직임 수치 (거리는 필드 단위, 속도는 초당)
+   */
+  patterns: {
+    warnMs: 1_500, startMs: 5_000, endQuietMs: 12_000,
+    walls: { ms: 10_000, count: [2, 3], thick: 40, len: [300, 450], centerClear: 220 },
+    spikes: { ms: 10_000, count: 3, r: 28, speed: 260, stunMs: 1_000 },
+    bar: { ms: 9_000, len: 1100, thick: 36, degPerSec: 45 },
+    vortex: { ms: 8_000, r: 450, pull: 90, centerClear: 250 },
+    ice: { ms: 8_000, stiff: 40, damp: 6 },
+    ring: { ms: 10_000, shrinkMs: 6_000, holdMs: 3_000, startE: 1.5, minE: 0.7, stunMs: 1_000 },
+    fog: { ms: 8_000, count: 3, r: 220, speed: 60 },
+  },
   /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
   aura: { extra: 80, pullSpeed: 120, tickMs: 1_000, feverLoss: 15, comboKeepPct: 70 },
   /**

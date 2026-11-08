@@ -8,6 +8,7 @@ import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
 import type { WavePattern } from './waves.ts';
 import type { Point } from './cursor.ts';
+import type { MapPattern } from './patterns.ts';
 
 /** 커서 자석으로 끌려가는 원: at부터 ms 동안 by의 커서로 빨려 들어간 뒤 잡힌다 */
 export interface Pull { circleId: number; by: string; from: Point; at: number; ms: number }
@@ -90,6 +91,9 @@ export interface PlayPayload {
   /** 끌려가는 원, 예고·발사 중인 레이저 (재접속 때 이어서 그린다) */
   pulls: Pull[];
   lasers: LaserVolley[];
+  /** 경고 중이거나 나와 있는 맵 패턴, 이미 사라진 가시 공 번호 (재접속 때 이어서 그린다) */
+  pattern: MapPattern | null;
+  popped: number[];
   /** 이번 라운드 테마 (아케이드 랜덤 이벤트) */
   theme: ThemeId | null;
 }
@@ -128,6 +132,10 @@ export interface ServerToClient {
   'zone:add': (z: Zone) => void;
   /** 레이저 예고 (at에 발사) */
   'laser:warn': (d: LaserVolley) => void;
+  /** 맵 패턴 경고 시작 (현수막). p.at에 나타나고 p.until에 사라진다 */
+  'map:warn': (p: MapPattern) => void;
+  /** 가시 공이 커서에 닿아 사라짐 */
+  'map:pop': (d: { index: number; by: string }) => void;
   /** 스턴: until까지 클릭 불가 */
   stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' | 'spike' | 'ring' }) => void;
   /** 이동형 보스 오오라를 클릭해 점수를 잃음 */
