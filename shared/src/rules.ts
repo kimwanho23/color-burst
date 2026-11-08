@@ -610,7 +610,7 @@ function shiftFeverEnd(p: PlayerState, delta: number) {
 export const luckyMods = (p: PlayerState, m: Mods): Mods => (combosOf(p.picks).has('lucky') ? { ...m, jackpot: m.jackpot + COMBO.jackpotAdd } : m);
 
 /** 여운 배율 (여운 레전드면 ×2) */
-export const afterMultOf = (p: PlayerState) => (hasLegend(p, 'afterglow') ? LEGEND.afterglowMult : 1.5);
+export const afterMultOf = (p: PlayerState) => (hasLegend(p, 'afterglow') ? LEGEND.afterglowMult : AUG.afterglowMult);
 
 /**
  * 피버가 끝난 뒤 처음 불릴 때 정리한다 (서버 틱·원 획득 때): 예열 레전드 배율을 지우고,
@@ -1030,7 +1030,7 @@ export function resolveClaim(
   } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands)) {
     // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
     res.type = 'own'; pts = own; claimer.combo++;
-    res.feverStarted = addFever(claimer, RULES.fever.own * (L.has('picky') ? 2 : 1), now, G, players);
+    res.feverStarted = addFever(claimer, RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1), now, G, players);
   } else {
     steal = true;
     const owner = players.find((p) => p.color === kind);
@@ -1117,7 +1117,7 @@ export function resolveClaim(
   const every = m.momentum ? Math.min(SPECIAL.momentumEvery, comboPeriod(m.comboArtist)) : comboPeriod(m.comboArtist);
   if (!steal && crossedCombo(comboBefore, claimer.combo, every)) {
     res.comboBonus = true;
-    pts += (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0) + (K.has('comboMachine') ? COMBO.comboBonusAdd : 0)) * (fever && L.has('frenzy') ? 2 : 1);
+    pts += (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0) + (K.has('comboMachine') ? COMBO.comboBonusAdd : 0)) * (fever && L.has('frenzy') ? LEGEND.frenzyComboMult : 1);
   }
   const st = claimer.stats;
   st.hits++;

@@ -479,7 +479,7 @@ export class Room {
     const hits = this.bossHits.get(c.id) ?? new Map<string, number>();
     this.bossHits.set(c.id, hits);
     const info = bossHitInfo(p);
-    const early = hasLegend(p, 'vanguard') && now - c.born <= AUG.vanguardMs ? 2 : 1;
+    const early = hasLegend(p, 'vanguard') && now - c.born <= AUG.vanguardMs ? LEGEND.vanguardMult : 1;
     const dmg = Math.min(info.damage * early, c.hp ?? 1);
     hits.set(p.id, (hits.get(p.id) ?? 0) + dmg);
     p.stats.bossHits++;

@@ -36,15 +36,13 @@ export const ARCADE = {
   comeback: { ratio: 0.6, from: 1, specialAt: 2, legendAt: 3, roomMult: { 2: 1.1, 3: 1.2, 4: 1.3 } as Record<number, number> },
 } as const;
 
-/** 콤보 보너스 기본값 (rules.ts RULES.comboBonus와 같음, 순환 import를 피하려고 여기에도) */
-const RULES_COMBO_BONUS = 5;
-
 /** 레전드 전용 효과 수치 */
 export const LEGEND = {
   hammerChance: 0.15, hammerDmg: 3, comboBonusAdd: 10, headStartMs: 10_000, headStartMult: 1.5, jackpotMults: [2, 3, 5],
   preheatMult: 2, overtimeMs: 100, overchargeKeep: 50, afterglowMult: 2, shieldDrain: 3, plunderTopMult: 2,
   jammerSlowMs: 2_000, wideHandMult: 1.5, magnetPerSec: 4, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
   collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1, counterFever: 20,
+  pickyFeverMult: 2, frenzyComboMult: 2, vanguardMult: 2,
 } as const;
 
 /** 증강 조합 보너스 수치 */
@@ -53,7 +51,7 @@ export const COMBO = { feverAdd: 1, comboBonusAdd: 5, bossDmgAdd: 1, stealAdd: 2
 export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
 
 /** 새 증강 수치 */
-export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000 } as const;
+export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000, afterglowMult: 1.5 } as const;
 
 /** 특별 카드 수치 */
 export const SPECIAL = {
@@ -138,7 +136,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'overtime', name: '연장전', cat: '피버', values: [1, 2, 3, 6], desc: (v) => `피버 시간 +${v}초` },
   { id: 'overcharge', name: '과충전', cat: '피버', values: [15, 30, 45, 90], desc: (v) => `피버 게이지 충전 +${v}%` },
   { id: 'frenzy', name: '폭주', cat: '피버', values: [0.5, 1, 1.5, 3], desc: (v) => `피버 배율 +${v}` },
-  { id: 'afterglow', name: '여운', cat: '피버', values: [1, 2, 3, 6], desc: (v) => `피버가 끝난 뒤 ${v}초 동안 점수 ×1.5` },
+  { id: 'afterglow', name: '여운', cat: '피버', values: [1, 2, 3, 6], desc: (v) => `피버가 끝난 뒤 ${v}초 동안 점수 ×${AUG.afterglowMult}` },
   { id: 'ignite', name: '점화', cat: '피버', values: [1, 2, 3, 5], cap: 10, desc: (v) => `피버가 터질 때 화면의 내 원 ${v}개 자동 획득` },
   // 보스
   { id: 'hammer', name: '해머', cat: '보스', values: [1, 2, 3, 6], desc: (v) => `보스 타격 +${v}점` },
@@ -159,7 +157,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'taunt', name: '도발', cat: '견제', values: [5, 10, 15, 25], cap: 50, desc: (v) => `견제하면 상대 피버 게이지 −${v}%` },
   // 보조
   { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 70], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
-  { id: 'magnet', name: '자석', cat: '보조', values: [60, 90, 120, 240], cap: 240, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (1초에 2개)` },
+  { id: 'magnet', name: '자석', cat: '보조', values: [60, 90, 120, 240], cap: 240, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음` },
   { id: 'missSave', name: '헛손질 보정', cat: '보조', values: [40, 60, 80, 120], cap: 160, desc: (v) => `빈 곳을 클릭하면 반경 ${v} 안의 가장 가까운 내 원을 대신 잡음` },
   { id: 'collector', name: '수집가', cat: '보조', values: [20, 40, 60, 100], cap: 200, desc: (v) => `아이템 효과 시간 +${v}%` },
 ];
@@ -168,19 +166,28 @@ export const ABILITIES: readonly AbilityDef[] = [
 export const ASSIST_ABILITIES: readonly AbilityId[] = ['wideHand', 'magnet', 'missSave'];
 
 /** 레전드 전용 효과 문장 (그 능력을 레전드로 한 번이라도 고르면 붙는다) */
+const L_ = LEGEND;
+const pct = (x: number) => `${Math.round(x * 100)}%`;
 export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
-  picky: '내 색 원을 잡으면 피버 게이지가 2배로 참', yellowTaste: '노란 원도 피버 게이지가 내 색 원만큼 참',
-  rainbowHunt: '무지개 원을 잡으면 즉시 피버', comboArtist: `콤보 보너스 +${RULES_COMBO_BONUS} → +${RULES_COMBO_BONUS + 10}`,
-  headStart: '라운드 처음 10초 동안 점수 ×1.5', jackpot: '잭팟 배율 ×2~×5', edge: '가장자리에서 잡으면 콤보 +2',
-  preheat: '라운드 첫 피버 배율 +2', overtime: '피버 중 원을 잡을 때마다 피버 시간 +0.1초', overcharge: '피버가 끝나도 게이지 50%가 남음',
-  frenzy: '피버 중 콤보 보너스 2배', afterglow: '여운 배율 ×1.5 → ×2', hammer: '보스를 때리면 15% 확률로 3타',
+  picky: `내 색 원을 잡으면 피버 게이지가 ${L_.pickyFeverMult}배로 참`, yellowTaste: '노란 원도 피버 게이지가 내 색 원만큼 참',
+  rainbowHunt: '무지개 원을 잡으면 즉시 피버', comboArtist: `콤보 보너스 점수 +${L_.comboBonusAdd}`,
+  headStart: `라운드 처음 ${sec(L_.headStartMs)} 동안 점수 ×${L_.headStartMult}`, jackpot: `잭팟 배율 ×${L_.jackpotMults[0]}~×${L_.jackpotMults.at(-1)}`,
+  edge: `가장자리에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
+  preheat: `라운드 첫 피버 배율 +${L_.preheatMult}`, overtime: `피버 중 원을 잡을 때마다 피버 시간 +${sec(L_.overtimeMs)}`,
+  overcharge: `피버가 끝나도 게이지 ${L_.overchargeKeep}%가 남음`,
+  frenzy: `피버 중 콤보 보너스 ${L_.frenzyComboMult}배`, afterglow: `여운 배율 ×${AUG.afterglowMult} → ×${L_.afterglowMult}`,
+  hammer: `보스를 때리면 ${pct(L_.hammerChance)} 확률로 ${L_.hammerDmg}타`,
   hunter: '보스 막타 때 화면의 내 원을 전부 잡음', crusher: '방어형 보스의 보호막을 무시', insurance: '콤보가 끊겨도 피버 게이지가 안 깎임',
-  shield: '견제당하면 견제한 사람 점수 3점을 빼앗음', thickSkin: '견제해도 피버 게이지가 안 깎임', plunder: '1등을 견제하면 빼앗는 점수 2배',
-  counterPro: '반격하면 피버 게이지 +20', reflect: '횟수 제한 없음', jammer: '내 피버가 터지면 상대 커서 2초 감도 감소',
-  wideHand: '범위로 같이 잡은 원 점수 ×1.5', magnet: '1초에 4개까지 끌어옴', missSave: '대신 잡은 원 점수 ×1.5',
-  rebound: '끊긴 콤보의 절반을 그 3초 안에 되찾음', rapid: '연속 5개면 다음 원 잭팟 확정', laserProof: '레이저에 닿으면 피버 게이지 +20',
-  collector: '아이템 원을 잡으면 50% 확률로 한 등급 위', chainCombo: '5콤보마다', centerKing: '중앙에서 잡으면 콤보 +2',
-  ignite: '화면의 내 원 전부', vanguard: '보스 등장 후 3초 동안 주는 피해 2배', taunt: '피버 중인 상대를 견제하면 그 피버가 1초 짧아짐',
+  shield: `견제당하면 견제한 사람 점수 ${L_.shieldDrain}점을 빼앗음`, thickSkin: '견제해도 피버 게이지가 안 깎임',
+  plunder: `1등을 견제하면 빼앗는 점수 ${L_.plunderTopMult}배`,
+  counterPro: `반격하면 피버 게이지 +${L_.counterFever}`, reflect: '횟수 제한 없음', jammer: `내 피버가 터지면 상대 커서 ${sec(L_.jammerSlowMs)} 감도 감소`,
+  wideHand: `범위로 같이 잡은 원 점수 ×${L_.wideHandMult}`, magnet: `1초에 ${L_.magnetPerSec}개까지 끌어옴`, missSave: `대신 잡은 원 점수 ×${L_.missSaveMult}`,
+  rebound: `끊긴 콤보의 절반을 그 ${sec(AUG.reboundMs)} 안에 되찾음`, rapid: `연속 ${L_.rapidStreak}개면 다음 원 잭팟 확정`,
+  laserProof: `레이저에 닿으면 피버 게이지 +${L_.laserFever}`,
+  collector: `아이템 원을 잡으면 ${pct(L_.collectorUp)} 확률로 한 등급 위`, chainCombo: `${L_.chainEvery}콤보마다`,
+  centerKing: `중앙에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
+  ignite: '화면의 내 원 전부', vanguard: `보스 등장 후 ${sec(AUG.vanguardMs)} 동안 주는 피해 ${L_.vanguardMult}배`,
+  taunt: `피버 중인 상대를 견제하면 그 피버가 ${sec(L_.tauntMs)} 짧아짐`,
 };
 
 export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall';
@@ -256,14 +263,14 @@ export const SPECIALS: readonly AbilityDef[] = ([
   ['comebackBoost', '대역전', `내 모든 점수 ×${S.boost}`],
   ['flip', '판 뒤집기', `라운드가 끝날 때 1등과의 점수 차의 ${S.flipPct}%를 내 점수에 더함`],
   ['focusFire', '집중 포화', `라운드를 피버로 시작, 피버 배율 +${S.focusMult}`],
-  ['hyena', '하이에나', `1등이 원을 잡을 때마다 ${S.hyenaChance * 100}% 확률로 내 점수 +${S.hyenaGain}`],
-  ['chaser', '추격자', '모든 원이 한 단계 바깥 구역 배율 (중앙 ×2 · 사이 ×3 · 가장자리 ×4)'],
+  ['hyena', '하이에나', `1등이 원을 잡아 점수를 얻을 때마다 ${Math.round(S.hyenaChance * 100)}% 확률로 내 점수 +${S.hyenaGain}`],
+  ['chaser', '추격자', `모든 구역 점수 배율 +${S.chaserAdd}`],
   ['momentum', '기세', `콤보가 끊기지 않고, 콤보 보너스가 ${S.momentumEvery}콤보마다`],
-  ['allHands', '만능 손', '남의 색 원도 내 색처럼 +3, 견제 페널티·표적 없음'],
-  ['fortress', '철벽', '견제·레이저·방해 아이템에 걸리지 않음'],
-  ['chainBlast', '연쇄 폭발', `원을 잡으면 ${S.chainChance * 100}% 확률로 반지름 ${S.chainR} 안의 내 원도 함께`],
+  ['allHands', '만능 손', '남의 색 원도 내 색 원처럼 점수, 견제 페널티·표적 없음'],
+  ['fortress', '철벽', '견제(콤보 끊김·강탈·흡혈)·레이저·방해 아이템에 걸리지 않음'],
+  ['chainBlast', '연쇄 폭발', `원을 잡으면 ${Math.round(S.chainChance * 100)}% 확률로 반지름 ${S.chainR} 안의 내 원도 함께`],
   ['bossFeast', '막타 독식', `보스에게 주는 피해 ${S.feastMult}배, 막타 점수 ${S.feastMult}배`],
-  ['lastFlame', '마지막 불꽃', `라운드 마지막 ${S.flameMs / 1000}초 동안 점수 ×${S.flameMult}`],
+  ['lastFlame', '마지막 불꽃', `라운드 마지막 ${sec(S.flameMs)} 동안 점수 ×${S.flameMult}`],
   ['itemHunter', '아이템 사냥꾼', `아이템 원을 잡으면 한 등급 위 아이템, 효과 시간 ${S.hunterDur}배`],
 ] as const).map(([id, name, text]) => ({
   id, name, cat: '특별' as const, values: [1, 1, 1, 1] as const, cap: 1, special: true as const, desc: () => text,

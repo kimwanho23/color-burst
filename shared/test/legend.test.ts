@@ -23,7 +23,6 @@ test('레전드 수치 = 에픽 × 2 (상한 안에서)', () => {
     const a = ABILITY[id];
     assert.equal(a.values[3], Math.min(a.cap ?? Infinity, a.values[2] * 2), id);
   }
-  assert.equal(ABILITY.calm, undefined);
 });
 
 test('편식가·노란 맛 레전드: 피버 게이지', () => {

@@ -38,12 +38,12 @@ test('comboLock: 견제당해도 콤보 유지', () => {
   assert.equal(r.brokeComboOf, null);
 });
 
-test('missGuard: 빈 곳 페널티 없음, 침착 횟수 유지', () => {
+test('missGuard: 빈 곳 페널티 없음', () => {
   const [p] = two();
-  p.combo = 4; p.fever = 50; p.calmLeft = 2;
+  p.combo = 4; p.fever = 50;
   addBuff(p, 'missGuard', 8000, 0);
   resolveMiss(p, 100, G, [p]);
-  assert.deepEqual([p.combo, p.fever, p.calmLeft], [4, 50, 2]);
+  assert.deepEqual([p.combo, p.fever], [4, 50]);
 });
 
 test('missGuard: 유리 대포 −5는 그대로', () => {
