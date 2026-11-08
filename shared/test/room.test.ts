@@ -1152,3 +1152,103 @@ test('막타를 못 친 사람도 독식하면 boss:killed의 solo 목록에 들
   assert.deepEqual(killed.d.solo, [other.id]);
   assert.equal(other.score, RULES.boss.solo.points * 2 + RULES.boss.mvp); // 사이 구역 ×2, 최다 타격 +5
 });
+
+// ---------- 게임 중 나가기 ----------
+type LeavePriv = { bots: Map<string, unknown>; emptyTimer: unknown; resumeAt: number; round: number; roundPhase: string; offers: Map<string, { chosen: boolean }>; endRound(): void; startPick(): void; startAt: number };
+const lp = (room: Room) => room as unknown as LeavePriv;
+
+test('게임 중 나가면 그 자리를 봇이 이어받음: 점수·증강 유지, 이름 (봇), 알림', (t) => {
+  const { room, me, log } = payloadRoom();
+  t.after(() => room.destroy());
+  me.score = 50; me.picks = [{ id: 'hammer', tier: 1 }]; me.combo = 7;
+  room.leave(me.id, 's1');
+  assert.deepEqual([me.bot, me.name, me.score, me.picks.length, me.combo, me.connected], [true, 'A (봇)', 50, 1, 7, true]);
+  assert.ok(lp(room).bots.has(me.id));
+  assert.deepEqual(log.filter((e) => e.ev === 'player:left').map((e) => e.d), [{ id: me.id, name: 'A' }]);
+});
+
+test('증강 고르는 중에 나가면 바로 무작위로 고르고, 모두 골랐으면 다음 라운드', (t) => {
+  const { room, me, other, r } = arcadeRoom();
+  t.after(() => room.destroy());
+  openPick(r, 1);
+  room.leave(other.id, 's2');
+  assert.equal(other.picks.length, 1);
+  assert.equal(lp(room).roundPhase, 'pick');
+  room.choose(me.id, 0);
+  assert.deepEqual([lp(room).roundPhase, lp(room).round], ['play', 2]);
+  // 반대로 내가 먼저 고른 뒤 상대가 나가면 바로 다음 라운드
+  openPick(r, 2);
+  room.choose(me.id, 0);
+  const b2 = room.join('s3', 'k3', 'C'); // 진행 중이라 못 들어옴
+  assert.ok('error' in b2);
+  room.leave(me.id, 's1');
+  assert.equal(lp(room).roundPhase, 'pick'); // 상대(other)는 이미 봇이라 봇 선택 타이머를 기다림
+});
+
+test('일시정지를 건 사람이 나가면 다시 시작 카운트다운', (t) => {
+  const { room, me } = payloadRoom();
+  t.after(() => room.destroy());
+  room.pause(me.id);
+  assert.equal(lp(room).resumeAt, 0);
+  room.leave(me.id, 's1');
+  assert.ok(lp(room).resumeAt > Date.now());
+});
+
+test('혼자 하기에서 나가면 방이 끝남, 사람이 모두 나가면 방이 끝남(봇끼리 안 함)', (t) => {
+  let ended = 0;
+  const solo = new Room(fakeIo(), 'SOLO', () => { ended++; }, true);
+  t.after(() => solo.destroy());
+  const a = solo.join('s1', 'k1', 'A') as { id: string };
+  assert.equal(solo.start(a.id), null);
+  solo.leave(a.id, 's1');
+  assert.equal(ended, 1);
+  const { room, me, other } = payloadRoom();
+  t.after(() => room.destroy());
+  room.leave(me.id, 's1');
+  assert.equal(lp(room).emptyTimer, null);
+  room.leave(other.id, 's2');
+  assert.ok(lp(room).emptyTimer, '사람이 없으면 방 종료 타이머');
+});
+
+test('연결 끊김은 봇이 되지 않고 다시 들어올 수 있음', (t) => {
+  const { room, me } = payloadRoom();
+  t.after(() => room.destroy());
+  room.disconnect(me.id, 's1');
+  assert.deepEqual([me.bot, me.connected], [false, false]);
+  const back = room.join('s9', 'k1', 'A') as { id: string };
+  assert.equal(back.id, me.id);
+});
+
+test('나간 사람은 같은 키로 자리를 되찾지 못함', (t) => {
+  const { room, me } = payloadRoom();
+  t.after(() => room.destroy());
+  room.leave(me.id, 's1');
+  const back = room.join('s9', 'k1', 'A');
+  assert.ok('error' in back);
+  assert.equal(me.bot, true);
+});
+
+test('나가기를 두 번·나간 뒤 끊김이 와도 한 번만 바뀜', (t) => {
+  const { room, me, log } = payloadRoom();
+  t.after(() => room.destroy());
+  room.leave(me.id, 's1');
+  room.leave(me.id, 's1');
+  room.disconnect(me.id, 's1');
+  assert.deepEqual([me.name, me.bot, me.connected], ['A (봇)', true, true]);
+  assert.equal(log.filter((e) => e.ev === 'player:left').length, 1);
+});
+
+test('시작 카운트다운 중·라운드 종료 연출 중에 나가도 이어받음', (t) => {
+  const { room, me } = payloadRoom();
+  t.after(() => room.destroy());
+  lp(room).startAt = Date.now() + 3000; // 카운트다운 중
+  room.leave(me.id, 's1');
+  assert.equal(me.bot, true);
+  const { room: room2, me: a, other: b, r } = arcadeRoom();
+  t.after(() => room2.destroy());
+  lp(room2).endRound(); // 라운드 종료 연출 (선택지는 아직 없음)
+  room2.leave(b.id, 's2');
+  assert.equal(b.bot, true);
+  lp(room2).startPick();
+  assert.ok(r.offers.has(b.id) && r.offers.has(a.id));
+});
