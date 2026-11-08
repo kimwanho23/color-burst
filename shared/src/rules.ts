@@ -7,7 +7,8 @@ import { ABILITY, ARCADE, AUG, COMBO, CURSE, LEGEND, SPECIAL, combosOf, hasLegen
  */
 
 /** 논리 필드 크기. 클라이언트는 화면 크기에 맞춰 이 좌표계를 확대/축소해서 그린다. */
-export const FIELD = { w: 1600, h: 900 } as const;
+/** 판 크기: 정사각형. 보통 데스크톱에서 화면 배율이 예전(1600×900)과 거의 같아 크기·속도 수치는 그대로 */
+export const FIELD = { w: 1100, h: 1100 } as const;
 export const MAX_PLAYERS = 4;
 
 export const COLORS = [
@@ -65,7 +66,7 @@ export const RULES = {
     warnMs: 3_000, startMs: 5_000, endQuietMs: 12_000,
     walls: { ms: 10_000, count: [2, 3], thick: 40, len: [300, 450], centerClear: 220 },
     spikes: { ms: 10_000, count: 3, r: 28, speed: 260, stunMs: 1_000 },
-    bar: { ms: 9_000, len: 1100, thick: 36, degPerSec: 45 },
+    bar: { ms: 9_000, len: 1560, thick: 36, degPerSec: 45 },
     /** 소용돌이: 첫 번째 생성 secondAfterMs 뒤 하나 더 (그 전 warnMs 동안 미리보기). 끌림 구역 r 안이면 중심 쪽으로 최대 maxBend 쏠림, 눈 eye 안에 들어가면 끝까지 갇힘. 커서는 followMs로 부드럽게 따라감 */
     vortex: { ms: 10_000, r: 380, eye: 170, maxBend: 120, secondAfterMs: 4_000, centerClear: 250, followMs: 80 },
     ice: { ms: 8_000, stiff: 40, damp: 6 },
@@ -75,7 +76,7 @@ export const RULES = {
   /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
   aura: { extra: 80, pullSpeed: 120, tickMs: 1_000, feverLoss: 15, comboKeepPct: 70, halveCooldownMs: 3_000 },
   /**
-   * 점수 구역: 가운데에서의 타원 거리 e = √(((x−800)/800)² + ((y−450)/450)²)로 나눈다.
+   * 점수 구역: 가운데에서의 타원 거리 e = √(((x−cx)/cx)² + ((y−cy)/cy)²)로 나눈다 (cx, cy = 판 중앙, 정사각형 판이라 원).
    * e < bounds[0] 중앙, e < bounds[1] 사이, 그 밖은 가장자리. 일반 원 점수에 mult를 곱한다
    */
   zones: { bounds: [0.35, 0.7], mult: [1, 2, 3] },

@@ -41,7 +41,7 @@ export function distToSegment(p: Point, a: Point, b: Point) {
 
 /** 레이저: 필드 안쪽 한 점을 지나는 무작위 각도의 긴 선분 */
 export function rollLaser(rand = Math.random): { a: Point; b: Point } {
-  const cx = 200 + rand() * 1200, cy = 150 + rand() * 600;
+  const cx = FIELD.w * (0.15 + rand() * 0.7), cy = FIELD.h * (0.15 + rand() * 0.7);
   const ang = rand() * Math.PI;
   const dx = Math.cos(ang) * 2000, dy = Math.sin(ang) * 2000;
   return { a: { x: cx - dx, y: cy - dy }, b: { x: cx + dx, y: cy + dy } };
@@ -69,7 +69,7 @@ export function rollVolley(rand = Math.random): { kind: VolleyKind; lines: Laser
   let r = rand() * odds.reduce((s, [, w]) => s + w, 0);
   let kind: VolleyKind = odds[odds.length - 1][0];
   for (const [k, w] of odds) { r -= w; if (r < 0) { kind = k; break; } }
-  const c = { x: 200 + rand() * 1200, y: 150 + rand() * 600 };
+  const c = { x: FIELD.w * (0.15 + rand() * 0.7), y: FIELD.h * (0.15 + rand() * 0.7) };
   const ang = rand() * Math.PI;
   if (kind === 'single') return { kind, lines: [lineThrough(c, ang)] };
   if (kind === 'parallel') {

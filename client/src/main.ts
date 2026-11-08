@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  ABILITY, ARCADE, COMBOS, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -18,6 +18,26 @@ import { initSettingsPanel, isTyping, onSettingsChange, settings } from './setti
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 initTips();
+
+/**
+ * 게임 상자를 정사각형으로: 한 변 = min(남는 폭, 위쪽 바·점수판·아래 피버 바를 뺀 남는 높이).
+ * CSS 변수 --side로 상자 크기와 #app 최대 폭을 같이 맞춘다 (점수판이 줄바꿈되면 높이가 바뀌어 다시 계산)
+ */
+function fitStage() {
+  const app = $('app'), cs = getComputedStyle(app);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const gap = parseFloat(cs.rowGap) || 0;
+  const others = ([...app.children] as HTMLElement[]).filter((e) => e.id !== 'stage' && e.offsetParent !== null);
+  const used = others.reduce((sum, e) => sum + e.offsetHeight, 0) + gap * others.length;
+  const side = Math.max(240, Math.floor(Math.min(innerWidth - padX, innerHeight - padY - used)));
+  if (document.documentElement.style.getPropertyValue('--side') !== `${side}px`) document.documentElement.style.setProperty('--side', `${side}px`);
+}
+addEventListener('resize', fitStage);
+// 창 크기 이벤트가 안 오는 경우(확대·기기 회전 등)도 문서 크기가 바뀌면 다시 계산
+new ResizeObserver(fitStage).observe(document.documentElement);
+new ResizeObserver(fitStage).observe($('scores'));
+new ResizeObserver(fitStage).observe(document.querySelector('.top')!);
+fitStage();
 const socket: Socket<ServerToClient, ClientToServer> = io();
 
 // ---------- 서버 시각 맞추기 ----------
@@ -71,7 +91,9 @@ let frozenUntil = 0;
 /** 마지막 클릭 위치 (자석 끌림 선) */
 let lastClick = { x: 0, y: 0 };
 /** 마지막 폭죽·필드 클리어: 연쇄 폭발 순서 계산용 */
-let blast = { x: 800, y: 450, R: 1000 };
+/** 판 중앙과 중앙에서 구석까지 거리 (화면 문구·폭죽 위치) */
+const CX = FIELD.w / 2, CY = FIELD.h / 2, CORNER = Math.hypot(CX, CY);
+let blast = { x: CX, y: CY, R: CORNER };
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
 /** 지금 판(또는 대기실)의 방 규칙 */
 let rules: RoomRules = DEFAULT_RULES;
@@ -327,7 +349,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   circles.clear(); pending.clear();
   if (fresh) lastCount = -1;
   // 테마 라운드: 카운트다운 동안 테마 이름을 크게
-  if (fresh && d.theme) renderer.text(800, 330, THEMES[d.theme].name, '#ffd43b', 1.8);
+  if (fresh && d.theme) renderer.text(CX, CY + -120, THEMES[d.theme].name, '#ffd43b', 1.8);
   for (const c of d.circles) circles.set(c.id, c);
   zones = d.zones ?? [];
   pulls.clear();
@@ -431,7 +453,7 @@ socket.on('circle:spawn', (c) => {
   bossAnnouncedAt = now;
   sfx.bossAppear();
   const n = [...circles.values()].filter((x) => x.kind === 'boss' && serverNow() - x.born < 300).length;
-  renderer.text(800, 300, n > 1 ? `보스 ${n}마리 등장!` : `${BOSS_NAME[c.boss ?? 'normal']} 등장!`, '#ffc23a', 1.8);
+  renderer.text(CX, CY + -150, n > 1 ? `보스 ${n}마리 등장!` : `${BOSS_NAME[c.boss ?? 'normal']} 등장!`, '#ffc23a', 1.8);
 });
 const nameOf = (id: string | null) => players.find((p) => p.id === id);
 const GOLD = '#ffd166';
@@ -503,7 +525,7 @@ socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot 
 });
 socket.on('boss:escaped', ({ circleId }) => {
   circles.delete(circleId);
-  renderer.text(800, 300, '보스가 도망갔어요', '#9ca2d6', 1.1);
+  renderer.text(CX, CY + -150, '보스가 도망갔어요', '#9ca2d6', 1.1);
 });
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => {
@@ -518,7 +540,7 @@ socket.on('players', (p) => {
   combosReady = !!m;
   // 철옹성 조합이 콤보 끊김을 막았으면 (라운드 시작에는 늘어나기만 함)
   if (m && lastIron !== null && m.ironLeft < lastIron) {
-    sfx.bossBlock(); renderer.text(800, 330, '철옹성! 콤보 유지', '#ffd43b', 1.1);
+    sfx.bossBlock(); renderer.text(CX, CY + -120, '철옹성! 콤보 유지', '#ffd43b', 1.1);
     renderComboBar($('comboBar'), m); flashCombo($('comboBar'), 'ironWall');
   }
   lastIron = m ? m.ironLeft : null;
@@ -556,7 +578,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
       if (result.type === 'rainbow') sfx.rainbow();
     }
     if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
-    if (result.feverStarted) { sfx.fever(); renderer.text(800, 400, 'FEVER!', '#ff9f1c', 2); }
+    if (result.feverStarted) { sfx.fever(); renderer.text(CX, CY + -50, 'FEVER!', '#ff9f1c', 2); }
     // 조합 발동 반짝임 (그 조합이 없으면 아무 일 없음)
     const bar = $('comboBar');
     if (!blasted && (result.type === 'steal' || result.type === 'feverSteal' || result.type === 'counter')) flashCombo(bar, 'stealKing');
@@ -577,7 +599,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
 });
 socket.on('special:gain', ({ playerId, id, delta }) => {
   if (playerId !== myId()) return;
-  renderer.text(800, 200, `${ABILITY[id].name} +${delta}`, '#ffd166', 0.9);
+  renderer.text(CX, CY + -250, `${ABILITY[id].name} +${delta}`, '#ffd166', 0.9);
 });
 socket.on('gold:got', ({ circleId, by, gained, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
@@ -596,7 +618,7 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
   // 방해 아이템: 잡은 사람 뺀 모두에게 걸림 (저격은 stun 알림에서)
   if (ITEMS[item].sabotage && item !== 'snipe' && by !== myId() && who) {
     sfx.sabotage();
-    renderer.text(800, 300, `${who.name}의 ${ITEMS[item].name}!`, '#ff5d73', 1.3);
+    renderer.text(CX, CY + -150, `${who.name}의 ${ITEMS[item].name}!`, '#ff5d73', 1.3);
   }
   if (by === myId()) {
     const sp = renderer.toScreen(x, y);
@@ -608,7 +630,7 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
   }
   popOnChip($('scores'), by, itemIcon(item, 22));
   if (item === 'bomb') { blast = { x, y, R: RULES.items.bombR }; renderer.shockwave(x, y, RULES.items.bombR); sfx.bomb(); }
-  if (item === 'fieldClear') { blast = { x: 800, y: 450, R: 1000 }; renderer.flash(); renderer.shockwave(800, 450, 1000); sfx.clear(); }
+  if (item === 'fieldClear') { blast = { x: CX, y: CY, R: CORNER }; renderer.flash(); renderer.shockwave(CX, CY, CORNER); sfx.clear(); }
 });
 socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); });
 // ---------- 게임 커서: 레이저·스턴·자석 끌기 ----------
@@ -648,13 +670,13 @@ socket.on('stun', ({ playerId, by }) => {
   const p = nameOf(playerId);
   const snipe = by === 'snipe';
   if (playerId === myId()) {
-    if (snipe) { sfx.snipe(); renderer.snipe(); renderer.text(800, 380, '저격당했다!', '#ff5d73', 1.6); }
+    if (snipe) { sfx.snipe(); renderer.snipe(); renderer.text(CX, CY + -70, '저격당했다!', '#ff5d73', 1.6); }
     else sfx.stun();
-    const c = gameCursor.pos ?? { x: 800, y: 450 };
+    const c = gameCursor.pos ?? { x: CX, y: CY };
     renderer.text(c.x, c.y - 40, '스턴!', '#9ca2d6', 1.2);
   } else if (p) {
     if (snipe) sfx.snipe();
-    renderer.text(800, 120, snipe ? `${p.name} 저격!` : `${p.name} 스턴!`, COLORS[p.color].hex, snipe ? 1.1 : 0.8);
+    renderer.text(CX, CY + -330, snipe ? `${p.name} 저격!` : `${p.name} 스턴!`, COLORS[p.color].hex, snipe ? 1.1 : 0.8);
   }
 });
 socket.on('aura:hit', ({ by, x, y }) => {

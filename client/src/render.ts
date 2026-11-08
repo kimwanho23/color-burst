@@ -266,7 +266,7 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke();
     // 점수 구역 경계: 사이(×2)·가장자리(×3)가 시작되는 타원
     RULES.zones.bounds.forEach((b, i) => {
-      ctx.setLineDash([4, 12]); ctx.lineWidth = 2; ctx.strokeStyle = `rgba(126, 224, 255, ${i ? 0.1 : 0.07})`;
+      ctx.setLineDash([4, 12]); ctx.lineWidth = 2; ctx.strokeStyle = `rgba(126, 224, 255, ${i ? 0.2 : 0.14})`;
       ctx.beginPath(); ctx.ellipse(cx, cy, cx * b, cy * b, 0, 0, Math.PI * 2); ctx.stroke();
     });
     ctx.setLineDash([]);
@@ -368,6 +368,21 @@ export class Renderer {
     if (s.blind && s.blind.kind !== 'lens') this.drawBlind(s.blind, s.now);
     if (now < this.snipeUntil && !reduceMotion) this.drawSnipe(1 - (this.snipeUntil - now) / 600);
     if (s.cursor) this.drawCursor(s.cursor, now);
+    this.drawFieldEdge(s.myFever, now);
+    ctx.restore();
+  }
+
+  /** 판 밖 여백은 어둡게, 판 테두리는 밝게 (내 피버 중이면 주황으로 맥동) */
+  private drawFieldEdge(fever: boolean, frameNow: number) {
+    const ctx = this.ctx, big = 4000;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath(); ctx.rect(-big, -big, FIELD.w + big * 2, FIELD.h + big * 2); ctx.roundRect(0, 0, FIELD.w, FIELD.h, 18); ctx.fill('evenodd');
+    const pulse = fever && !reduceMotion ? 0.5 + 0.5 * Math.sin(frameNow / 160) : 0;
+    ctx.strokeStyle = fever ? (pulse > 0.5 ? '#ff4d2e' : '#ff9f1c') : 'rgba(255,255,255,.35)';
+    ctx.lineWidth = fever ? 5 + pulse * 2 : 3;
+    ctx.shadowColor = fever ? '#ff9f1c' : 'rgba(150,170,255,.5)'; ctx.shadowBlur = fever ? 24 : 10;
+    ctx.beginPath(); ctx.roundRect(0, 0, FIELD.w, FIELD.h, 18); ctx.stroke();
     ctx.restore();
   }
 
@@ -617,7 +632,7 @@ export class Renderer {
       ctx.fillStyle = '#05060f';
       const n = 3 + Math.floor(rnd() * 2);
       for (let i = 0; i < n; i++) {
-        const x = 200 + rnd() * 1200, y = 120 + rnd() * 660, r = 120 + rnd() * 90;
+        const x = FIELD.w * (0.12 + rnd() * 0.76), y = FIELD.h * (0.12 + rnd() * 0.76), r = 120 + rnd() * 90;
         ctx.beginPath();
         for (let k = 0; k <= 12; k++) { const a = (Math.PI * 2 * k) / 12, rr = r * (0.75 + rnd() * 0.4); ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
         ctx.fill();
