@@ -4,7 +4,7 @@ import {
   ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, crossedCombo, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
-  RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
+  RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, canLaserStun, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
@@ -75,6 +75,8 @@ export class Room {
   // ---------- 랜덤 이벤트 ----------
   /** 이번 게임에 랜덤 이벤트가 일어난 횟수 */
   private eventsUsed = 0;
+  /** 이번 게임에 나온 라운드 테마 수 */
+  private themesUsed = 0;
   /** 이번 게임에 나온 랜덤 이벤트 (대평등은 한 번만) */
   private eventsUsedIds = new Set<EventId>();
   /** 이번 라운드 테마 / 다음 라운드 테마 (능력 선택 중에 공개) */
@@ -210,7 +212,7 @@ export class Room {
     let base = this.rules;
     // 프리셋은 점수·속도 규칙만 바꾸고 모드 설정은 유지
     if (d.preset && d.preset in PRESETS) {
-      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec, randomEvents: this.rules.randomEvents };
+      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec };
     }
     this.rules = sanitizeRules(base, d.rules ?? {});
     this.broadcastState();
@@ -244,6 +246,7 @@ export class Room {
     this.history = Object.fromEntries(this.players.map((p) => [p.id, [0]]));
     this.round = 1;
     this.eventsUsed = 0;
+    this.themesUsed = 0;
     this.eventsUsedIds.clear();
     this.theme = null;
     this.nextTheme = null;
@@ -646,18 +649,20 @@ export class Room {
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
     // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
-    const eventId = this.G.randomEvents ? rollEvent(this.players, this.eventsUsed, Math.random, this.G.chaos ? RULES.chaos.eventChance : undefined, { round: this.round, usedIds: this.eventsUsedIds }) : null;
+    const eventId = rollEvent(this.players, this.eventsUsed, Math.random, this.G.eventChance, { round: this.round, usedIds: this.eventsUsedIds });
     const ev = eventId ? applyEvent(eventId, this.players, this.G) : null;
     this.lastEvent = ev;
     let delay = 0;
     if (ev) {
       this.eventsUsed++;
       this.eventsUsedIds.add(ev.id);
-      this.nextTheme = ev.theme ?? null;
       this.taxPot += ev.pot ?? 0;
       delay = RANDOM_EVENT.pickBonusMs;
       this.pickEndsAt += delay;
     }
+    // 라운드 테마: 이벤트와 따로 (다음 라운드가 2라운드 이상, 한 게임 최대 2번)
+    this.nextTheme = rollTheme(this.G, this.round, this.themesUsed);
+    if (this.nextTheme) this.themesUsed++;
     // 점수 그래프: 저주·랜덤 이벤트까지 반영한 라운드 끝 점수
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
 
@@ -910,7 +915,7 @@ export class Room {
       if (now < l.at) continue;
       for (const p of this.players) {
         const cur = this.freshCursor(p.id, now);
-        if (p.bot || l.hit.has(p.id) || !cur || !canLaserStun(p, now) || !volleyHits(cur, l.lines)) continue;
+        if (p.bot || l.hit.has(p.id) || !cur || !canLaserStun(p, now) || !volleyHits(cur, l.lines, this.G.laserHalf)) continue;
         l.hit.add(p.id);
         stunned = true;
         // 레이저 내성 레전드: 닿으면 피버 게이지 +20

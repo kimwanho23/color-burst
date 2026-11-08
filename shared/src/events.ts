@@ -2,7 +2,7 @@
  * 아케이드 랜덤 이벤트: 라운드 사이에 가끔 깜짝 룰렛이 돌아 무작위 이벤트가 일어난다.
  * 수치는 RANDOM_EVENT(등장·점수)와 rules.ts의 RULES.themes(라운드 테마)에 있다.
  */
-import { ranking, isLast, type GameRules, type PlayerState, type ThemeId } from './rules.ts';
+import { RULES, ranking, isLast, type GameRules, type PlayerState, type ThemeId } from './rules.ts';
 import { ABILITY, ARCADE, isCurse, isSpecial, type AbilityId, type RoundEffect, type Tier } from './arcade.ts';
 
 export const RANDOM_EVENT = {
@@ -79,14 +79,28 @@ function available(players: PlayerState[], ctx?: EventCtx): EventId[] {
     if (id === 'abilitySwap') return players.filter((p) => plainPicks(p).length).length >= 2;
     if (id === 'demote') return !!top && plainPicks(top).some((x) => x.tier > 0);
     if (id === 'curseDelivery') return players.some(canGetCurse);
+    // 라운드 테마는 이벤트와 따로 굴린다 (rollTheme)
+    if (id === 'theme') return false;
     // 대평등: 3라운드가 끝난 뒤부터, 한 게임 한 번, 점수 차가 있을 때만 (라운드 정보가 없으면 안 나옴)
     if (id === 'equality') return !!ctx && ctx.round >= RANDOM_EVENT.equalityFrom && !ctx.usedIds.has('equality') && hasLast;
     return true;
   });
 }
 
+/** 이 방에서 나올 수 있는 라운드 테마 중 하나 (보스·아이템이 꺼진 방은 그 테마 제외) */
+export function pickTheme(G: GameRules, rand = Math.random): ThemeId {
+  const ids = THEME_IDS.filter((t) => !(t === 'bossRush' && !G.boss) && !(t === 'itemRush' && !G.items));
+  return pickOne(ids, rand);
+}
+
+/** 라운드 사이: 다음 라운드 테마를 정할지 (2라운드부터, 한 게임 최대 RULES.themes.maxPerGame번, 확률 G.themeChance) */
+export function rollTheme(G: GameRules, round: number, used: number, rand = Math.random): ThemeId | null {
+  if (round < 1 || used >= RULES.themes.maxPerGame || !(rand() < G.themeChance)) return null;
+  return pickTheme(G, rand);
+}
+
 /** 라운드 사이: 이벤트가 일어날지, 일어나면 어떤 이벤트인지. used: 이번 게임에 이미 나온 횟수 */
-/** chance: 등장 확률 (카오스는 RULES.chaos.eventChance) */
+/** chance: 등장 확률 (방 규칙 eventPct). 라운드 테마는 이벤트에서 뽑지 않는다 (따로 굴림) */
 /** 이벤트 후보를 정할 때 쓰는 게임 상황: 방금 끝난 라운드, 이번 게임에 이미 나온 이벤트 */
 export interface EventCtx { round: number; usedIds: ReadonlySet<EventId> }
 
@@ -164,8 +178,7 @@ export function applyEvent(id: EventId, players: PlayerState[], G: GameRules, ra
       break;
     }
     case 'theme': {
-      const ids = THEME_IDS.filter((t) => !(t === 'bossRush' && !G.boss) && !(t === 'itemRush' && !G.items));
-      res.theme = pickOne(ids, rand);
+      res.theme = pickTheme(G, rand);
       res.text = `다음 라운드는 ${THEMES[res.theme].name}! ${THEMES[res.theme].desc}`;
       break;
     }

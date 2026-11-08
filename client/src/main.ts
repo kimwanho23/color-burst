@@ -316,6 +316,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   roundOver = false;
   $('roundEnd').hidden = true;
   startAt = d.startAt; endAt = d.endAt; players = d.players; rules = d.rules;
+  renderer.laserHalf = toGameRules(rules).laserHalf;
   arcade = d.arcade;
   if (!picking()) { offer = null; effects = []; }
   circles.clear(); pending.clear();

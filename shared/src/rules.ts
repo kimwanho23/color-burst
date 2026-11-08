@@ -70,7 +70,7 @@ export const RULES = {
    */
   gold: { r: 22, speed: 520, lifeSec: 5, points: 20, countOdds: [25, 50, 25], startMs: 3_000, endMs: 6_000 },
   /** 카오스 모드 배율. 레이저는 laserEveryMs마다, laserQuickChance 확률로 laserQuickMs 뒤 한 번 더 (겹쳐 나옴) */
-  chaos: { itemMult: 3, waveIntervalMult: 0.5, laserEveryMs: 2_000, laserQuickChance: 0.35, laserQuickMs: 600, bossCountOdds: [20, 40, 40], eventChance: 0.3 },
+  chaos: { itemMult: 3, waveIntervalMult: 0.5, laserEveryMs: 2_000, laserQuickChance: 0.35, laserQuickMs: 600, bossCountOdds: [20, 40, 40], },
   /** 아케이드: 라운드가 끝나고 능력 선택 화면이 열리기까지 ("라운드 종료!" 표시) */
   roundEndMs: 1_500,
   /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 (서버 판정과 화면 예측 공통) */
@@ -118,6 +118,8 @@ export const RULES = {
   },
   /** 아케이드 라운드 테마 (랜덤 이벤트) */
   themes: {
+    /** 라운드 테마는 랜덤 이벤트와 따로 굴린다 (확률은 방 규칙 themePct). 한 게임 최대 */
+    maxPerGame: 2,
     goldRushYellow: 0.6,
     /** 보스 러시: 라운드 진행률 지점마다 보스 */
     bossRushAt: [0.25, 0.55, 0.85],
@@ -213,12 +215,20 @@ export interface RoomRules {
   sabotage: boolean;
   /** 카오스 모드: 아이템·웨이브·레이저·보스·랜덤 이벤트가 더 자주 (카오스 프리셋이 켬) */
   chaos: boolean;
-  /** 아케이드: 라운드 사이 랜덤 이벤트 */
-  randomEvents: boolean;
+  /** 아케이드: 라운드 사이 랜덤 이벤트 확률(%) */
+  eventPct: number;
+  /** 아케이드: 라운드 테마 확률(%), 다음 라운드가 2라운드 이상일 때 */
+  themePct: number;
+  /** 맵 패턴 확률(%), 라운드마다 최대 1번 */
+  mapPct: number;
+  /** 레이저 두께 (화면 높이 %) */
+  laserWidth: number;
+  /** 원 크기 배율 (색 원·노랑·무지개) */
+  circleScale: number;
 }
 
 /** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
-export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'randomEvents'] as const;
+export const MODE_KEYS = ['mode', 'arcadeRoundSec'] as const;
 
 /** 각 설정에서 고를 수 있는 값. 화면의 선택지와 서버 검사에 같이 쓴다 */
 export const RULE_CHOICES = {
@@ -231,6 +241,11 @@ export const RULE_CHOICES = {
   rainbowPct: [0, 3, 6, 10],
   markSec: [0, 2, 4, 6, 8],
   arcadeRoundSec: [30, 45, 60, 90],
+  eventPct: [0, 10, 30],
+  themePct: [0, 15, 30],
+  mapPct: [0, 20, 35, 50, 80, 100],
+  laserWidth: [15, 22, 30],
+  circleScale: [1, 0.75],
 } as const satisfies Partial<Record<keyof RoomRules, readonly number[]>>;
 
 export const DEFAULT_RULES: RoomRules = {
@@ -238,26 +253,35 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
-  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, sabotage: true, chaos: false, randomEvents: true,
+  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, sabotage: true, chaos: false,
+  eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, circleScale: 1,
 };
 
 export const PRESETS = {
   basic: { name: '기본', desc: '표준 규칙', rules: DEFAULT_RULES },
   party: {
     name: '파티', desc: '피버가 자주, 세게 터지는 정신없는 판',
-    rules: { ...DEFAULT_RULES, density: 1.3, feverMult: 5, feverSec: 10, feverGain: 1.4, rainbowPct: 10, comeback: true },
+    rules: { ...DEFAULT_RULES, density: 1.3, feverMult: 5, feverSec: 10, feverGain: 1.4, rainbowPct: 10, comeback: true, mapPct: 50 },
   },
   hardcore: {
     name: '하드코어', desc: '빠르고 많은 원, 짧은 피버',
-    rules: { ...DEFAULT_RULES, speed: 1.5, density: 1.3, feverMult: 2, feverSec: 4, feverGain: 0.7, rainbowPct: 0, items: false },
+    rules: { ...DEFAULT_RULES, speed: 1.5, density: 1.3, feverMult: 2, feverSec: 4, feverGain: 0.7, rainbowPct: 0, items: false, mapPct: 50, laserWidth: 30 },
   },
   chill: {
     name: '느긋하게', desc: '천천히, 처음 하는 친구와 함께',
-    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false, laser: false, sabotage: false },
+    rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false, laser: false, sabotage: false, mapPct: 0 },
   },
   chaos: {
     name: '카오스', desc: '모든 게 켜진 진정한 난장판',
-    rules: { ...DEFAULT_RULES, speed: 1.25, density: 1.3, feverMult: 5, rainbowPct: 10, comeback: true, chaos: true },
+    rules: { ...DEFAULT_RULES, speed: 1.25, density: 1.3, feverMult: 5, rainbowPct: 10, comeback: true, chaos: true, mapPct: 80, themePct: 30, eventPct: 30, laserWidth: 30 },
+  },
+  obstacle: {
+    name: '장애물 코스', desc: '맵 패턴이 라운드마다 꼭 나와요',
+    rules: { ...DEFAULT_RULES, mapPct: 100, sabotage: false },
+  },
+  precision: {
+    name: '정밀 사격', desc: '작은 원, 빈 곳 감점, 방해 없음',
+    rules: { ...DEFAULT_RULES, circleScale: 0.75, missPenalty: true, mapPct: 0, sabotage: false, laser: false },
   },
 } as const satisfies Record<string, { name: string; desc: string; rules: RoomRules }>;
 export type PresetId = keyof typeof PRESETS;
@@ -278,9 +302,11 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos', 'randomEvents'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
+  // 옛 설정: 랜덤 이벤트 끄기 → 확률 0
+  if ((input as { randomEvents?: unknown }).randomEvents === false) out.eventPct = 0;
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
   return out;
 }
@@ -305,7 +331,13 @@ export interface GameRules {
   laser: boolean;
   sabotage: boolean;
   chaos: boolean;
-  randomEvents: boolean;
+  /** 라운드 사이 확률 0~1 */
+  eventChance: number;
+  themeChance: number;
+  mapChance: number;
+  /** 레이저 맞는 거리(중심선에서, 빔 폭의 절반) */
+  laserHalf: number;
+  circleScale: number;
 }
 
 export function toGameRules(r: RoomRules): GameRules {
@@ -328,7 +360,11 @@ export function toGameRules(r: RoomRules): GameRules {
     laser: r.laser,
     sabotage: r.sabotage,
     chaos: r.chaos,
-    randomEvents: r.randomEvents,
+    eventChance: r.eventPct / 100,
+    themeChance: r.themePct / 100,
+    mapChance: r.mapPct / 100,
+    laserHalf: ((r.laserWidth ?? 30) / 100) * FIELD.h / 2,
+    circleScale: r.circleScale ?? 1,
   };
 }
 
@@ -852,6 +888,7 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
     born: now,
   };
   if (item) { c.r = RULES.items.r; c.itemTier = rollItemTier(rand); }
+  else c.r *= G.circleScale ?? 1;
   return c;
 }
 

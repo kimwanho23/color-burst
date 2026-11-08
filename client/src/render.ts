@@ -94,6 +94,8 @@ export interface DrawState {
 }
 
 export class Renderer {
+  /** 레이저 맞는 거리 (빔 폭의 절반, 방 규칙 레이저 두께) */
+  laserHalf: number = RULES.laser.width;
   private ctx: CanvasRenderingContext2D;
   private W = 0; private H = 0;
   private scale = 1; private ox = 0; private oy = 0;
@@ -436,7 +438,7 @@ export class Renderer {
   /** 레이저 볼리: 예고 중에는 맞는 범위(빔 폭)를 반투명 띠 + 가운데 점선으로, 발사 중에는 붉은 띠 + 흰 심 */
   private drawLaser(v: NonNullable<DrawState['lasers']>[number], t: number, frameNow: number) {
     const ctx = this.ctx;
-    const fire = RULES.laser.fireMs, W = RULES.laser.width * 2;
+    const fire = RULES.laser.fireMs, W = this.laserHalf * 2;
     if (t >= v.at + fire) return;
     const line = (l: { a: { x: number; y: number }; b: { x: number; y: number } }) => { ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke(); };
     ctx.save();

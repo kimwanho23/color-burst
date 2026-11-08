@@ -47,7 +47,8 @@ export function rollLaser(rand = Math.random): { a: Point; b: Point } {
   return { a: { x: cx - dx, y: cy - dy }, b: { x: cx + dx, y: cy + dy } };
 }
 
-export const laserHits = (cursor: Point, a: Point, b: Point) => distToSegment(cursor, a, b) <= RULES.laser.width;
+/** half: 맞는 거리 (빔 폭의 절반, 방 규칙 레이저 두께) */
+export const laserHits = (cursor: Point, a: Point, b: Point, half: number = RULES.laser.width) => distToSegment(cursor, a, b) <= half;
 
 /** 한 번에 같이 쏘는 레이저 줄 모양 */
 export type VolleyKind = 'single' | 'parallel' | 'cross' | 'radial';
@@ -86,7 +87,7 @@ export function holdLasers(lasers: { at: number }[], from: number, ms: number) {
 }
 
 /** 볼리의 줄 중 하나라도 커서에 닿는지 */
-export const volleyHits = (cursor: Point, lines: readonly LaserLine[]) => lines.some((l) => laserHits(cursor, l.a, l.b));
+export const volleyHits = (cursor: Point, lines: readonly LaserLine[], half?: number) => lines.some((l) => laserHits(cursor, l.a, l.b, half));
 
 /** 레이저 스턴을 걸 수 있는지: 스턴 중이 아니고, 스턴이 끝난 지 immuneMs가 지났다 (연속 스턴 방지) */
 export const canLaserStun = (p: PlayerState, now: number) => now >= p.stunUntil + RULES.laser.immuneMs && !modsOf(p.picks).fortress;

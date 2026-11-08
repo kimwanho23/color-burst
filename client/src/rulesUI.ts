@@ -1,10 +1,12 @@
 /** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 (점수표는 도감 '규칙' 탭) */
-import { ARCADE, PRESETS, RULES, RULE_CHOICES, matchPreset, type PresetId, type RoomRules } from '@color-burst/shared';
+import { ARCADE, MODE_KEYS, PRESETS, RULES, RULE_CHOICES, matchPreset, type PresetId, type RoomRules } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
 import { UI, icon } from './icons.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
-type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'waves' | 'laser' | 'sabotage' | 'randomEvents';
+type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'waves' | 'laser' | 'sabotage';
+const MAP_LABEL: Record<number, string> = { 0: '끄기', 20: '가끔', 35: '보통', 50: '자주', 80: '많이', 100: '항상' };
+const pct3 = (v: number) => (v === 0 ? '끄기' : v >= 30 ? `자주 (${v}%)` : `가끔 (${v}%)`);
 
 const NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] = [
   { key: 'speed', label: '게임 속도', fmt: (v) => `×${v}` },
@@ -15,6 +17,14 @@ const NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] =
   { key: 'feverGain', label: '피버 충전', fmt: (v) => (v < 1 ? '느림' : v > 1 ? '빠름' : '보통') },
   { key: 'rainbowPct', label: '무지개 원', fmt: (v) => (v ? `${v}%` : '없음') },
   { key: 'markSec', label: '표적 시간', fmt: (v) => (v ? `${v}초` : '없음') },
+  { key: 'mapPct', label: '맵 패턴', fmt: (v) => `${MAP_LABEL[v] ?? v} (${v}%)` },
+  { key: 'laserWidth', label: '레이저 두께', fmt: (v) => (v <= 15 ? '얇게' : v >= 30 ? '굵게' : '보통') },
+  { key: 'circleScale', label: '원 크기', fmt: (v) => (v < 1 ? '작게' : '보통') },
+];
+/** 아케이드에서만 보이는 설정 */
+const ARCADE_NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] = [
+  { key: 'themePct', label: '라운드 테마', fmt: pct3 },
+  { key: 'eventPct', label: '랜덤 이벤트', fmt: pct3 },
 ];
 const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'boss', label: '보스 원 등장' },
@@ -26,10 +36,16 @@ const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'laser', label: '레이저 (맞으면 스턴)' },
   { key: 'sabotage', label: '방해 아이템 (감도·반대·시야·저격)' },
 ];
-/** 아케이드에서만 보이는 설정 */
-const ARCADE_BOOL_FIELDS: { key: BoolKey; label: string }[] = [
-  { key: 'randomEvents', label: '랜덤 이벤트' },
-];
+/** 커스텀 규칙: 방장 브라우저에만 저장 (모드 설정은 빼고) */
+const CUSTOM_KEY = 'cb-custom-rules';
+function loadCustom(): Partial<RoomRules> | null {
+  try { const s = localStorage.getItem(CUSTOM_KEY); return s ? JSON.parse(s) as Partial<RoomRules> : null; } catch { return null; }
+}
+function saveCustom(r: RoomRules) {
+  const out: Partial<RoomRules> = { ...r };
+  for (const k of MODE_KEYS) delete out[k];
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(out)); } catch { /* 저장 못 해도 게임에는 지장 없음 */ }
+}
 
 export interface RulesUIHandlers {
   preset: (id: PresetId) => void;
@@ -38,6 +54,8 @@ export interface RulesUIHandlers {
 
 export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean, on: RulesUIHandlers) {
   const current = matchPreset(rules);
+  // 방장이 프리셋과 다른 규칙을 만들면 커스텀으로 기억
+  if (editable && !current) saveCustom(rules);
   const advOpen = el.querySelector<HTMLDetailsElement>('details.adv')?.open ?? false;
   const dis = editable ? '' : 'disabled';
   const arcade = rules.mode === 'arcade';
@@ -55,18 +73,18 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <div class="presets">
       ${(Object.entries(PRESETS) as [PresetId, (typeof PRESETS)[PresetId]][]).map(([id, p]) =>
         `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" ${dis}>${icon(UI[id], 20, 'pi')}<b>${p.name}</b><span>${p.desc}</span></button>`).join('')}
+      <button type="button" class="preset custom" aria-pressed="${!current}" ${dis}>${icon(UI.custom, 20, 'pi')}<b>커스텀</b><span>고급 설정에서 직접 정한 규칙</span></button>
     </div>
-    ${current ? '' : '<p class="hint">사용자 설정 규칙</p>'}
     <details class="adv">
       <summary>고급 설정</summary>
       <div class="adv-grid">
-        ${NUM_FIELDS.filter((f) => !(arcade && f.key === 'roundSec')).map((f) => `
+        ${[...NUM_FIELDS.filter((f) => !(arcade && f.key === 'roundSec')), ...(arcade ? ARCADE_NUM_FIELDS : [])].map((f) => `
           <label class="adv-row" for="rule-${f.key}"><span>${f.label}</span>
             <select id="rule-${f.key}" data-k="${f.key}" ${dis}>
               ${RULE_CHOICES[f.key].map((v) => `<option value="${v}" ${rules[f.key] === v ? 'selected' : ''}>${f.fmt(v)}</option>`).join('')}
             </select>
           </label>`).join('')}
-        ${[...BOOL_FIELDS, ...(arcade ? ARCADE_BOOL_FIELDS : [])].map((f) => `
+        ${BOOL_FIELDS.map((f) => `
           <label class="adv-row check" for="rule-${f.key}"><span>${f.label}</span>
             <input type="checkbox" id="rule-${f.key}" data-b="${f.key}" ${rules[f.key] ? 'checked' : ''} ${dis}>
           </label>`).join('')}
@@ -76,7 +94,13 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   // 다시 그려도 열려 있던 상태 유지
   el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen;
   el.querySelectorAll<HTMLButtonElement>('.mode').forEach((b) => { b.onclick = () => on.change({ mode: b.dataset.m as RoomRules['mode'] }); });
-  el.querySelectorAll<HTMLButtonElement>('.preset').forEach((b) => { b.onclick = () => on.preset(b.dataset.p as PresetId); });
+  el.querySelectorAll<HTMLButtonElement>('.preset[data-p]').forEach((b) => { b.onclick = () => on.preset(b.dataset.p as PresetId); });
+  // 커스텀: 저장해 둔 규칙을 불러오고 고급 설정을 펼친다
+  el.querySelector<HTMLButtonElement>('.preset.custom')!.onclick = () => {
+    el.querySelector<HTMLDetailsElement>('details.adv')!.open = true;
+    const saved = loadCustom();
+    if (saved && current) on.change(saved);
+  };
   el.querySelectorAll<HTMLSelectElement>('select[data-k]').forEach((s) => { s.onchange = () => on.change({ [s.dataset.k!]: Number(s.value) }); });
   el.querySelectorAll<HTMLInputElement>('input[data-b]').forEach((c) => { c.onchange = () => on.change({ [c.dataset.b!]: c.checked }); });
 }

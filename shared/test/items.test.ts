@@ -102,9 +102,9 @@ test('applyItem 방 단위 효과는 종류를 돌려준다', () => {
   assert.equal(applyItem(a, 'magnet', 100, G, [a, b]), null);
 });
 
-test('방 규칙 items·randomEvents', () => {
+test('방 규칙 items·랜덤 이벤트 확률', () => {
   assert.equal(DEFAULT_RULES.items, true);
-  assert.equal(DEFAULT_RULES.randomEvents, true);
+  assert.equal(DEFAULT_RULES.eventPct, 10);
   assert.equal(sanitizeRules(DEFAULT_RULES, { items: false }).items, false);
   assert.equal(PRESETS.hardcore.rules.items, false);
 });
