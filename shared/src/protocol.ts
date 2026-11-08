@@ -151,7 +151,8 @@ export interface ServerToClient {
   /** blocked: 방어형 보호막에 막힘 / enraged: 붉은 공격형을 때려 점수를 잃음 (gained가 음수) */
   'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number; jackpot: number; blocked?: boolean; enraged?: boolean }) => void;
   /** 보스 처치: by가 막타, mvp가 최다 타격 */
-  'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number }) => void;
+  /** solo: 독식한 사람 id (없으면 null) */
+  'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number; solo: string | null }) => void;
   'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
   'game:over': (d: GameOver) => void;

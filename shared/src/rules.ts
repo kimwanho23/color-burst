@@ -107,8 +107,10 @@ export const RULES = {
     kill: 20,
     /** 가장 많이 때린 사람 */
     mvp: 5,
-    /** 보스 점수에 붙는 피버 배율 상한 */
-    feverMultCap: 2,
+    /** 피해가 들어간 타격마다 피버 게이지 (콤보도 +1) */
+    feverGain: 4,
+    /** 독식: 처치된 보스 최대 체력의 pct% 이상을 깎았으면 +points (배율 적용), 그 사람이 막타면 막타 점수 ×killMult */
+    solo: { pct: 50, points: 60, killMult: 2 },
     /** 체력 = 참가 인원 × 이 값 */
     hpPerPlayer: 6,
     r: 90,
@@ -1031,12 +1033,7 @@ export function ragePenalty(p: PlayerState) {
   return RULES.boss.ragePenaltyStep * p.rageHits;
 }
 
-/** 보스 점수에 붙는 배율 */
-export function bossMult(p: PlayerState, now: number, G: GameRules) {
-  return isFever(p, now) ? Math.min(feverMultOf(p, G), RULES.boss.feverMultCap) : 1;
-}
-
-/** 보스를 한 번 때렸을 때: 피해, 타격 점수(배율 전), 막타 점수(배율 전) */
+/** 보스를 한 번 때렸을 때: 피해, 타격 점수(피해 1당, 배율 전), 막타 점수(배율 전). 점수 계산은 strikeBoss (bossScore.ts) */
 export function bossHitInfo(p: PlayerState, rand = Math.random) {
   const m = modsOf(p.picks);
   // 막타 독식: 피해·막타 점수 ×2
@@ -1087,6 +1084,18 @@ function burstFever(p: PlayerState, now: number, G: GameRules, m: Mods, players:
 }
 
 /** 콤보가 before에서 after로 오르며 every의 배수를 넘었는지 (한 번에 여러 칸 올라도 놓치지 않음) */
+/**
+ * 콤보 보너스 점수(배율 전): before → 지금 콤보로 문턱을 넘었으면. 기세면 더 자주, 콤보 장인 레전드 +10,
+ * 콤보 머신 ×2, 폭주 레전드는 피버 중 2배. 안 넘었으면 0
+ */
+export function comboBonusOf(p: PlayerState, before: number, fever: boolean) {
+  const m = modsOf(p.picks), L = legendOf(p.picks);
+  const every = m.momentum ? Math.min(SPECIAL.momentumEvery, comboPeriod(m.comboArtist)) : comboPeriod(m.comboArtist);
+  if (!crossedCombo(before, p.combo, every)) return 0;
+  return (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0)) * (combosOf(p.picks).has('comboMachine') ? COMBO.comboBonusMult : 1)
+    * (fever && L.has('frenzy') ? LEGEND.frenzyComboMult : 1);
+}
+
 export const crossedCombo = (before: number, after: number, every: number) =>
   after > before && Math.floor(after / every) > Math.floor(before / every);
 
@@ -1228,12 +1237,8 @@ export function resolveClaim(
       if (L.has('rapid') && claimer.rapidStreak >= LEGEND.rapidStreak) { claimer.rapidJackpot = true; claimer.rapidStreak = 0; }
     }
   }
-  // 기세: 콤보 보너스가 더 자주. 콤보 장인 레전드 +10, 폭주 레전드는 피버 중 2배
-  const every = m.momentum ? Math.min(SPECIAL.momentumEvery, comboPeriod(m.comboArtist)) : comboPeriod(m.comboArtist);
-  if (!steal && crossedCombo(comboBefore, claimer.combo, every)) {
-    res.comboBonus = true;
-    pts += (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0)) * (K.has('comboMachine') ? COMBO.comboBonusMult : 1) * (fever && L.has('frenzy') ? LEGEND.frenzyComboMult : 1);
-  }
+  const bonus = steal ? 0 : comboBonusOf(claimer, comboBefore, fever);
+  if (bonus > 0) { res.comboBonus = true; pts += bonus; }
   const st = claimer.stats;
   st.hits++;
   if (!blast && (res.type === 'steal' || res.type === 'feverSteal')) st.steals++;

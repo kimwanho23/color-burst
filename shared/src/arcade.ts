@@ -48,7 +48,7 @@ export const LEGEND = {
 /** 증강 조합 보너스 수치 */
 export const COMBO = {
   feverAdd: 1, comboBonusMult: 2, bossDmgAdd: 1, bossHitMult: 1.5, bossKillMult: 2, stealMult: 3, stealMarkCutMs: 1_000,
-  jackpotAdd: 10, outskirtsMult: 1.5, ironKeepPct: 80,
+  jackpotAdd: 10, outskirtsMult: 1.5, ironKeepPct: 80, bossSoloFever: 25,
 } as const;
 /** 빌드 가중치: 가진 증강과 같은 분류 ×sameCat, 가진 조합의 나머지 ×comboPart (곱함) */
 export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
@@ -149,7 +149,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'hammer', name: '해머', cat: '보스', values: [1, 2, 3, 6], desc: (v) => `보스 타격 +${v}점` },
   { id: 'hunter', name: '사냥꾼', cat: '보스', values: [10, 20, 30, 60], desc: (v) => `보스 막타 +${v}점` },
   { id: 'crusher', name: '파쇄', cat: '보스', values: [0.5, 1, 2, 4], desc: (v) => (v < 1 ? `보스를 때리면 ${Math.round(v * 100)}% 확률로 2타` : `보스를 때리면 ${crushText(v)}`) },
-  { id: 'vanguard', name: '선봉', cat: '보스', values: [5, 10, 15, 25], desc: (v) => `보스에게 첫 타를 넣으면 +${v}` },
+  { id: 'vanguard', name: '선봉', cat: '보스', values: [2, 3, 4, 6], desc: (v) => `보스마다 내 첫 타 점수 ×${v}` },
   // 유지
   { id: 'insurance', name: '보험', cat: '유지', values: [20, 40, 60, 100], cap: 100, desc: (v) => `콤보가 끊겨도 ${v}% 유지` },
   { id: 'shield', name: '방패', cat: '유지', values: [1, 2, 3, 6], desc: (v) => `견제당해도 콤보 유지, 라운드당 ${v}번` },
@@ -202,7 +202,7 @@ export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing
 export const COMBOS: readonly { id: ComboId; name: string; needs: readonly AbilityId[]; text: string }[] = [
   { id: 'feverMaster', name: '피버 마스터', needs: ['preheat', 'overtime', 'frenzy'], text: `피버 배율 +${COMBO.feverAdd}` },
   { id: 'comboMachine', name: '콤보 머신', needs: ['comboArtist', 'insurance'], text: `콤보 보너스 ×${COMBO.comboBonusMult}` },
-  { id: 'bossHunter', name: '보스 헌터', needs: ['hammer', 'hunter', 'crusher'], text: `보스 피해 +${COMBO.bossDmgAdd}, 타격 점수 ×${COMBO.bossHitMult}, 막타 점수 ×${COMBO.bossKillMult}` },
+  { id: 'bossHunter', name: '보스 헌터', needs: ['hammer', 'hunter', 'crusher'], text: `보스 피해 +${COMBO.bossDmgAdd}, 타격 점수 ×${COMBO.bossHitMult}, 막타 점수 ×${COMBO.bossKillMult}, 붉은 공격형도 감점 없이 때림, 독식하면 피버 게이지 +${COMBO.bossSoloFever}` },
   { id: 'stealKing', name: '견제왕', needs: ['plunder', 'counterPro', 'thickSkin'], text: `견제·반격 점수 ×${COMBO.stealMult}, 표적 시간 −${COMBO.stealMarkCutMs / 1000}초` },
   { id: 'lucky', name: '행운아', needs: ['jackpot', 'rainbowHunt'], text: `잭팟 확률 +${COMBO.jackpotAdd}%` },
   { id: 'outskirts', name: '변두리', needs: ['edge', 'magnet'], text: `커서가 가장자리 구역이면 자석 범위 ×${COMBO.outskirtsMult}` },

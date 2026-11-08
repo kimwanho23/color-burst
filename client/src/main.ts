@@ -509,7 +509,7 @@ socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged }) 
 });
 /** 마지막으로 보스가 터진 서버 시각 */
 let bossKilledAt = 0;
-socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot }) => {
+socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot, solo }) => {
   bossKilledAt = serverNow();
   circles.delete(circleId);
   const killer = nameOf(by), mvpP = nameOf(mvp);
@@ -523,6 +523,9 @@ socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot 
   if (jackpot > 1) { renderer.jackpot(x, y, jackpot, true); if (by === myId()) sfx.jackpot(jackpot); }
   if (killer) renderer.scoreText(x, y, `${by === myId() ? '내' : killer.name} 막타! +${gained}`, 5, 0.8);
   if (mvpP && mvpGained) renderer.text(x, y + 50, `최다 타격 ${mvp === myId() ? '나' : mvpP.name} +${mvpGained}`, '#fff', 0.85);
+  // 독식: 체력 절반 이상을 혼자 깎고 처치
+  const soloP = nameOf(solo);
+  if (soloP) renderer.text(x, y + 95, `${solo === myId() ? '내' : soloP.name} 독식!`, COLORS[soloP.color].hex, 1.15);
 });
 socket.on('boss:escaped', ({ circleId }) => {
   circles.delete(circleId);

@@ -1,9 +1,9 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
-  applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
+  ARCADE, ASSIST_ABILITIES, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  applyPick, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
+  applyItem, holdCircles, isGuarded, isMine, itemMult, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -591,63 +591,33 @@ export class Room {
     return true;
   }
 
+  /** 보스 타격: 계산은 strikeBoss, 여기서는 원 삭제·알림·자동 획득(사냥꾼 레전드·점화) */
   private hitBoss(p: PlayerState, c: Circle, now: number) {
-    const B = RULES.boss;
-    const st = bossState(c, now);
-    // 방어형 보호막: 피해·점수 없음 (헛클릭도 아님). 파쇄 레전드는 무시
-    if (st.shielded && !hasLegend(p, 'crusher')) {
-      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: 0, jackpot: 1, blocked: true });
-      return;
-    }
-    // 붉은 공격형: 피해 없이 점수를 잃는다 (라운드 안에서 때릴수록 커짐)
-    if (st.enraged) {
-      const lose = Math.min(p.score, ragePenalty(p));
-      p.score -= lose;
-      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: -lose, jackpot: 1, enraged: true });
-      this.emitPlayers();
-      return;
-    }
-    // 선봉: 아무도 안 때린 보스의 첫 타. 레전드는 등장 3초 안 피해 2배
-    const first = !this.bossHits.has(c.id);
     const hits = this.bossHits.get(c.id) ?? new Map<string, number>();
     this.bossHits.set(c.id, hits);
-    const info = bossHitInfo(p);
-    const early = hasLegend(p, 'vanguard') && now - c.born <= AUG.vanguardMs ? LEGEND.vanguardMult : 1;
-    const dmg = Math.min(info.damage * early, c.hp ?? 1);
-    hits.set(p.id, (hits.get(p.id) ?? 0) + dmg);
-    p.stats.bossHits++;
-    c.hp = Math.max(0, (c.hp ?? 1) - dmg);
-
-    // 배율 순서: 피버(보스 상한) → 점수 2배·황금 손 → 잭팟 (타격과 막타는 잭팟을 따로 굴린다)
-    const mult = bossMult(p, now, this.G) * info.boost * itemMult(p, now, true) * extraMult(p, now, this.players);
-    const m = modsOf(p.picks);
-    const hitJp = jackpotMult(luckyMods(p, m), Math.random, hasLegend(p, 'jackpot'));
-    let gained = Math.round(info.hit * mult * hitJp) + (first ? m.vanguard : 0);
-
-    if (c.hp > 0) {
-      p.score += gained;
-      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp, gained, jackpot: hitJp });
-      this.emitPlayers();
+    const r = strikeBoss(p, c, hits, this.players, now, this.G);
+    // 방어형 보호막: 피해·점수 없음 (헛클릭도 아님) / 붉은 공격형: 감점
+    if (r.blocked || r.enraged) {
+      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: r.gained, jackpot: 1, ...(r.blocked ? { blocked: true } : { enraged: true }) });
+      if (r.enraged) this.emitPlayers();
       return;
     }
-
-    // 막타
-    this.circles.delete(c.id);
-    this.bossHits.delete(c.id);
-    this.bossKilledAt = now;
-    const killJp = jackpotMult(luckyMods(p, m), Math.random, hasLegend(p, 'jackpot'));
-    gained += Math.round(info.kill * mult * killJp);
-    p.score += gained;
-    p.stats.bossKills++;
-    // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
-    let mvp: string | null = null, best = 0;
-    for (const [pid, n] of hits) if (n > best || (n === best && pid === p.id)) { best = n; mvp = pid; }
-    const mvpP = this.players.find((x) => x.id === mvp);
-    if (mvpP) mvpP.score += B.mvp;
     const { x, y } = circlePos(c, now);
-    this.io.to(this.code).emit('boss:killed', { circleId: c.id, by: p.id, gained, mvp, mvpGained: mvpP ? B.mvp : 0, x, y, jackpot: killJp });
-    // 사냥꾼 레전드: 막타 때 화면의 내 원 전부
-    if (hasLegend(p, 'hunter')) this.autoClaim(p, { x, y }, Infinity, Infinity, now);
+    if (!r.killed) {
+      this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: r.gained, jackpot: r.jackpot });
+    } else {
+      this.circles.delete(c.id);
+      this.bossHits.delete(c.id);
+      this.bossKilledAt = now;
+      this.io.to(this.code).emit('boss:killed', {
+        circleId: c.id, by: p.id, gained: r.gained + r.killGained, mvp: r.mvp, mvpGained: r.mvpGained, x, y, jackpot: r.killJackpot, solo: r.solo ? p.id : null,
+      });
+      // 사냥꾼 레전드: 막타 때 화면의 내 원 전부
+      if (hasLegend(p, 'hunter')) this.autoClaim(p, { x, y }, Infinity, Infinity, now);
+    }
+    // 점화: 보스 타격으로 피버가 터져도 화면의 내 원 자동 획득 (레전드는 전부)
+    const m = modsOf(p.picks);
+    if (r.feverStarted && m.ignite > 0) this.autoClaim(p, { x, y }, Infinity, hasLegend(p, 'ignite') ? Infinity : m.ignite, now);
     this.emitPlayers();
   }
 
