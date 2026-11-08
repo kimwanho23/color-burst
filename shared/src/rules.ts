@@ -1229,6 +1229,19 @@ export function resolveClaim(
   return res;
 }
 
+/**
+ * 황금 원 점수: 기본 RULES.gold.points에 일반 원과 같은 배율을 모두 곱한다
+ * (피버·여운, 유리 대포·대역전, 아이템 2배·황금 손, 점수 구역, 역전 기회·마지막 불꽃·출발 신호, 잭팟). 콤보·피버 게이지는 그대로
+ */
+export function goldGain(p: PlayerState, now: number, players: PlayerState[], G: GameRules, zone: ZoneIndex, rand = Math.random) {
+  const m = modsOf(p.picks);
+  const fever = isFever(p, now), after = !fever && now < p.afterUntil;
+  const mult = (fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * scoreBoostOf(m) * itemMult(p, now, true)
+    * zoneMult(zone, m) * extraMult(p, now, players);
+  const jackpot = jackpotMult(luckyMods(p, m), rand, hasLegend(p, 'jackpot'));
+  return { gained: Math.round(RULES.gold.points * mult * jackpot), jackpot };
+}
+
 /** 빈 공간 클릭 */
 export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
   p.stats.misses++;

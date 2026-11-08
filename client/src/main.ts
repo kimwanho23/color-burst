@@ -601,10 +601,11 @@ socket.on('special:gain', ({ playerId, id, delta }) => {
   if (playerId !== myId()) return;
   renderer.text(CX, CY + -250, `${ABILITY[id].name} +${delta}`, '#ffd166', 0.9);
 });
-socket.on('gold:got', ({ circleId, by, gained, x, y }) => {
+socket.on('gold:got', ({ circleId, by, gained, x, y, jackpot }) => {
   circles.delete(circleId); pending.delete(circleId);
   const who = nameOf(by);
   renderer.burst(x, y, GOLD, true, 2); renderer.burst(x, y, '#fff', false);
+  if (jackpot > 1) { renderer.jackpot(x, y, jackpot, false); if (by === myId()) sfx.jackpot(jackpot); }
   if (by === myId()) { sfx.hit(4); renderer.scoreText(x, y, `+${gained} 황금!`, scoreTier({ gold: true })); }
   else if (who) {
     renderer.text(x, y, `${who.name} 황금`, COLORS[who.color].hex, 0.75);

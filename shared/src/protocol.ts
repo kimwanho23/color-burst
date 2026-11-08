@@ -124,7 +124,7 @@ export interface ServerToClient {
   /** 특별 카드로 점수를 얻음 (하이에나) */
   'special:gain': (d: { playerId: string; id: AbilityId; delta: number }) => void;
   /** 황금 원을 잡음 (고정 점수) */
-  'gold:got': (d: { circleId: number; by: string; gained: number; x: number; y: number }) => void;
+  'gold:got': (d: { circleId: number; by: string; gained: number; x: number; y: number; jackpot: number }) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;
   /** 아이템 원을 잡음. 블라스트(폭죽·필드 클리어)면 이 이벤트가 먼저 오고 circle:claimed가 이어진다 */

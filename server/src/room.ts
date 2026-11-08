@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, crossedCombo, hazardStun, halveFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, goldGain, crossedCombo, hazardStun, halveFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
@@ -1138,9 +1138,10 @@ export class Room {
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
     const { x, y } = circlePos(c, now);
-    const gained = Math.round(RULES.gold.points * extraMult(p, now, this.players));
+    // 일반 원과 같은 배율 (잡은 자리의 점수 구역 포함)
+    const { gained, jackpot } = goldGain(p, now, this.players, this.G, zoneOf({ x, y }));
     p.score += gained;
-    this.io.to(this.code).emit('gold:got', { circleId: c.id, by: p.id, gained, x, y });
+    this.io.to(this.code).emit('gold:got', { circleId: c.id, by: p.id, gained, x, y, jackpot });
     this.emitPlayers();
   }
 
