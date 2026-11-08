@@ -477,5 +477,15 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .chippop[hidden] { display: none; }
 .chip .pk { width: 21px; height: 21px; }
 .chip .pk.badge { width: auto; }
+
+/* 게임 중 내 완성 조합 (아이템 효과 칩 바로 위) */
+.combobar { position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 92%; pointer-events: none; z-index: 1; }
+.cbchip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; border: 1px solid #ffd43b; background: rgba(27, 21, 0, .78); color: #ffd43b; font: 600 12px var(--body); }
+.cbchip b { font-weight: 800; }
+.cbchip span { color: color-mix(in srgb, #ffd43b 70%, var(--fg)); opacity: .85; }
+.cbchip.spent { opacity: .5; }
+.cbchip.flash { animation: cbflash .6s ease-out; }
+@keyframes cbflash { 0% { background: #ffd43b; color: #1b1500; transform: scale(1.15); box-shadow: 0 0 18px #ffd43b; } 100% { transform: scale(1); } }
+.reduce-fx .cbchip.flash { animation: none; }
 /* 좁은 화면: 점수판 칩 아이콘이 점수를 가리지 않게 작게 */
 @media (max-width: 700px) { .chip .pk { width: 17px; height: 17px; } .chip .pk svg { width: 12px; height: 12px; } }

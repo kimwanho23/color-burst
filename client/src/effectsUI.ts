@@ -1,11 +1,36 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
-  EVENTS, EVENT_IDS, ITEMS, ITEM_IDS,
-  type BuffId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
+  COMBOS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, combosOf,
+  type BuffId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
 import { UI, eventIcon, icon, itemIcon } from './icons.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+/**
+ * 게임 중 내 완성 조합 칩: "이름 · 효과" (철옹성은 남은 횟수). p가 없으면 비움.
+ * 원 클릭을 가리지 않게 마우스 반응이 없어서 설명을 칩 안에 글자로 쓴다. 바뀔 때만 다시 그린다
+ */
+export function renderComboBar(el: HTMLElement, p: PlayerState | undefined) {
+  const ids = p ? [...combosOf(p.picks)] : [];
+  const sig = `${ids.join(',')}|${ids.includes('ironWall') ? p!.ironLeft : ''}`;
+  if (el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+  el.innerHTML = ids.map((id) => {
+    const c = COMBOS.find((x) => x.id === id)!;
+    const n = id === 'ironWall' ? ` ${p!.ironLeft}` : '';
+    return `<span class="cbchip${id === 'ironWall' && !p!.ironLeft ? ' spent' : ''}" data-c="${id}">${icon(UI.combo, 13)}<b>${esc(c.name)}${n}</b><span>${esc(c.text)}</span></span>`;
+  }).join('');
+}
+
+/** 조합 효과가 발동하면 그 칩을 잠깐 반짝인다 (그 조합이 없으면 아무것도 안 함) */
+export function flashCombo(el: HTMLElement, id: ComboId) {
+  const c = el.querySelector<HTMLElement>(`[data-c="${id}"]`);
+  if (!c) return;
+  c.classList.remove('flash');
+  void c.offsetWidth;
+  c.classList.add('flash');
+}
 
 /** 버프 바·점수판에 보여 줄 순서 (버프 이름 = 그 아이템 id) */
 const BUFF_IDS: BuffId[] = ['double', 'wideHand', 'magnet', 'paint', 'comboLock', 'guard', 'missGuard'];

@@ -12,7 +12,10 @@ const pl = (color: 0 | 1, ...ids: AbilityId[]) => { const p = newPlayer(`p${colo
 test('combosOf: 모두 가져야 완성, 여러 번 골라도 한 번, 진행도는 가진 것만', () => {
   assert.deepEqual([...combosOf(picks('preheat', 'overtime'))], []);
   assert.deepEqual([...combosOf(picks('preheat', 'overtime', 'frenzy', 'frenzy'))], ['feverMaster']);
-  assert.deepEqual(comboProgress(picks('preheat', 'jackpot')).map((c) => [c.id, c.have, c.need]), [['feverMaster', 1, 3], ['lucky', 1, 2]]);
+  // 많이 모은 순: 행운아 1/2가 피버 마스터 1/3보다 먼저
+  assert.deepEqual(comboProgress(picks('preheat', 'jackpot')).map((c) => [c.id, c.have, c.need]), [['lucky', 1, 2], ['feverMaster', 1, 3]]);
+  // 완성한 조합이 맨 앞
+  assert.equal(comboProgress(picks('jackpot', 'picky', 'preheat', 'overtime', 'frenzy')).map((c) => c.id)[0], 'feverMaster');
   assert.deepEqual(combosCompletedBy(picks('jackpot'), { id: 'rainbowHunt', tier: 1 }).map((c) => c.id), ['lucky']);
 });
 

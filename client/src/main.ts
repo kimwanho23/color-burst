@@ -10,7 +10,7 @@ import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, icon, itemIcon } from './icons.ts';
-import { buffChips, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
+import { buffChips, flashCombo, renderComboBar, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
 import { GameCursor, startCursorSync } from './cursor.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
 import { initSettingsPanel, isTyping, onSettingsChange, settings } from './settings.ts';
@@ -454,6 +454,7 @@ socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged }) 
     return;
   }
   if (blocked || enraged) return;
+  if (by === myId()) flashCombo($('comboBar'), 'bossHunter');
   renderer.bossPoke(circleId);
   if (by === myId() && c) {
     const p = circlePos(c, serverNow());
@@ -495,7 +496,10 @@ socket.on('players', (p) => {
   myCombos = now;
   combosReady = !!m;
   // 철옹성 조합이 콤보 끊김을 막았으면 (라운드 시작에는 늘어나기만 함)
-  if (m && lastIron !== null && m.ironLeft < lastIron) { sfx.bossBlock(); renderer.text(800, 330, '철옹성! 콤보 유지', '#ffd43b', 1.1); }
+  if (m && lastIron !== null && m.ironLeft < lastIron) {
+    sfx.bossBlock(); renderer.text(800, 330, '철옹성! 콤보 유지', '#ffd43b', 1.1);
+    renderComboBar($('comboBar'), m); flashCombo($('comboBar'), 'ironWall');
+  }
   lastIron = m ? m.ironLeft : null;
 });
 socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
@@ -532,6 +536,13 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     }
     if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
     if (result.feverStarted) { sfx.fever(); renderer.text(800, 400, 'FEVER!', '#ff9f1c', 2); }
+    // 조합 발동 반짝임 (그 조합이 없으면 아무 일 없음)
+    const bar = $('comboBar');
+    if (!blasted && (result.type === 'steal' || result.type === 'feverSteal' || result.type === 'counter')) flashCombo(bar, 'stealKing');
+    if (result.comboBonus) flashCombo(bar, 'comboMachine');
+    if (result.feverStarted) flashCombo(bar, 'feverMaster');
+    if (result.jackpot > 1) flashCombo(bar, 'lucky');
+    if (result.type === 'yellow') flashCombo(bar, 'gourmet');
   } else {
     renderer.text(x, y, who.name, COLORS[who.color].hex, 0.75);
   }
@@ -825,6 +836,7 @@ function updateHud(now: number) {
 function frame() {
   const now = viewNow();
   renderPauseBtn();
+  renderComboBar($('comboBar'), playing && !picking() && !roundOver ? me() : undefined);
   // 위쪽 도감 버튼: 게임이 실제로 진행 중일 때만 숨김 (증강 선택·일시정지·대기실에서는 열 수 있음)
   $('codexTop').hidden = playing && !picking() && !pausedView && !roundOver;
   // 게임 중에는 진짜 마우스 커서를 숨기고 게임 커서를 그린다

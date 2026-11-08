@@ -209,11 +209,13 @@ export function combosOf(picks: readonly Pick[] | undefined): Set<ComboId> {
   return new Set(COMBOS.filter((c) => c.needs.every((n) => have.has(n))).map((c) => c.id));
 }
 
-/** 조합 진행도: 하나 이상 가진 조합만 */
+/** 조합 진행도: 하나 이상 가진 조합만. 완성한 조합이 먼저, 그다음 많이 모은 순 (같으면 COMBOS 순서) */
 export function comboProgress(picks: readonly Pick[] | undefined) {
   const have = new Set((picks ?? []).map((p) => p.id));
+  const rate = (c: { have: number; need: number }) => (c.have >= c.need ? 2 : c.have / c.need);
   return COMBOS.map((c) => ({ id: c.id, name: c.name, text: c.text, have: c.needs.filter((n) => have.has(n)).length, need: c.needs.length }))
-    .filter((c) => c.have > 0);
+    .filter((c) => c.have > 0)
+    .sort((a, b) => rate(b) - rate(a));
 }
 
 /** 이 카드를 고르면 새로 완성되는 조합 */
