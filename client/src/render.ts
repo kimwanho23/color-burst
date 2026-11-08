@@ -2,7 +2,10 @@
  * Canvas 그리기. 필드 좌표(1600x900)를 화면 크기에 맞춰 확대해서 그린다.
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
-import { COLORS, FIELD, RULES, YELLOW, auraAt, bossState, circlePos, isGuarded, lensWarp, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex } from '@color-burst/shared';
+import {
+  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE,
+  type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern,
+} from '@color-burst/shared';
 
 /** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
 function seeded(seed: number) {
@@ -91,6 +94,9 @@ export interface DrawState {
   myAura?: boolean;
   /** 자석에 끌려가는 원: from에서 to(내가 끌면 내 커서, 남이면 null → 제자리에서 작아짐)로 */
   pulls?: Map<number, { from: { x: number; y: number }; to: { x: number; y: number } | null; at: number; ms: number }>;
+  /** 맵 패턴 (경고 중이면 반투명 미리보기), 사라진 가시 공 번호 */
+  pattern?: MapPattern | null;
+  popped?: ReadonlySet<number>;
 }
 
 export class Renderer {
@@ -273,6 +279,7 @@ export class Renderer {
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
     for (const l of s.lasers ?? []) this.drawLaser(l, s.now, now);
+    if (s.pattern) this.drawPattern(s.pattern, s.popped ?? new Set(), s.now, now);
     const base = ctx.globalAlpha;
     // 발사 보호 구역 안의 원은 반투명 (아직 잡을 수 없음)
     const fade = (c: Circle) => { ctx.globalAlpha = isGuarded(c, s.now) ? base * 0.4 : base; };
@@ -303,6 +310,8 @@ export class Renderer {
     }
     ctx.globalAlpha = base;
     ctx.filter = 'none'; ctx.globalAlpha = 1;
+    // 안개는 원 위에 덮는다
+    if (s.pattern?.id === 'fog' && s.now >= s.pattern.warnAt && s.now < s.pattern.until) this.drawFog(s.pattern, s.now);
     if (s.frozen) for (const c of list) if (c.holds?.some(([a, ms]) => s.now >= a && s.now < a + ms)) this.drawClock(circlePos(c, s.now), c.r, now);
 
     for (const f of this.fx) {
@@ -461,6 +470,90 @@ export class Renderer {
   }
 
   /** 내 게임 커서: 흰 십자 고리 (스턴이면 회색 + 도는 별), 넓은 손 범위(실선)·자석 범위(점선) */
+  /** 맵 패턴: 경고 중에는 반투명 미리보기, 나와 있으면 실제 모양. 사라지기 직전 0.5초는 흐려진다 */
+  private drawPattern(p: MapPattern, popped: ReadonlySet<number>, t: number, frameNow: number) {
+    if (t < p.warnAt || t >= p.until) return;
+    const ctx = this.ctx, R = RULES.patterns;
+    const warn = t < p.at;
+    const tt = warn ? p.at : t;
+    const fade = warn ? 0.25 + 0.15 * Math.abs(Math.sin(frameNow / 120)) : Math.min(1, (p.until - t) / 500);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    if (p.id === 'walls') {
+      for (const w of p.walls ?? []) {
+        ctx.fillStyle = '#5a6078'; ctx.strokeStyle = '#c5cae9'; ctx.lineWidth = 3;
+        ctx.fillRect(w.x, w.y, w.w, w.h); ctx.strokeRect(w.x, w.y, w.w, w.h);
+        // 벽돌 줄무늬
+        ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2; ctx.beginPath();
+        const horiz = w.w > w.h, step = 40;
+        for (let k = step; k < (horiz ? w.w : w.h); k += step) {
+          if (horiz) { ctx.moveTo(w.x + k, w.y); ctx.lineTo(w.x + k, w.y + w.h); } else { ctx.moveTo(w.x, w.y + k); ctx.lineTo(w.x + w.w, w.y + k); }
+        }
+        ctx.stroke();
+      }
+    } else if (p.id === 'spikes') {
+      const r = R.spikes.r;
+      (p.balls ?? []).forEach((b, i) => {
+        if (popped.has(i)) return;
+        const q = moverAt(b, p.at, tt, r);
+        const spin = reduceMotion ? 0 : frameNow / 300;
+        ctx.fillStyle = '#ff5d73'; ctx.strokeStyle = '#ffd1d8'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let k = 0; k < 16; k++) {
+          const a = spin + (k / 16) * Math.PI * 2, rr = k % 2 ? r * 0.72 : r * 1.25;
+          ctx[k ? 'lineTo' : 'moveTo'](q.x + Math.cos(a) * rr, q.y + Math.sin(a) * rr);
+        }
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      });
+    } else if (p.id === 'bar') {
+      const sg = barSegment(p, tt);
+      ctx.strokeStyle = '#aeb6d6'; ctx.lineCap = 'round'; ctx.lineWidth = R.bar.thick;
+      ctx.beginPath(); ctx.moveTo(sg.a.x, sg.a.y); ctx.lineTo(sg.b.x, sg.b.y); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(sg.a.x, sg.a.y); ctx.lineTo(sg.b.x, sg.b.y); ctx.stroke();
+    } else if (p.id === 'vortex' && p.vortex) {
+      const v = p.vortex, spin = reduceMotion ? 0 : frameNow / 400;
+      ctx.strokeStyle = '#b48cff'; ctx.lineWidth = 3;
+      for (let arm = 0; arm < 3; arm++) {
+        ctx.beginPath();
+        for (let k = 0; k <= 40; k++) {
+          const f = k / 40, a = spin + arm * (Math.PI * 2 / 3) + f * Math.PI * 3, rr = f * R.vortex.r * 0.6;
+          ctx[k ? 'lineTo' : 'moveTo'](v.x + Math.cos(a) * rr, v.y + Math.sin(a) * rr);
+        }
+        ctx.stroke();
+      }
+      ctx.setLineDash([10, 12]); ctx.beginPath(); ctx.arc(v.x, v.y, R.vortex.r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    } else if (p.id === 'ring') {
+      // 안전 구역 밖(위험 구역)을 붉게
+      const e = ringE(p, tt), cx = FIELD.w / 2, cy = FIELD.h / 2;
+      ctx.fillStyle = 'rgba(255,60,90,.28)';
+      ctx.beginPath(); ctx.rect(0, 0, FIELD.w, FIELD.h);
+      ctx.ellipse(cx, cy, cx * e, cy * e, 0, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+      ctx.strokeStyle = '#ff5d73'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(cx, cy, cx * e, cy * e, 0, 0, Math.PI * 2); ctx.stroke();
+    } else if (p.id === 'ice') {
+      // 가장자리에 얼음빛
+      const g = ctx.createRadialGradient(FIELD.w / 2, FIELD.h / 2, FIELD.h * 0.35, FIELD.w / 2, FIELD.h / 2, FIELD.w * 0.62);
+      g.addColorStop(0, 'rgba(160,220,255,0)'); g.addColorStop(1, 'rgba(160,220,255,.32)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, FIELD.w, FIELD.h);
+    }
+    ctx.restore();
+  }
+
+  /** 안개: 원 위를 덮는 흐린 덩어리 */
+  private drawFog(p: MapPattern, t: number) {
+    const ctx = this.ctx, r = RULES.patterns.fog.r;
+    const a = t < p.at ? 0.25 : Math.min(1, (p.until - t) / 500) * 0.93;
+    ctx.save();
+    for (const q of fogAt(p, Math.max(t, p.at))) {
+      const g = ctx.createRadialGradient(q.x, q.y, r * 0.2, q.x, q.y, r);
+      g.addColorStop(0, `rgba(200,205,225,${a})`); g.addColorStop(0.7, `rgba(180,186,210,${a * 0.85})`); g.addColorStop(1, 'rgba(180,186,210,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   private drawCursor(c: NonNullable<DrawState['cursor']>, frameNow: number) {
     const ctx = this.ctx;
     ctx.save();

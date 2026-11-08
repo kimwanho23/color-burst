@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, COMBOS, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
@@ -10,7 +10,7 @@ import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, icon, itemIcon } from './icons.ts';
-import { buffChips, flashCombo, renderComboBar, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
+import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
 import { GameCursor, startCursorSync } from './cursor.ts';
 import { hideTip, initTips } from './tooltip.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
@@ -83,6 +83,9 @@ const viewNow = () => (pausedView || serverNow());
 const isHost = () => !!room && (room.solo || room.hostId === myId());
 /** 일시정지: 혼자 하기는 언제나, 멀티는 남은 횟수가 있을 때 */
 const canPause = () => { const m = me(); return !!room && !!m && (room.solo || m.pausesLeft > 0); };
+/** 맵 패턴 (경고 중이거나 나와 있는 것)과 사라진 가시 공 */
+let mapPattern: MapPattern | null = null;
+let popped = new Set<number>();
 /** 일시정지가 저절로 풀리기 시작하는 시각, 풀려서 다시 시작하는 시각 (카운트다운 중) */
 let pauseUntil = 0, resumeAt = 0;
 
@@ -328,6 +331,8 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   pulls.clear();
   for (const pl of d.pulls ?? []) pulls.set(pl.circleId, pl);
   setLasers(d.lasers ?? []);
+  mapPattern = d.pattern ?? null;
+  popped = new Set(d.popped ?? []);
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
   playing = true;
@@ -379,6 +384,16 @@ function togglePause() {
   if (canPause()) socket.emit('game:pause');
   else if (room && !room.solo) pushFeed($('feed'), icon(UI.pause, 18), '남은 일시정지가 없어요', '#ff5d73');
 }
+/** 맵 패턴이 나와 있는 동안 위쪽 작은 띠: "가시 공 6" */
+function renderPatternTag(now: number) {
+  const el = $('patternTag');
+  const on = playing && !picking() && patternActive(mapPattern, now);
+  el.hidden = !on;
+  if (!on) return;
+  const txt = `${PATTERNS[mapPattern!.id].name} ${Math.ceil((mapPattern!.until - now) / 1000)}`;
+  if (el.textContent !== txt) { el.textContent = txt; el.classList.toggle('danger', PATTERNS[mapPattern!.id].danger); }
+}
+
 /** 위쪽 일시정지 버튼: 멀티는 남은 횟수 "2/3", 다 쓰면 흐리게 */
 let pauseBtnSig = '';
 function renderPauseBtn() {
@@ -614,6 +629,19 @@ socket.on('laser:warn', (l) => {
   lasers = lasers.filter((x) => serverNow() < x.at + RULES.laser.fireMs);
   lasers.push(l); scheduleLaserFire(l); sfx.laserWarn();
 });
+// 맵 패턴: 경고와 함께 현수막·경고음, 나타나면 그림 (끝나는 시각이 지나면 그리지 않음)
+socket.on('map:warn', (p) => {
+  mapPattern = p; popped = new Set();
+  showPatternBanner($('stage'), p.id, p.at - serverNow(), !fxOn());
+  sfx.patternWarn();
+});
+socket.on('map:pop', ({ index, by }) => {
+  popped.add(index);
+  const p = mapPattern;
+  if (!p?.balls?.[index]) return;
+  const q = moverAt(p.balls[index], p.at, serverNow(), RULES.patterns.spikes.r);
+  renderer.burst(q.x, q.y, '#ff5d73', by === myId());
+});
 socket.on('stun', ({ playerId, by }) => {
   const p = nameOf(playerId);
   const snipe = by === 'snipe';
@@ -845,6 +873,7 @@ function updateHud(now: number) {
 function frame() {
   const now = viewNow();
   renderPauseBtn();
+  renderPatternTag(now);
   renderComboBar($('comboBar'), playing && !picking() && !roundOver ? me() : undefined);
   // 위쪽 도감 버튼: 게임이 실제로 진행 중일 때만 숨김 (증강 선택·일시정지·대기실에서는 열 수 있음)
   $('codexTop').hidden = playing && !picking() && !pausedView && !roundOver;
@@ -859,7 +888,8 @@ function frame() {
   const live = playing && !picking() && !roundOver && !pausedView;
   const aura = live && gameCursor.pos ? auraUnder(gameCursor.pos, now) : null;
   cursorMode = live && m ? cursorModeOf(m, now) ?? (aura ? {} : null) : null;
-  gameCursor.frame(cursorMode, dt * 1000, !!aura);
+  const fx = live && mapPattern ? { pattern: mapPattern, t: now } : null;
+  gameCursor.frame(cursorMode, dt * 1000, !!aura, fx);
   if (aura) gameCursor.pull(aura, RULES.aura.pullSpeed * dt);
   updateHud(now);
   renderer.draw({
@@ -878,6 +908,8 @@ function frame() {
     lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),
     blind: live && m?.blind && (m.debuffs.blind ?? 0) > now ? { ...m.blind, until: m.debuffs.blind! } : null,
     myAura: !!aura,
+    pattern: mapPattern,
+    popped,
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),
   });
   requestAnimationFrame(frame);

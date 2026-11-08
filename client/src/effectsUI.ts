@@ -1,9 +1,9 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
-  COMBOS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, combosOf,
-  type BuffId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
+  COMBOS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, combosOf,
+  type BuffId, type PatternId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
-import { UI, eventIcon, icon, itemIcon } from './icons.ts';
+import { UI, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
 import { comboTip } from './arcadeUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -31,6 +31,22 @@ export function flashCombo(el: HTMLElement, id: ComboId) {
   c.classList.remove('flash');
   void c.offsetWidth;
   c.classList.add('flash');
+}
+
+/**
+ * 맵 패턴 현수막: 화면 위쪽에 "⚠ 이름"과 문구 (위험 패턴은 빨간 테두리). 경고 시간 동안 보였다가 접힌다.
+ * reduce: 화면 효과 줄이기면 펼침 동작 없이
+ */
+export function showPatternBanner(host: HTMLElement, id: PatternId, ms: number, reduce: boolean) {
+  host.querySelector('.patbanner')?.remove();
+  const P = PATTERNS[id];
+  const el = document.createElement('div');
+  el.className = `patbanner${P.danger ? ' danger' : ''}${reduce ? ' still' : ''}`;
+  el.setAttribute('role', 'alert');
+  el.innerHTML = `<b>⚠ ${patternIcon(id, 22)}${esc(P.name)}</b><span>${esc(P.text)}</span>`;
+  host.appendChild(el);
+  setTimeout(() => el.classList.add('out'), Math.max(600, ms));
+  setTimeout(() => el.remove(), Math.max(600, ms) + 400);
 }
 
 /** 버프 바·점수판에 보여 줄 순서 (버프 이름 = 그 아이템 id) */

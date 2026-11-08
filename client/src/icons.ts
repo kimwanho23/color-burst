@@ -9,9 +9,9 @@ import {
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
   Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
-  HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal,
+  HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
 } from 'lucide';
-import type { AbilityCategory, AbilityId, EventId, ItemId } from '@color-burst/shared';
+import type { AbilityCategory, AbilityId, EventId, ItemId, PatternId } from '@color-burst/shared';
 
 const ABILITY_ICON: Record<AbilityId, IconNode> = {
   picky: UtensilsCrossed, yellowTaste: Citrus, rainbowHunt: Rainbow, comboArtist: Link2, headStart: Flag,
@@ -67,3 +67,5 @@ export const abilityIcon = (id: AbilityId, size = 18, cls = '') => icon(ABILITY_
 export const categoryIcon = (c: AbilityCategory, size = 14) => icon(CATEGORY_ICON[c], size);
 export const itemIcon = (id: ItemId, size = 18, cls = '') => icon(ITEM_ICON[id], size, cls);
 export const eventIcon = (id: EventId, size = 18, cls = '') => icon(EVENT_ICON[id], size, cls);
+const PATTERN_ICON: Record<PatternId, IconNode> = { walls: BrickWall, spikes: Bomb, bar: RotateCw, vortex: Tornado, ice: Snowflake, ring: CircleDashed, fog: CloudFog };
+export const patternIcon = (id: PatternId, size = 18, cls = '') => icon(PATTERN_ICON[id], size, cls);

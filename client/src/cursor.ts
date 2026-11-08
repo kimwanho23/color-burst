@@ -1,5 +1,13 @@
 /** 게임 커서: 화면이 직접 그리는 내 커서. 평소에는 진짜 마우스 위치와 같고, 효과가 걸리면 움직임이 바뀐다 */
-import { FIELD, RULES, cursorTarget, followCursor, relativeCursor, slideBack, type CursorMode, type Point } from '@color-burst/shared';
+import {
+  FIELD, RULES, cursorTarget, followCursor, iceStep, movesCursor, patternActive, pushOut, relativeCursor, slideBack, vortexStep,
+  type CursorMode, type MapPattern, type Point,
+} from '@color-burst/shared';
+
+/** 커서에 영향을 주는 맵 패턴과 지금 (서버) 시각 */
+export interface FieldFx { pattern: MapPattern; t: number }
+/** 맵 패턴 중 한 번에 옮기는 최대 거리 (벽을 뚫고 지나가지 않게 쪼갬) */
+const STEP = 10;
 
 export class GameCursor {
   /** 필드 좌표. 아직 마우스를 움직인 적 없거나 창을 떠났으면 null */
@@ -14,6 +22,9 @@ export class GameCursor {
   private slideAt = 0;
   /** 반대·감도 감소 중 오오라에 끌려간 양 (목표 위치에 더한다. 오오라를 벗어나면 미끄러져 0으로) */
   private off: Point = { x: 0, y: 0 };
+  /** 빙판: 따라가는 목표와 속도 */
+  private iceTarget: Point | null = null;
+  private iceVel: Point = { x: 0, y: 0 };
 
   /** real: 진짜 마우스의 필드 좌표, delta: 이번 이동량(필드 단위) */
   move(real: Point, delta: Point) {
@@ -28,18 +39,22 @@ export class GameCursor {
    * 매 프레임: 효과에 맞춰 커서를 옮긴다. 반대는 거울 위치, 감도 감소는 늦게 따라감, 오오라만이면 이동량 그대로.
    * 효과가 바뀌어 목표가 튀는 순간(반대가 걸리거나 풀림, 효과가 끝남)은 slideMs 동안 미끄러져 옮겨 간다
    */
-  frame(mode: CursorMode | null, dtMs: number, inAura = false) {
+  frame(mode: CursorMode | null, dtMs: number, inAura = false, fx: FieldFx | null = null) {
     const d = this.delta;
     this.delta = { x: 0, y: 0 };
     if (!this.real || !this.pos) return;
-    const key = mode ? `${mode.slow ? 's' : ''}${mode.invert ? 'i' : ''}` || 'a' : '';
+    // 벽·회전 막대·소용돌이·빙판이 나와 있으면 커서는 움직인 양으로 움직인다 ('p')
+    const field = fx && patternActive(fx.pattern, fx.t) && movesCursor(fx.pattern.id) ? fx : null;
+    const key = field ? 'p' : mode ? `${mode.slow ? 's' : ''}${mode.invert ? 'i' : ''}` || 'a' : '';
     if (key !== this.key) {
-      // 감도 감소가 남아 있으면 따라가기가 알아서 부드럽고, 오오라는 지금 자리에서 이어서 움직인다
-      if (!key.includes('s') && key !== 'a') { this.slideFrom = this.pos; this.slideAt = performance.now(); }
+      // 감도 감소가 남아 있으면 따라가기가 알아서 부드럽고, 오오라·맵 패턴은 지금 자리에서 이어서 움직인다
+      if (!key.includes('s') && key !== 'a' && key !== 'p') { this.slideFrom = this.pos; this.slideAt = performance.now(); }
       else this.slideFrom = null;
       this.key = key;
       this.off = { x: 0, y: 0 };
+      this.iceTarget = null; this.iceVel = { x: 0, y: 0 };
     }
+    if (field) { this.fieldStep(field, d, mode, dtMs); return; }
     if (key === 'a') { this.pos = relativeCursor(this.pos, d); return; }
     // 오오라를 벗어나면 끌려간 양을 버리고 미끄러져 돌아간다
     if (!inAura && (this.off.x || this.off.y)) {
@@ -55,6 +70,27 @@ export class GameCursor {
     this.pos = followCursor(this.pos, target, dtMs, !!mode?.slow);
   }
 
+  /**
+   * 맵 패턴 중: 이동량(반대면 반대로, 감도 감소면 절반)으로 움직인다.
+   * 벽·막대는 STEP씩 쪼개 밀어내서 뚫고 지나가지 않고, 막대가 쓸고 와도 밀려난다. 소용돌이는 끌리고, 빙판은 미끄러진다
+   */
+  private fieldStep(fx: FieldFx, d: Point, mode: CursorMode | null, dtMs: number) {
+    const k = (mode?.invert ? -1 : 1) * (mode?.slow ? 0.5 : 1);
+    const dx = d.x * k, dy = d.y * k;
+    const p = fx.pattern, t = fx.t;
+    if (p.id === 'ice') {
+      this.iceTarget = clampField({ x: (this.iceTarget ?? this.pos!).x + dx, y: (this.iceTarget ?? this.pos!).y + dy });
+      const r = iceStep(this.pos!, this.iceVel, this.iceTarget, dtMs);
+      this.pos = r.pos; this.iceVel = r.vel;
+      return;
+    }
+    const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / STEP));
+    let q = this.pos!;
+    for (let i = 0; i < n; i++) q = pushOut(p, clampField({ x: q.x + dx / n, y: q.y + dy / n }), t);
+    q = vortexStep(p, q, t, dtMs);
+    this.pos = pushOut(p, q, t);
+  }
+
   /** 오오라 끌림: target 쪽으로 dist만큼 (넘어가지 않음). 반대·감도 감소 중이면 끌린 양을 따로 쌓아 다음 프레임에도 유지 */
   pull(target: Point, dist: number) {
     if (!this.pos) return;
@@ -62,7 +98,7 @@ export class GameCursor {
     if (dd < 1e-6) return;
     const k = Math.min(1, dist / dd);
     const next = clampField({ x: this.pos.x + dx * k, y: this.pos.y + dy * k });
-    if (this.key && this.key !== 'a') this.off = { x: this.off.x + next.x - this.pos.x, y: this.off.y + next.y - this.pos.y };
+    if (this.key && this.key !== 'a' && this.key !== 'p') this.off = { x: this.off.x + next.x - this.pos.x, y: this.off.y + next.y - this.pos.y };
     this.pos = next;
   }
 
@@ -71,7 +107,7 @@ export class GameCursor {
    * 미끄러지는 중·감도 감소·오오라만 걸린 때는 그대로 (그때는 늦게 따라가는 게 효과)
    */
   snap(mode: CursorMode | null) {
-    if (!this.real || !this.pos || this.slideFrom || mode?.slow || this.key === 'a') return;
+    if (!this.real || !this.pos || this.slideFrom || mode?.slow || this.key === 'a' || this.key === 'p') return;
     this.pos = this.targetOf(mode);
   }
 

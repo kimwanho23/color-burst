@@ -130,6 +130,8 @@ export const sfx = {
   zone: () => tone(440, 0.25, 'triangle', 0.1, 0, 1.5),
   /** 레이저 예고·발사, 스턴, 자석 끌기 */
   laserWarn: () => [880, 880].forEach((f, i) => tone(f, 0.08, 'square', 0.05, i * 0.16)),
+  /** 맵 패턴 경고: 낮게 울리는 사이렌 두 번 */
+  patternWarn: () => { [330, 247, 330, 247].forEach((f, i) => tone(f, 0.16, 'sawtooth', 0.06, i * 0.18)); noise(0.3, 0.06, 0, 500, 'lowpass'); },
   laserFire: () => tone(1400, 0.3, 'sawtooth', 0.06, 0, 0.25),
   stun: () => [523, 440, 392].forEach((f, i) => tone(f, 0.1, 'triangle', 0.09, i * 0.07)),
   pull: () => tone(300, 0.2, 'sine', 0.08, 0, 2.2),

@@ -533,3 +533,17 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .acard .ctag.done { color: #1b1500; background: #ffd43b; border-color: #ffd43b; }
 /* 게임이 멈췄을 때만 조합 칩에 마우스를 올려 볼 수 있다 */
 #stage:not(.gamecursor) .combobar .cbchip { pointer-events: auto; cursor: help; }
+
+/* 맵 패턴 현수막 (보스 처치 배너 높이) */
+.patbanner { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); z-index: 4; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 26px 12px; border-radius: 14px; background: rgba(20, 16, 4, .88); border: 2px solid #ffd43b; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); color: var(--fg); text-align: center; animation: patIn .35s cubic-bezier(.2, .9, .3, 1.3) both; }
+.patbanner b { display: inline-flex; align-items: center; gap: 8px; font: 400 26px var(--display); color: #ffd43b; }
+.patbanner span { font: 600 14px var(--body); }
+.patbanner.danger { border-color: #ff5d73; background: rgba(36, 6, 12, .9); }
+.patbanner.danger b { color: #ff8095; }
+.patbanner.out { animation: patOut .35s ease-in both; }
+.patbanner.still, .patbanner.still.out { animation: none; }
+@keyframes patIn { from { opacity: 0; transform: translate(-50%, -12px) scaleY(.4); } }
+@keyframes patOut { to { opacity: 0; transform: translate(-50%, -10px) scaleY(.6); } }
+/* 맵 패턴 남은 시간 띠 */
+.pattag { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 3; pointer-events: none; padding: 3px 12px; border-radius: 999px; border: 1px solid #ffd43b; background: rgba(20, 16, 4, .8); color: #ffd43b; font: 700 13px var(--body); font-variant-numeric: tabular-nums; }
+.pattag.danger { border-color: #ff5d73; color: #ff8095; background: rgba(36, 6, 12, .8); }
