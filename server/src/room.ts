@@ -343,9 +343,12 @@ export class Room {
     // 카드 id가 다르면(두 장 차례에 빠르게 두 번 누름 등) 무시
     if (!o || !p || o.chosen || !pick || (cardId !== undefined && pick.id !== cardId)) return;
     applyPick(p, pick);
-    // 두 장 고르는 차례: 고른 카드를 빼고 남은 카드에서 한 장 더
-    o.options = o.options.filter((_, k) => k !== index);
+    // 두 장 고르는 차례: 새 카드를 다시 깔아 한 장 더 (이벤트 선물·저주 배달은 첫 번째에만)
     o.need--;
+    if (o.need > 0) {
+      o.extra = { gift: false, curse: false };
+      o.options = this.roll(p, o);
+    }
     if (o.need <= 0 || !o.options.length) o.chosen = true;
     else this.sendOffer(id);
     this.emitPlayers();

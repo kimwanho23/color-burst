@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { RULES, circlePos as circlePosOf, isSpecial, type Circle, type Pick } from '../src/index.ts';
+import { RULES, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type Pick } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -520,14 +520,19 @@ function arcadeRoom() {
 /** k라운드가 끝난 뒤 선택을 연다 */
 const openPick = (r: PickPriv, round: number) => { r.round = round; r.roundPhase = 'pick'; r.startPick(); };
 
-test('두 장 선택: 하나 고르면 남은 카드·need 1을 다시 보냄', () => {
+test('두 장 선택: 하나 고르면 새 카드 3장과 need 1을 다시 보냄 (같은 규칙, 이벤트 선물은 첫 번째만)', () => {
   const { room, me, r } = arcadeRoom();
   openPick(r, 3);
-  const o = r.offers.get(me.id)!;
+  const o = r.offers.get(me.id)! as ReturnType<PickPriv['offers']['get']> & { extra: { gift: boolean; curse: boolean } };
+  o.extra = { gift: true, curse: false };
   assert.deepEqual([o.need, o.options.length], [2, 3]);
+  const first = o.options;
   sent.length = 0;
   room.choose(me.id, 0);
-  assert.deepEqual([o.need, o.options.length, o.chosen, me.picks.length], [1, 2, false, 1]);
+  assert.deepEqual([o.need, o.options.length, o.chosen, me.picks.length], [1, 3, false, 1]);
+  assert.notEqual(o.options, first, '새로 뽑은 카드');
+  assert.ok(o.options.every((c) => c.tier >= 1 || isCurse(c.id)), '3라운드 뒤는 노말 제외 그대로');
+  assert.equal(o.extra.gift, false);
   assert.ok(sent.includes('arcade:offer'));
   room.choose(me.id, 0);
   assert.deepEqual([o.chosen, me.picks.length], [true, 2]);
