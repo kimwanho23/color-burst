@@ -1,11 +1,15 @@
-/** 도감: 증강(등급별 수치)·저주·아이템·보스를 한 화면에서 본다 (처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, COMBOS, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, SPECIALS, TIERS, type AbilityCategory } from '@color-burst/shared';
-import { abilityIcon, categoryIcon, itemIcon } from './icons.ts';
+/** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
+import { ABILITIES, ABILITY, COMBOS, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, SPECIALS, TIERS, comboProgress, type AbilityCategory, type Pick, type RoomRules } from '@color-burst/shared';
+import { UI, abilityIcon, categoryIcon, icon, itemIcon } from './icons.ts';
+import { scoreTable } from './rulesUI.ts';
+
+/** 도감을 여는 곳의 상태: 방 규칙(점수표), 내 증강(조합 진행도) */
+export interface CodexCtx { rules: RoomRules; picks?: readonly Pick[] }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-type Tab = 'ability' | 'combo' | 'curse' | 'special' | 'item' | 'boss';
-const TABS: [Tab, string][] = [['ability', '증강'], ['combo', '조합'], ['curse', '저주'], ['special', '특별'], ['item', '아이템'], ['boss', '보스']];
+type Tab = 'ability' | 'combo' | 'curse' | 'special' | 'item' | 'boss' | 'rules';
+const TABS: [Tab, string][] = [['ability', '증강'], ['combo', '조합'], ['curse', '저주'], ['special', '특별'], ['item', '아이템'], ['boss', '보스'], ['rules', '규칙']];
 
 /** 보스 종류 설명 (README '보스 종류'와 같은 내용) */
 const BOSSES: [string, string][] = [
@@ -29,9 +33,16 @@ function curseTab() {
     <li><span class="cx-ic">${abilityIcon(c.id, 22)}</span><div><b>${esc(c.name)}</b><p class="cx-gain">${esc(c.curse!.gain)}</p><p class="cx-cost">대가: ${esc(c.curse!.cost)}</p></div></li>`).join('')}</ul>`;
 }
 
-function comboTab() {
+function comboTab(ctx: CodexCtx) {
+  // 게임 중에 열면 내 진행도: 완성 / 2/3
+  const prog = new Map(comboProgress(ctx.picks).map((c) => [c.id, c]));
+  const tag = (id: string) => {
+    const p = prog.get(id as never);
+    if (!p) return '';
+    return p.have >= p.need ? '<em class="cx-done">완성</em>' : `<em class="cx-prog">${p.have}/${p.need}</em>`;
+  };
   return `<p class="hint">조합의 증강을 모두 가지면(등급 무관) 보너스가 붙어요. 가진 증강과 같은 분류·조합 조각은 선택지에 더 자주 나와요</p><ul class="cx-list">${COMBOS.map((c) => `
-    <li><div><b>${esc(c.name)}</b><p>${c.needs.map((n) => `${abilityIcon(n, 14)} ${esc(ABILITY[n].name)}`).join(' + ')}</p><p class="cx-legend">${esc(c.text)}</p></div></li>`).join('')}</ul>`;
+    <li class="${prog.get(c.id)?.have === c.needs.length ? 'cx-mine' : ''}"><div><b>${esc(c.name)}</b>${tag(c.id)}<p>${c.needs.map((n) => `${abilityIcon(n, 14)} ${esc(ABILITY[n].name)}`).join(' + ')}</p><p class="cx-legend">${esc(c.text)}</p></div></li>`).join('')}</ul>`;
 }
 
 function specialTab() {
@@ -48,7 +59,11 @@ function bossTab() {
   return `<ul class="cx-list">${BOSSES.map(([n, d]) => `<li><div><b>${n}</b><p>${esc(d)}</p></div></li>`).join('')}</ul>`;
 }
 
-const BODY: Record<Tab, () => string> = { ability: abilityTab, combo: comboTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTab };
+function rulesTab(ctx: CodexCtx) {
+  return `<p class="hint">지금 방 규칙 기준 점수예요. 점수 구역(중앙 ×1 · 사이 ×2 · 가장자리 ×3)·잭팟 등은 이 위에 곱해져요</p>${scoreTable(ctx.rules)}`;
+}
+
+const BODY: Record<Tab, (ctx: CodexCtx) => string> = { ability: abilityTab, combo: comboTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTab, rules: rulesTab };
 
 /** 열려 있는 도감을 닫는 함수 */
 let closeCurrent: (() => void) | null = null;
@@ -57,12 +72,12 @@ let closeCurrent: (() => void) | null = null;
 export function closeCodex() { closeCurrent?.(); }
 
 /** 도감 창을 연다. 닫기 버튼·Esc·바깥 클릭으로 닫힌다 */
-export function openCodex(host: HTMLElement) {
+export function openCodex(host: HTMLElement, ctx: CodexCtx) {
   closeCodex();
   const el = document.createElement('div');
   el.className = 'overlay codex';
   el.innerHTML = `<div class="card wide cx-card" role="dialog" aria-label="도감">
-    <div class="cx-head"><b>도감</b><button class="link" type="button" data-close>닫기</button></div>
+    <div class="cx-head"><b>도감</b><button class="iconbtn x" type="button" data-close aria-label="닫기">${icon(UI.close, 18)}</button></div>
     <p class="hint cx-note">같은 증강을 또 고르면 수치가 더해져요 (중첩). 일부는 상한이 있어요</p>
     <div class="seg cx-tabs">${TABS.map(([id, name], i) => `<button type="button" data-tab="${id}" aria-pressed="${i === 0}">${name}</button>`).join('')}</div>
     <div class="cx-body"></div>
@@ -70,7 +85,7 @@ export function openCodex(host: HTMLElement) {
   host.appendChild(el);
   const body = el.querySelector<HTMLElement>('.cx-body')!;
   const show = (tab: Tab) => {
-    body.innerHTML = BODY[tab]();
+    body.innerHTML = BODY[tab](ctx);
     body.scrollTop = 0;
     el.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
   };

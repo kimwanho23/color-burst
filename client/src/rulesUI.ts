@@ -1,4 +1,4 @@
-/** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 + 점수표 */
+/** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 (점수표는 도감 '규칙' 탭) */
 import { ARCADE, PRESETS, RULES, RULE_CHOICES, matchPreset, type PresetId, type RoomRules } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
 import { UI, icon } from './icons.ts';
@@ -39,7 +39,6 @@ export interface RulesUIHandlers {
 export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean, on: RulesUIHandlers) {
   const current = matchPreset(rules);
   const advOpen = el.querySelector<HTMLDetailsElement>('details.adv')?.open ?? false;
-  const tblOpen = el.querySelector<HTMLDetailsElement>('details.rules')?.open ?? false;
   const dis = editable ? '' : 'disabled';
   const arcade = rules.mode === 'arcade';
   el.innerHTML = `
@@ -72,15 +71,10 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
             <input type="checkbox" id="rule-${f.key}" data-b="${f.key}" ${rules[f.key] ? 'checked' : ''} ${dis}>
           </label>`).join('')}
       </div>
-    </details>
-    <details class="rules">
-      <summary>점수표 보기</summary>
-      ${scoreTable(rules)}
     </details>`;
 
   // 다시 그려도 열려 있던 상태 유지
   el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen;
-  el.querySelector<HTMLDetailsElement>('details.rules')!.open = tblOpen;
   el.querySelectorAll<HTMLButtonElement>('.mode').forEach((b) => { b.onclick = () => on.change({ mode: b.dataset.m as RoomRules['mode'] }); });
   el.querySelectorAll<HTMLButtonElement>('.preset').forEach((b) => { b.onclick = () => on.preset(b.dataset.p as PresetId); });
   el.querySelectorAll<HTMLSelectElement>('select[data-k]').forEach((s) => { s.onchange = () => on.change({ [s.dataset.k!]: Number(s.value) }); });

@@ -216,7 +216,10 @@ const entered = (r: { ok: true; code: string; you: string } | { ok: false; error
   if (r.ok) { myPlayerId = r.you; store('cb-room', r.code); renderScores(); renderLobby(); }
 };
 $('createBtn').onclick = () => socket.emit('room:create', { name: getName(), key: KEY }, entered);
-$('codexBtn').onclick = $('codexBtn2').onclick = () => openCodex($('stage'));
+/** 도감 열기: 방 규칙(점수표)과 내 증강(조합 진행도)을 넘긴다 */
+const openCodexHere = () => openCodex($('stage'), { rules: room ? rules : DEFAULT_RULES, picks: me()?.picks });
+$('codexBtn').onclick = $('codexBtn2').onclick = $('codexTop').onclick = openCodexHere;
+$('codexTop').innerHTML = `${icon(UI.codex, 16)}<span class="bt">도감</span>`;
 $('soloBtn').onclick = () => { initAudio(); socket.emit('room:solo', { name: getName(), key: KEY }, entered); };
 const join = () => socket.emit('room:join', { code: codeInput.value, name: getName(), key: KEY }, entered);
 $('joinBtn').onclick = join;
@@ -779,6 +782,8 @@ function updateHud(now: number) {
 function frame() {
   const now = viewNow();
   renderPauseBtn();
+  // 위쪽 도감 버튼: 게임이 실제로 진행 중일 때만 숨김 (증강 선택·일시정지·대기실에서는 열 수 있음)
+  $('codexTop').hidden = playing && !picking() && !pausedView && !roundOver;
   // 게임 중에는 진짜 마우스 커서를 숨기고 게임 커서를 그린다
   $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView);
   // 자석에 끌려오는 원은 화면 밖으로 나가도 잡힐 때까지 그린다
