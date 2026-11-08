@@ -81,7 +81,7 @@ export const RULES = {
    */
   zones: { bounds: [0.35, 0.7], mult: [1, 2, 3] },
   /**
-   * 황금 원: 작고 빠르며 벽에서 튕기고 lifeSec 뒤 사라진다. 직접 클릭으로만 잡고 고정 points점 (배율 없음).
+   * 황금 원: 작고 빠르며 벽에서 튕기고 lifeSec 뒤 사라진다. 직접 클릭으로만 잡고 기본 points점에 일반 원과 같은 배율(goldGain).
    * 한 판에 1/2/3번 확률 countOdds, 판 시작 startMs 뒤 ~ 끝나기 endMs 전 사이
    */
   gold: { r: 22, speed: 520, lifeSec: 5, points: 20, countOdds: [25, 50, 25], startMs: 3_000, endMs: 6_000 },
@@ -491,7 +491,6 @@ export interface PlayerState {
   reboundUntil: number;
   reboundLost: number;
   reboundUsed: boolean;
-  /** 철옹성 조합: 이번 라운드에 남은 콤보 끊김 막기 */
   /** 위험 피격 무적이 끝나는 시각 (스턴이 없어도 맞으면 생김) */
   hazardUntil?: number;
   /** 이번 게임에 남은 일시정지 (멀티) */
@@ -806,7 +805,7 @@ function breakCombo(p: PlayerState, m: Mods, now: number, byOther = false) {
 /** 점수 구역: 0 중앙 ×1, 1 사이 ×2, 2 가장자리 ×3 */
 export type ZoneIndex = 0 | 1 | 2;
 
-/** 이 점이 어느 점수 구역인지 (화면 비율에 맞춘 타원) */
+/** 이 점이 어느 점수 구역인지 (판 중앙 기준 동심원) */
 export function zoneOf(p: { x: number; y: number }): ZoneIndex {
   const e = Math.hypot((p.x - FIELD.w / 2) / (FIELD.w / 2), (p.y - FIELD.h / 2) / (FIELD.h / 2));
   const [b0, b1] = RULES.zones.bounds;

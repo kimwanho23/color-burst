@@ -62,9 +62,10 @@ const lineThrough = (c: Point, ang: number): LaserLine => {
 
 /**
  * 레이저 볼리: 모양을 고르고 줄들을 만든다. 한 줄 / 평행 두 줄(사이에 safeGap 틈) / X자 / 60° 간격 세 줄.
- * 중심은 필드 안쪽(x 200~1400, y 150~750)
+ * 중심은 판 안쪽(가로·세로 15%~85%)
  */
-export function rollVolley(rand = Math.random): { kind: VolleyKind; lines: LaserLine[] } {
+/** half: 맞는 거리 (방 규칙 레이저 두께). 평행 두 줄 사이 빈 틈이 늘 safeGap이 되게 */
+export function rollVolley(rand = Math.random, half: number = RULES.laser.width): { kind: VolleyKind; lines: LaserLine[] } {
   const odds = Object.entries(RULES.laser.volleyOdds) as [VolleyKind, number][];
   let r = rand() * odds.reduce((s, [, w]) => s + w, 0);
   let kind: VolleyKind = odds[odds.length - 1][0];
@@ -73,7 +74,7 @@ export function rollVolley(rand = Math.random): { kind: VolleyKind; lines: Laser
   const ang = rand() * Math.PI;
   if (kind === 'single') return { kind, lines: [lineThrough(c, ang)] };
   if (kind === 'parallel') {
-    const h = (2 * RULES.laser.width + RULES.laser.safeGap) / 2;
+    const h = half + RULES.laser.safeGap / 2;
     const nx = -Math.sin(ang) * h, ny = Math.cos(ang) * h;
     return { kind, lines: [lineThrough({ x: c.x + nx, y: c.y + ny }, ang), lineThrough({ x: c.x - nx, y: c.y - ny }, ang)] };
   }

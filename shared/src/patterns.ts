@@ -89,12 +89,17 @@ export function makePattern(id: PatternId, at: number, rand = Math.random): MapP
   } else if (id === 'vortex') {
     // 둘 다 중앙 발사 지점을 피하고, 서로의 눈이 끌림 구역에 들어가지 않게 떨어뜨린다
     const V = R.vortex, out: Point[] = [];
+    const ok = (v: Point) => Math.hypot(v.x - C.x, v.y - C.y) >= V.centerClear && out.every((o) => Math.hypot(o.x - v.x, o.y - v.y) >= V.r + V.eye);
+    const lo = V.eye + 30;
     for (let i = 0; i < 2; i++) {
-      let v: Point = C;
-      for (let tries = 0; tries < 40; tries++) {
-        v = { x: between(V.eye + 30, FIELD.w - V.eye - 30, rand), y: between(V.eye + 30, FIELD.h - V.eye - 30, rand) };
-        if (Math.hypot(v.x - C.x, v.y - C.y) >= V.centerClear && out.every((o) => Math.hypot(o.x - v.x, o.y - v.y) >= V.r + V.eye)) break;
+      let v: Point | null = null;
+      for (let tries = 0; tries < 200 && !v; tries++) {
+        const c = { x: between(lo, FIELD.w - lo, rand), y: between(lo, FIELD.h - lo, rand) };
+        if (ok(c)) v = c;
       }
+      // 끝내 못 찾으면: 첫 번째는 한쪽 구석 근처, 두 번째는 첫 번째의 대각 반대편 (중앙을 피하고 멀리)
+      if (!v) v = i === 0 ? { x: lo, y: lo } : { x: FIELD.w - out[0].x, y: FIELD.h - out[0].y };
+      if (i === 1 && !ok(v)) v = { x: out[0].x < C.x ? FIELD.w - lo : lo, y: out[0].y < C.y ? FIELD.h - lo : lo };
       out.push(v);
     }
     p.vortices = out;

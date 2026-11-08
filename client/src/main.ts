@@ -20,16 +20,16 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 initTips();
 
 /**
- * 게임 상자를 정사각형으로: 한 변 = min(남는 폭, 위쪽 바·점수판·아래 피버 바를 뺀 남는 높이).
- * CSS 변수 --side로 상자 크기와 #app 최대 폭을 같이 맞춘다 (점수판이 줄바꿈되면 높이가 바뀌어 다시 계산)
+ * #app 최대 폭을 게임 상자의 남는 높이(--side)에 맞춘다: 데스크톱에서 상자가 정사각형에 가깝게 되고 위쪽 바·점수판도 같은 폭.
+ * 상자는 남는 공간을 다 써서(폰 세로·가로에서도 피버 바가 화면 안), 정사각형 판은 캔버스가 상자 안 가운데에 그린다
  */
 function fitStage() {
   const app = $('app'), cs = getComputedStyle(app);
-  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
   const gap = parseFloat(cs.rowGap) || 0;
   const others = ([...app.children] as HTMLElement[]).filter((e) => e.id !== 'stage' && e.offsetParent !== null);
   const used = others.reduce((sum, e) => sum + e.offsetHeight, 0) + gap * others.length;
-  const side = Math.max(240, Math.floor(Math.min(innerWidth - padX, innerHeight - padY - used)));
+  const side = Math.max(0, Math.floor(app.clientHeight - padY - used));
   if (document.documentElement.style.getPropertyValue('--side') !== `${side}px`) document.documentElement.style.setProperty('--side', `${side}px`);
 }
 addEventListener('resize', fitStage);
@@ -121,6 +121,7 @@ let myCombos = new Set<string>();
 let combosReady = false;
 /** 지난번 내 콤보 (철옹성 발동 표시: 콤보가 0이 아니라 일부만 줄었을 때) */
 let lastCombo: number | null = null;
+let ironNoticeAt = 0;
 /** 방을 나가면 조합 알림 기준을 비운다 (다른 방에 들어가 받은 첫 상태는 알리지 않음) */
 function resetComboNotice() { myCombos = new Set(); combosReady = false; lastCombo = null; }
 /** 점수판 칩 빌드 카드: 보고 있는 사람, 눌러서 고정했는지 */
@@ -539,7 +540,9 @@ socket.on('players', (p) => {
   myCombos = now;
   combosReady = !!m;
   // 철옹성 조합: 콤보가 끊길 때 0이 아니라 일부만 줄었으면 (라운드 시작의 0은 제외)
-  if (m && lastCombo !== null && m.combo < lastCombo && m.combo > 0 && now.has('ironWall')) {
+  // (오오라처럼 계속 줄어들 때 1.5초에 한 번만)
+  if (m && lastCombo !== null && m.combo < lastCombo && m.combo > 0 && now.has('ironWall') && performance.now() - ironNoticeAt > 1500) {
+    ironNoticeAt = performance.now();
     sfx.bossBlock(); renderer.text(CX, CY + -120, '철옹성! 콤보 유지', '#ffd43b', 1.1);
     flashCombo($('comboBar'), 'ironWall');
   }
@@ -585,7 +588,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     if (result.comboBonus) flashCombo(bar, 'comboMachine');
     if (result.feverStarted) flashCombo(bar, 'feverMaster');
     if (result.jackpot > 1) flashCombo(bar, 'lucky');
-    if (result.type === 'yellow') flashCombo(bar, 'gourmet');
+    if (claimedKind === 'y' && !blasted) flashCombo(bar, 'gourmet');
   } else {
     renderer.text(x, y, who.name, COLORS[who.color].hex, 0.75);
   }

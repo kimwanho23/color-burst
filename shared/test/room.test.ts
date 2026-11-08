@@ -1050,3 +1050,17 @@ test('리뷰: 회전 막대가 지연 시간 안에 막 덮친 곳의 클릭은 
   assert.equal(me.stats.misses, 1, '막대에 계속 덮여 있던 게 아니면 평소처럼 처리 (여기선 빈 곳)');
   room.destroy();
 });
+
+test('리뷰: 철옹성이면 오오라에서도 콤보가 80%만 남음', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(77, runnerAt(now));
+  const pos = circlePosOf(circles.get(77)!, now);
+  me.picks = (['shield', 'insurance', 'rebound'] as const).map((id) => ({ id, tier: 0 as const }));
+  me.combo = 10;
+  const cursors = (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors;
+  cursors.set(me.id, { x: pos.x + 100, y: pos.y, at: now });
+  (room as unknown as { updateAura(now: number): void }).updateAura(now);
+  assert.equal(me.combo, 8);
+  room.destroy();
+});

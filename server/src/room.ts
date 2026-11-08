@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, goldGain, crossedCombo, hazardStun, halveFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
@@ -515,7 +515,9 @@ export class Room {
       if (last !== undefined && now - last < A.tickMs) continue;
       this.auraLast.set(p.id, now);
       addFever(p, -A.feverLoss, now, this.G, this.players);
-      p.combo = Math.floor((p.combo * A.comboKeepPct) / 100);
+      // 철옹성 조합이면 끊김처럼 80%는 남긴다 (더 많이 남는 쪽)
+      const iron = combosOf(p.picks).has('ironWall') ? Math.floor((p.combo * COMBO.ironKeepPct) / 100) : 0;
+      p.combo = Math.max(Math.floor((p.combo * A.comboKeepPct) / 100), iron);
       this.io.to(this.code).emit('aura:hit', { by: p.id, x: cur.x, y: cur.y });
       changed = true;
     }
@@ -989,7 +991,7 @@ export class Room {
     const el = now - this.startAt;
     // 판 시작 직후·시간 정지 중·라운드 끝 직전에는 쏘지 않는다
     if (el >= this.nextLaserAt && el >= L.startQuietMs && now >= this.freezeUntil && this.endAt - (now + L.warnMs + L.fireMs) >= L.endQuietMs) {
-      const v = { lines: rollVolley().lines, at: now + L.warnMs };
+      const v = { lines: rollVolley(Math.random, this.G.laserHalf).lines, at: now + L.warnMs };
       this.lasers.push({ ...v, hit: new Set() });
       this.io.to(this.code).emit('laser:warn', v);
       this.nextLaserAt = el + nextLaserIn(Math.random, this.G.chaos);
@@ -1133,7 +1135,7 @@ export class Room {
     if (list.length) this.emitPlayers();
   }
 
-  /** 황금 원: 고정 점수 (구역·피버·잭팟·콤보 없음) */
+  /** 황금 원: 일반 원과 같은 배율 (goldGain), 콤보·피버 게이지는 그대로 */
   private claimGold(p: PlayerState, c: Circle, now: number) {
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);

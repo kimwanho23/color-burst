@@ -123,7 +123,7 @@ export interface ServerToClient {
   'circle:spawn': (c: Circle) => void;
   /** 특별 카드로 점수를 얻음 (하이에나) */
   'special:gain': (d: { playerId: string; id: AbilityId; delta: number }) => void;
-  /** 황금 원을 잡음 (고정 점수) */
+  /** 황금 원을 잡음 (배율 적용 점수, 잭팟 배율) */
   'gold:got': (d: { circleId: number; by: string; gained: number; x: number; y: number; jackpot: number }) => void;
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;

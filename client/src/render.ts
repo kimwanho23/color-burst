@@ -40,7 +40,8 @@ const SCORE_TIER: Record<ScoreTier, { col: string; size: number }> = {
   5: { col: '#ffd43b', size: 2 },
 };
 /** 배너: 화면 가운데보다 살짝 위, 보이는 시간(초) */
-const BANNER_Y = 230, BANNER_LIFE = 1.2;
+/** 보스 처치 배너 높이: 판 중앙에서 220 위 (화면 문구와 안 겹치게) */
+const BANNER_Y = FIELD.h / 2 - 220, BANNER_LIFE = 1.2;
 
 type BasicKind = Exclude<CircleKind, 'boss' | 'item'>;
 const GOLD_TRAIL = [40, 80, 120];
@@ -264,7 +265,7 @@ export class Renderer {
     // 발사 보호 구역: 이 안의 원은 아직 잡을 수 없다
     ctx.setLineDash([6, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.12)';
     ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke();
-    // 점수 구역 경계: 사이(×2)·가장자리(×3)가 시작되는 타원
+    // 점수 구역 경계: 사이(×2)·가장자리(×3)가 시작되는 동심원
     RULES.zones.bounds.forEach((b, i) => {
       ctx.setLineDash([4, 12]); ctx.lineWidth = 2; ctx.strokeStyle = `rgba(126, 224, 255, ${i ? 0.2 : 0.14})`;
       ctx.beginPath(); ctx.ellipse(cx, cy, cx * b, cy * b, 0, 0, Math.PI * 2); ctx.stroke();

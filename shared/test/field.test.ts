@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FIELD, RULES, barSegment, circlePos, isOut, rollLaser, rollVolley, zoneOf, type Circle, type MapPattern } from '../src/index.ts';
+import { FIELD, RULES, barSegment, circlePos, distToSegment, isOut, makePattern, rollLaser, rollVolley, zoneOf, type Circle, type MapPattern } from '../src/index.ts';
 
 const C = FIELD.w / 2;
 
@@ -39,4 +39,21 @@ test('회전 막대는 어느 각도에서도 판 끝까지 닿음', () => {
   const s = barSegment(p, 0);
   assert.ok(Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y) / 2 >= Math.hypot(C, C), '대각선(구석)까지');
   assert.equal(RULES.patterns.bar.len, 1560);
+});
+
+test('리뷰: 평행 레이저 사이 빈 틈은 레이저 두께와 상관없이 safeGap', () => {
+  for (const half of [0.15 * FIELD.h / 2, 0.22 * FIELD.h / 2, 0.3 * FIELD.h / 2]) {
+    const { lines } = rollVolley(() => 0.5, half); // 0.5 → parallel
+    const gap = distToSegment(lines[1].a, lines[0].a, lines[0].b) - 2 * half;
+    assert.ok(Math.abs(gap - RULES.laser.safeGap) < 1e-6, `${half}: ${gap}`);
+  }
+});
+
+test('리뷰: 소용돌이 두 개는 언제나 중앙을 피하고 서로 떨어짐 (2000번)', () => {
+  const V = RULES.patterns.vortex;
+  for (let n = 0; n < 2000; n++) {
+    const v = makePattern('vortex', 0, Math.random).vortices!;
+    assert.ok(Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y) >= V.r + V.eye);
+    for (const c of v) assert.ok(Math.hypot(c.x - C, c.y - C) >= V.centerClear);
+  }
 });
