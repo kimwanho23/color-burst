@@ -723,6 +723,7 @@ socket.on('game:over', (d) => {
   $('rank').innerHTML = r.rank;
   $('titleList').innerHTML = r.titles;
   $('graphBox').innerHTML = r.graph;
+  $('srcBox').innerHTML = r.sources;
   if (room) room.wins = d.wins;
   (pos === 1 ? sfx.win : sfx.lose)();
   const again = isHost();

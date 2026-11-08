@@ -1,7 +1,8 @@
-/** 결과 화면: 순위, 칭호, 점수 그래프 */
+/** 결과 화면: 순위, 칭호, 점수 그래프, 점수 출처 */
 import { COLORS, type GameOver, type PlayerState, type RoundEffect } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
 import { buildTiles, effectItems } from './arcadeUI.ts';
+import { sourcesHtml } from './sources.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -30,7 +31,7 @@ export function renderResult(d: GameOver, myId: string, finalEffects: readonly R
     ? `<div class="settle"><div class="lbl">마지막 라운드 정산</div><ul class="effects">${effectItems(finalEffects, d.ranking, myId)}</ul></div>`
     : '';
 
-  return { rank, titles: settle + titles, graph: scoreGraph(d, myId) };
+  return { rank, titles: settle + titles, graph: scoreGraph(d, myId), sources: sourcesHtml(d.ranking, myId) };
 }
 
 /** 시간에 따른 점수 선 그래프 (SVG) */

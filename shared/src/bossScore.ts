@@ -4,7 +4,7 @@
  */
 import { AUG, COMBO, LEGEND, combosOf, hasLegend, jackpotMult, modsOf } from './arcade.ts';
 import {
-  RULES, addFever, afterMultOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
+  RULES, addFever, addLost, addSrc, afterMultOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
   luckyMods, ragePenalty, settleFever, zoneMult, zoneOf, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 
@@ -51,6 +51,7 @@ export function strikeBoss(
   if (st.enraged && !K.has('bossHunter')) {
     const lose = Math.min(p.score, ragePenalty(p));
     p.score -= lose;
+    addLost(p, lose);
     out.enraged = true; out.gained = -lose;
     return out;
   }
@@ -84,6 +85,7 @@ export function strikeBoss(
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
   out.gained = Math.round((info.hit * dmg * vanguard + bonus) * mult * out.jackpot);
   p.score += out.gained;
+  addSrc(p, 'boss', out.gained, { fever, jackpot: out.jackpot });
 
   if (c.hp <= 0) {
     out.killed = true;
@@ -93,13 +95,14 @@ export function strikeBoss(
     out.killJackpot = jackpotMult(lucky, rand, jl);
     out.killGained = Math.round(info.kill * (out.solo ? S.killMult : 1) * mult * out.killJackpot) + (out.solo ? Math.round(S.points * mult) : 0);
     p.score += out.killGained;
+    addSrc(p, 'boss', out.killGained, { fever, jackpot: out.killJackpot });
     // 보스 헌터 조합: 독식하면 피버 게이지
     if (out.solo && K.has('bossHunter') && addFever(p, COMBO.bossSoloFever, now, G, players, true)) out.feverStarted = true;
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
     let best = 0;
     for (const [pid, n] of hits) if (n > best || (n === best && pid === p.id)) { best = n; out.mvp = pid; }
     const mvpP = players.find((x) => x.id === out.mvp);
-    if (mvpP) { mvpP.score += B.mvp; out.mvpGained = B.mvp; }
+    if (mvpP) { mvpP.score += B.mvp; out.mvpGained = B.mvp; addSrc(mvpP, 'boss', B.mvp); }
   }
   if (out.feverStarted) p.stats.fevers++;
   return out;

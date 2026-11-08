@@ -336,6 +336,18 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 @media (max-width: 560px) { .acards.four { grid-template-columns: 1fr; } .ewheel { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .eventcard, .eventov, .eventov.done .eresult { animation: none; } }
 .settle { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+/* 결과: 점수 출처 막대 */
+.srcbox { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; text-align: left; }
+.srcbox .lbl { font-size: 12px; color: var(--muted); }
+.srcrow { display: grid; grid-template-columns: 16px minmax(0, 7em) 1fr; align-items: center; gap: 8px; font-size: 13px; cursor: help; }
+.srcrow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srcrow.me .nm { font-weight: 700; }
+.srcbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.srcbar i { display: block; height: 100%; }
+.srclegend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11.5px; color: var(--muted); }
+.srcbox .dot, .tipcard .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.tipcard .tiphead { font-weight: 700; margin-bottom: 4px; }
+.tipcard .ref { font-size: 12px; color: var(--muted); }
 .event-now { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(255, 212, 59, .14); border: 1.5px solid var(--yellow); color: var(--fg); font-size: 14px; }
 .event-now svg { color: var(--yellow); }
 .event-now b { font-family: var(--display); font-weight: 400; color: var(--yellow); }

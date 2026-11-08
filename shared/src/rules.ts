@@ -431,9 +431,38 @@ export interface PlayerStats {
   maxCombo: number;
   bossHits: number;
   bossKills: number;
+  /** 점수 출처 (결과 화면) */
+  src: ScoreSrc;
 }
 
-export const emptyStats = (): PlayerStats => ({ hits: 0, misses: 0, steals: 0, counters: 0, fevers: 0, maxCombo: 0, bossHits: 0, bossKills: 0 });
+/** 점수 출처: 원(직접·넓은 손·헛손질 보정·자동 획득), 콤보 보너스, 자석, 황금 원, 보스, 견제(견제·반격·강탈) */
+export type SrcKey = 'circle' | 'combo' | 'magnet' | 'gold' | 'boss' | 'steal';
+export const SRC_KEYS: readonly SrcKey[] = ['circle', 'combo', 'magnet', 'gold', 'boss', 'steal'];
+/** lost: 남에게 빼앗기거나 감점된 점수. fever·jackpot: 참고값(피버 중 얻은 점수, 잭팟으로 더 얻은 점수, 위 출처와 겹침) */
+export interface ScoreSrc extends Record<SrcKey, number> { lost: number; fever: number; jackpot: number }
+
+export const emptyStats = (): PlayerStats => ({
+  hits: 0, misses: 0, steals: 0, counters: 0, fevers: 0, maxCombo: 0, bossHits: 0, bossKills: 0,
+  src: { circle: 0, combo: 0, magnet: 0, gold: 0, boss: 0, steal: 0, lost: 0, fever: 0, jackpot: 0 },
+});
+
+/** 점수 출처 기록. fever: 피버 중이면 참고값에도, jackpot(>1): 잭팟으로 더 얻은 몫을 참고값에 */
+export function addSrc(p: PlayerState, key: SrcKey, gained: number, opt: { fever?: boolean; jackpot?: number } = {}) {
+  if (!gained) return;
+  const s = (p.stats.src ??= emptyStats().src);
+  s[key] += gained;
+  if (opt.fever) s.fever += gained;
+  if ((opt.jackpot ?? 1) > 1) s.jackpot += gained - Math.round(gained / opt.jackpot!);
+}
+/** 남에게 빼앗기거나 감점된 점수 기록 */
+export function addLost(p: PlayerState, n: number) {
+  if (n > 0) (p.stats.src ??= emptyStats().src).lost += n;
+}
+/** 기타(이벤트·저주·특별 카드 정산 등 따로 기록하지 않은 점수): 총점 − 출처 합 + 잃은 점수. 음수일 수 있다 */
+export function otherOf(p: PlayerState) {
+  const s = p.stats.src ?? emptyStats().src;
+  return p.score - SRC_KEYS.reduce((a, k) => a + s[k], 0) + s.lost;
+}
 
 export interface PlayerState {
   id: string;
@@ -1203,10 +1232,12 @@ export function resolveClaim(
         const take = (guarded ? 0 : plunder + (m.vampire ? CURSE.vampire.drain : 0)) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
         res.plundered = Math.min(take, owner.score);
         owner.score -= res.plundered;
+        addLost(owner, res.plundered);
         // 방패 레전드: 견제당하면 견제한 사람 점수를 빼앗음
         if (hasLegend(owner, 'shield')) {
           const d = Math.min(LEGEND.shieldDrain, claimer.score);
           claimer.score -= d; owner.score += d; res.drained = d;
+          addLost(claimer, d); addSrc(owner, 'steal', d);
         }
       }
       // 도발: 상대 피버 게이지 감소, 레전드면 피버 중인 상대의 피버 단축 (보호막·철벽은 안 걸림)
@@ -1257,8 +1288,15 @@ export function resolveClaim(
     if (forced) claimer.rapidJackpot = false;
     res.jackpot = jackpotMult(forced ? { ...m, jackpot: 100 } : luckyMods(claimer, m), opts.rand, L.has('jackpot'));
   }
-  res.gained = Math.round(pts * mult * res.jackpot * (magnet ? AUG.magnetPointPct / 100 : 1)) + res.plundered;
+  const earned = Math.round(pts * mult * res.jackpot * (magnet ? AUG.magnetPointPct / 100 : 1));
+  res.gained = earned + res.plundered;
   claimer.score += res.gained;
+  // 점수 출처: 콤보 보너스 몫은 기본 점수와의 비율대로 나눈다. 강탈은 견제
+  const ref = { fever, jackpot: res.jackpot };
+  const comboPart = bonus > 0 && pts > 0 ? Math.round(earned * bonus / pts) : 0;
+  addSrc(claimer, magnet ? 'magnet' : steal ? 'steal' : 'circle', earned - comboPart, ref);
+  addSrc(claimer, 'combo', comboPart, ref);
+  addSrc(claimer, 'steal', res.plundered);
   return res;
 }
 
@@ -1285,7 +1323,7 @@ export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: 
     addFever(p, RULES.fever.miss, now, G, players);
   }
   // 유리 대포: 빈 곳 클릭 감점 (저주의 대가라서 방 규칙과 상관없이 적용)
-  if (m.glassCannon) p.score = Math.max(0, p.score - CURSE.glassCannon.missPenalty);
+  if (m.glassCannon) { const lose = Math.min(p.score, CURSE.glassCannon.missPenalty); p.score -= lose; addLost(p, lose); }
 }
 
 export function ranking(players: PlayerState[]) {
