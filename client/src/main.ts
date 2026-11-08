@@ -614,13 +614,13 @@ socket.on('game:over', (d) => {
   show('result');
 });
 
-// 게임 커서: 진짜 마우스 위치와 이동량으로 움직인다 (1차는 효과 없음 → 마우스 위치 그대로)
+// 게임 커서: 진짜 마우스 위치에서 정한다 (반대는 거울 위치, 감도 감소는 늦게 따라옴)
 /** 지금 커서 효과: 감도 감소·반대, 오오라 안이면 끌려간 만큼 유지되도록 상대 이동 */
 let cursorMode: CursorMode | null = null;
 const moveCursor = (e: PointerEvent) => {
   const real = renderer.toField(e.clientX, e.clientY);
   const prev = renderer.toField(e.clientX - e.movementX, e.clientY - e.movementY);
-  gameCursor.move(real, { x: real.x - prev.x, y: real.y - prev.y }, cursorMode);
+  gameCursor.move(real, { x: real.x - prev.x, y: real.y - prev.y });
 };
 /** 이 점을 덮는 이동형 보스 오오라 */
 const auraUnder = (pt: { x: number; y: number }, t: number) => {
@@ -628,8 +628,8 @@ const auraUnder = (pt: { x: number; y: number }, t: number) => {
   return null;
 };
 let lastFrameAt = performance.now();
-$('cv').addEventListener('pointermove', moveCursor);
-$('cv').addEventListener('pointerleave', () => gameCursor.leave());
+// 캔버스 밖으로 나가도 계속 받는다: 게임 커서는 사라지지 않고 가장자리에 붙어 있다 (창 밖이면 마지막 위치)
+window.addEventListener('pointermove', moveCursor);
 $('cv').addEventListener('pointerdown', (e) => {
   if (!playing || pausedView || picking() || roundOver) return;
   ensureMusic();
@@ -756,7 +756,7 @@ function frame() {
   const live = playing && !picking() && !roundOver && !pausedView;
   const aura = live && gameCursor.pos ? auraUnder(gameCursor.pos, now) : null;
   cursorMode = live && m ? cursorModeOf(m, now) ?? (aura ? {} : null) : null;
-  gameCursor.frame(cursorMode);
+  gameCursor.frame(cursorMode, dt * 1000);
   if (aura) gameCursor.pull(aura, RULES.aura.pullSpeed * dt);
   updateHud(now);
   renderer.draw({

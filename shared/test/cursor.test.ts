@@ -1,22 +1,47 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULES, auraAt, canLaserStun, holdLasers, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, nextCursor, nextLaserIn,
+  RULES, auraAt, canLaserStun, holdLasers, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, cursorTarget, followCursor, relativeCursor, nextLaserIn,
   pickMagnetTargets, rollLaser, rollVolley, slideBack, volleyHits, type Circle, type Point,
 } from '../src/index.ts';
 
 /** 순서대로 값을 돌려주는 난수 */
 const seq = (v: number[]) => { let i = 0; return () => v[i++ % v.length]; };
 
-test('nextCursor: 효과가 없으면 진짜 마우스 위치 그대로', () => {
-  assert.deepEqual(nextCursor({ x: 0, y: 0 }, { x: 500, y: 300 }, { x: 5, y: 5 }, null), { x: 500, y: 300 });
+test('cursorTarget: 반대는 화면 가운데 기준 거울 위치, 필드 밖 진짜 위치는 잘라서', () => {
+  assert.deepEqual(cursorTarget({ x: 1600, y: 0 }, { invert: true }), { x: 0, y: 900 });
+  assert.deepEqual(cursorTarget({ x: 1200, y: 300 }, { invert: true }), { x: 400, y: 600 });
+  assert.deepEqual(cursorTarget({ x: 1700, y: -50 }, { invert: true }), { x: 0, y: 900 });
+  assert.deepEqual(cursorTarget({ x: 1700, y: -50 }, null), { x: 1600, y: 0 });
+  assert.deepEqual(cursorTarget({ x: 500, y: 300 }, { slow: true }), { x: 500, y: 300 });
 });
 
-test('nextCursor: 감도 감소·반대, 필드 밖으로 안 나감', () => {
-  assert.deepEqual(nextCursor({ x: 500, y: 300 }, { x: 900, y: 900 }, { x: 10, y: -20 }, { slow: 0.3 }), { x: 503, y: 294 });
-  assert.deepEqual(nextCursor({ x: 500, y: 300 }, { x: 900, y: 900 }, { x: 10, y: -20 }, { invert: true }), { x: 490, y: 320 });
-  assert.equal(nextCursor({ x: 1598, y: 10 }, { x: 0, y: 0 }, { x: 50, y: -50 }, {}).x, 1600);
-  assert.equal(nextCursor({ x: 1598, y: 10 }, { x: 0, y: 0 }, { x: 50, y: -50 }, {}).y, 0);
+test('cursorTarget: 반대 중에도 진짜 마우스가 화면 안을 오가면 네 구석 모두 닿음', () => {
+  for (const [rx, ry, gx, gy] of [[0, 0, 1600, 900], [1600, 0, 0, 900], [0, 900, 1600, 0], [1600, 900, 0, 0]]) {
+    assert.deepEqual(cursorTarget({ x: rx, y: ry }, { invert: true }), { x: gx, y: gy });
+  }
+});
+
+test('followCursor: 감도 감소는 늦게 따라가 결국 도착, 아니면 바로', () => {
+  const a = followCursor({ x: 0, y: 0 }, { x: 1000, y: 0 }, 16, true);
+  assert.ok(a.x > 0 && a.x < 100, `${a.x}`);
+  let p = { x: 0, y: 0 };
+  for (let i = 0; i < 200; i++) p = followCursor(p, { x: 1000, y: 0 }, 16, true);
+  assert.ok(Math.abs(p.x - 1000) < 1);
+  assert.deepEqual(followCursor({ x: 0, y: 0 }, { x: 1000, y: 0 }, 16, false), { x: 1000, y: 0 });
+  // 시간 상수만큼 지나면 약 63%
+  assert.ok(Math.abs(followCursor({ x: 0, y: 0 }, { x: 1000, y: 0 }, RULES.sabotage.slowLagMs, true).x - 632) < 1);
+});
+
+test('relativeCursor: 오오라 끌림 중에는 이동량 그대로, 필드 밖으로 안 나감', () => {
+  assert.deepEqual(relativeCursor({ x: 500, y: 300 }, { x: 10, y: -20 }), { x: 510, y: 280 });
+  assert.deepEqual(relativeCursor({ x: 1598, y: 10 }, { x: 50, y: -50 }), { x: 1600, y: 0 });
+});
+
+test('반대가 걸리는 순간: 거울 위치까지 slideMs 동안 미끄러짐', () => {
+  const from = { x: 1200, y: 300 }, to = cursorTarget(from, { invert: true });
+  assert.deepEqual(slideBack(from, to, RULES.sabotage.slideMs / 2), { x: 800, y: 450 });
+  assert.deepEqual(slideBack(from, to, RULES.sabotage.slideMs), to);
 });
 
 test('distToSegment: 선분까지 거리, 끝 너머는 끝점까지', () => {
@@ -125,9 +150,9 @@ test('cursorModeOf: 방해 없으면 null, 감도·반대는 합쳐짐, 끝난 �
   const p = newPlayer('a', 'A', 0);
   assert.equal(cursorModeOf(p, 0), null);
   p.debuffs.slow = 1000;
-  assert.deepEqual(cursorModeOf(p, 0), { slow: 0.3 });
+  assert.deepEqual(cursorModeOf(p, 0), { slow: true });
   p.debuffs.invert = 1000;
-  assert.deepEqual(cursorModeOf(p, 0), { slow: 0.3, invert: true });
+  assert.deepEqual(cursorModeOf(p, 0), { slow: true, invert: true });
   assert.equal(cursorModeOf(p, 1000), null);
 });
 

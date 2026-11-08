@@ -1,50 +1,63 @@
 /** 게임 커서: 화면이 직접 그리는 내 커서. 평소에는 진짜 마우스 위치와 같고, 효과가 걸리면 움직임이 바뀐다 */
-import { FIELD, RULES, nextCursor, slideBack, type CursorMode, type Point } from '@color-burst/shared';
+import { FIELD, RULES, cursorTarget, followCursor, relativeCursor, slideBack, type CursorMode, type Point } from '@color-burst/shared';
 
 export class GameCursor {
-  /** 필드 좌표. 캔버스 밖이면 null */
+  /** 필드 좌표. 아직 마우스를 움직인 적 없거나 창을 떠났으면 null */
   pos: Point | null = null;
-  /** 마지막 진짜 마우스 위치 */
+  /** 마지막 진짜 마우스 위치 (필드 좌표, 캔버스 밖이면 필드 밖 값일 수 있음) */
   private real: Point | null = null;
-  /** 효과가 걸려 있던 중인지 (끝나면 진짜 위치로 미끄러져 돌아온다) */
-  private wasMode = false;
+  /** 지난 프레임 뒤로 쌓인 진짜 마우스 이동량 (오오라 끌림 중에만 씀) */
+  private delta: Point = { x: 0, y: 0 };
+  /** 지금 효과: '' 없음, 'a' 오오라만, 's' 감도 감소, 'i' 반대, 'si' 둘 다 */
+  private key = '';
   private slideFrom: Point | null = null;
   private slideAt = 0;
 
-  /** real: 진짜 마우스의 필드 좌표, delta: 이번 이동량(필드 단위), mode: 감도 감소·반대·오오라 (없으면 null) */
-  move(real: Point, delta: Point, mode: CursorMode | null) {
+  /** real: 진짜 마우스의 필드 좌표, delta: 이번 이동량(필드 단위) */
+  move(real: Point, delta: Point) {
     this.real = real;
-    if (!this.pos) { this.pos = real; return; }
-    if (mode) { this.pos = nextCursor(this.pos, real, delta, mode); this.wasMode = true; this.slideFrom = null; return; }
-    this.settle();
+    this.delta = { x: this.delta.x + delta.x, y: this.delta.y + delta.y };
+    if (!this.pos) { this.pos = cursorTarget(real, null); return; }
+    // 효과가 없으면 프레임을 기다리지 않고 바로 따라간다
+    if (!this.key && !this.slideFrom) this.pos = cursorTarget(real, null);
   }
 
-  /** 매 프레임: 효과가 막 끝났으면 진짜 위치로 돌아오는 중 */
-  frame(mode: CursorMode | null) {
-    if (mode) { this.wasMode = true; return; }
-    this.settle();
+  /**
+   * 매 프레임: 효과에 맞춰 커서를 옮긴다. 반대는 거울 위치, 감도 감소는 늦게 따라감, 오오라만이면 이동량 그대로.
+   * 효과가 바뀌어 목표가 튀는 순간(반대가 걸리거나 풀림, 효과가 끝남)은 slideMs 동안 미끄러져 옮겨 간다
+   */
+  frame(mode: CursorMode | null, dtMs: number) {
+    const d = this.delta;
+    this.delta = { x: 0, y: 0 };
+    if (!this.real || !this.pos) return;
+    const key = mode ? `${mode.slow ? 's' : ''}${mode.invert ? 'i' : ''}` || 'a' : '';
+    if (key !== this.key) {
+      // 감도 감소가 남아 있으면 따라가기가 알아서 부드럽고, 오오라는 지금 자리에서 이어서 움직인다
+      if (!key.includes('s') && key !== 'a') { this.slideFrom = this.pos; this.slideAt = performance.now(); }
+      else this.slideFrom = null;
+      this.key = key;
+    }
+    if (key === 'a') { this.pos = relativeCursor(this.pos, d); return; }
+    const target = cursorTarget(this.real, mode);
+    if (this.slideFrom) {
+      const e = performance.now() - this.slideAt;
+      if (e < RULES.sabotage.slideMs) { this.pos = slideBack(this.slideFrom, target, e); return; }
+      this.slideFrom = null;
+    }
+    this.pos = followCursor(this.pos, target, dtMs, !!mode?.slow);
   }
 
   /** 오오라 끌림: target 쪽으로 dist만큼 (넘어가지 않음) */
   pull(target: Point, dist: number) {
     if (!this.pos) return;
-    const dx = target.x - this.pos.x, dy = target.y - this.pos.y, d = Math.hypot(dx, dy);
-    if (d < 1e-6) return;
-    const k = Math.min(1, dist / d);
+    const dx = target.x - this.pos.x, dy = target.y - this.pos.y, dd = Math.hypot(dx, dy);
+    if (dd < 1e-6) return;
+    const k = Math.min(1, dist / dd);
     this.pos = { x: Math.max(0, Math.min(FIELD.w, this.pos.x + dx * k)), y: Math.max(0, Math.min(FIELD.h, this.pos.y + dy * k)) };
-    this.wasMode = true;
   }
 
-  leave() { this.pos = null; this.real = null; this.wasMode = false; this.slideFrom = null; }
-
-  private settle() {
-    if (!this.real || !this.pos) return;
-    if (this.wasMode) { this.wasMode = false; this.slideFrom = this.pos; this.slideAt = performance.now(); }
-    if (!this.slideFrom) { this.pos = this.real; return; }
-    const e = performance.now() - this.slideAt;
-    this.pos = slideBack(this.slideFrom, this.real, e);
-    if (e >= RULES.sabotage.slideMs) this.slideFrom = null;
-  }
+  /** 창을 떠남(탭 전환·다른 창): 커서를 지운다 */
+  leave() { this.pos = null; this.real = null; this.key = ''; this.slideFrom = null; this.delta = { x: 0, y: 0 }; }
 }
 
 /**

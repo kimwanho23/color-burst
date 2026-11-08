@@ -6,19 +6,30 @@ import { modsOf } from './arcade.ts';
 import { FIELD, RULES, circlePos, debuffOn, isGuarded, isMine, isOut, type Circle, type ColorIndex, type PlayerState } from './rules.ts';
 
 export type Point = { x: number; y: number };
-/** 커서 효과: slow(움직임 배율), invert(반대로) */
-export type CursorMode = { slow?: number; invert?: boolean };
+/** 커서 효과: slow(늦게 따라옴), invert(거울 위치). 오오라만 걸리면 {} */
+export type CursorMode = { slow?: boolean; invert?: boolean };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /**
- * 다음 게임 커서 위치. 효과가 없으면(mode null) 진짜 마우스 위치 그대로,
- * 효과가 있으면 이전 위치에서 마우스 이동량을 바꿔 움직이고 필드 안으로 자른다
+ * 게임 커서가 가야 할 자리: 진짜 마우스 위치를 필드 안으로 자르고, 마우스 반대면 화면 가운데 기준 거울 위치.
+ * 진짜 마우스가 화면 안을 오가는 것만으로 필드 전체에 닿아서 커서가 화면 밖으로 빠지지 않는다
  */
-export function nextCursor(prev: Point, real: Point, delta: Point, mode: CursorMode | null): Point {
-  if (!mode) return real;
-  const k = (mode.slow ?? 1) * (mode.invert ? -1 : 1);
-  return { x: clamp(prev.x + delta.x * k, 0, FIELD.w), y: clamp(prev.y + delta.y * k, 0, FIELD.h) };
+export function cursorTarget(real: Point, mode: CursorMode | null): Point {
+  const x = clamp(real.x, 0, FIELD.w), y = clamp(real.y, 0, FIELD.h);
+  return mode?.invert ? { x: FIELD.w - x, y: FIELD.h - y } : { x, y };
+}
+
+/** 감도 감소: 커서가 목표를 늦게 따라간다 (시간 상수 RULES.sabotage.slowLagMs). 아니면 바로 목표 */
+export function followCursor(prev: Point, target: Point, dtMs: number, slow: boolean): Point {
+  if (!slow) return target;
+  const k = 1 - Math.exp(-Math.max(0, dtMs) / RULES.sabotage.slowLagMs);
+  return { x: prev.x + (target.x - prev.x) * k, y: prev.y + (target.y - prev.y) * k };
+}
+
+/** 오오라에 끌리는 중(다른 효과 없음): 이동량을 그대로 더해 끌려간 만큼을 유지한다 */
+export function relativeCursor(prev: Point, delta: Point): Point {
+  return { x: clamp(prev.x + delta.x, 0, FIELD.w), y: clamp(prev.y + delta.y, 0, FIELD.h) };
 }
 
 export function distToSegment(p: Point, a: Point, b: Point) {
@@ -114,7 +125,7 @@ export function cursorActive(s: { playing: boolean; picking: boolean; roundOver:
 export function cursorModeOf(p: PlayerState, now: number): CursorMode | null {
   const slow = debuffOn(p, 'slow', now), invert = debuffOn(p, 'invert', now);
   if (!slow && !invert) return null;
-  return { ...(slow ? { slow: RULES.sabotage.slow } : {}), ...(invert ? { invert: true } : {}) };
+  return { ...(slow ? { slow: true } : {}), ...(invert ? { invert: true } : {}) };
 }
 
 /** 효과가 끝난 뒤 게임 커서가 진짜 마우스 위치로 미끄러져 돌아온다 (slideMs 동안) */

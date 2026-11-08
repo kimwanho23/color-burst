@@ -53,7 +53,8 @@ export const RULES = {
   /** 커서 자석: 끌려오는 시간, 플레이어마다 1초에 끌 수 있는 원 수 */
   magnet: { pullMs: 250, perSec: 2 },
   /** 방해 아이템: 효과 시간, 감도 감소 배율, 1등 저격 스턴, 효과가 끝난 뒤 커서가 마우스로 돌아오는 시간 */
-  sabotage: { ms: 5_000, slow: 0.3, snipeStunMs: 3_000, slideMs: 150 },
+  /** 방해: 효과 시간, 감도 감소 때 커서가 진짜 마우스를 따라가는 시간 상수(ms), 저격 스턴, 효과가 바뀔 때 미끄러지는 시간 */
+  sabotage: { ms: 5_000, slowLagMs: 350, snipeStunMs: 3_000, slideMs: 150 },
   /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
   aura: { extra: 80, pullSpeed: 120, tickMs: 500, touchPenalty: 1, clickPenalty: 2 },
   /**
