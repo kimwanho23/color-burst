@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUG, LEGEND, SPECIAL, addFever, crossedCombo, luckyMods, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, extraMult, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, awardTitles, bossHitInfo, endRoundCurses, isCurse, bossMult, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, bossState, ragePenalty, rollBossCount, rollBossType, jackpotMult, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, hitWithin, type EventResult, type ThemeId,
@@ -668,13 +668,18 @@ export class Room {
     const curses = p ? p.picks.filter((x) => isCurse(x.id)).length : 0;
     const opts = {
       curses, allLegend: o.allLegend || (o.comeback && k === C.legendAt), forceCurse: o.extra.curse,
-      exclude: [],
+      exclude: this.offPool(),
       minTier: (k >= ARCADE.noNormalFrom ? 1 : 0) as 0 | 1,
       guarantee: o.last ? ARCADE.lastGuarantee[Math.min(k, ARCADE.lastGuarantee.length - 1)] as 0 | 1 | 2 | 3 : undefined,
       special: o.comeback && k === C.specialAt && !p?.picks.some((x) => isSpecial(x.id)),
       owned: p?.picks,
     };
     return rollOptions(k, o.last, Math.random, opts, ARCADE.optionCount + (o.extra.gift ? 1 : 0));
+  }
+
+  /** 이 방에서 효과가 없는 증강 (레이저·아이템이 꺼진 방) */
+  private offPool(): AbilityId[] {
+    return [...(this.G.laser ? [] : ['laserProof' as const]), ...(this.G.items ? [] : ['collector' as const])];
   }
 
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
@@ -733,7 +738,9 @@ export class Room {
     this.updatePulls(now);
     this.updateAura(now);
     // 과충전 레전드: 피버가 끝나면 남겨 둔 게이지를 채움
-    for (const p of this.players) settleFever(p, now);
+    let settled = false;
+    for (const p of this.players) if (settleFever(p, now)) settled = true;
+    if (settled) this.emitPlayers();
     while (now >= this.freezeUntil && this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
       this.bossQueue.shift();
       this.spawnBosses(now);
@@ -927,18 +934,19 @@ export class Room {
     this.circles.delete(c.id);
     // 잡는 순간 원이 있던 자리로 점수 구역을 정한다 (잡는 방법과 상관없이)
     const { x, y } = circlePos(c, now);
+    const comboBefore = p.combo;
     const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }) });
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
     // 하이에나: 1등이 잡으면 하이에나를 가진 사람이 확률로 점수를 얻는다
-    for (const g of hyenaGains(p, this.players)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
+    for (const g of hyenaGains(p, this.players, result.gained)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
     // 연쇄 폭발: 확률로 근처 내 원도 함께 (연쇄로 잡힌 원은 다시 연쇄하지 않음)
     // 점수가 바뀌었으니 꼴찌를 벗어난 역전 기회는 바로 끈다 (조용한 연속 획득 사이에도)
     sweepComeback(this.players);
     if (via !== 'blast') {
       const m = modsOf(p.picks);
-      // 연쇄 콤보: 10콤보(레전드 5)마다 근처 내 원 자동 획득
+      // 연쇄 콤보: 10콤보(레전드 5)를 넘을 때마다 근처 내 원 자동 획득 (콤보가 오른 획득만)
       const every = hasLegend(p, 'chainCombo') ? LEGEND.chainEvery : AUG.chainEvery;
-      if (m.chainCombo > 0 && result.type !== 'steal' && result.type !== 'feverSteal' && p.combo > 0 && p.combo % every === 0) this.autoClaim(p, { x, y }, AUG.chainR, m.chainCombo, now);
+      if (m.chainCombo > 0 && crossedCombo(comboBefore, p.combo, every)) this.autoClaim(p, { x, y }, AUG.chainR, m.chainCombo, now);
       // 점화: 피버가 터지면 화면의 내 원 자동 획득 (레전드는 전부)
       if (m.ignite > 0 && result.feverStarted) this.autoClaim(p, { x, y }, Infinity, hasLegend(p, 'ignite') ? Infinity : m.ignite, now);
     }

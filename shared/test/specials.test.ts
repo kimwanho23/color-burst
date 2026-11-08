@@ -88,9 +88,9 @@ test('하이에나: 1등이 잡을 때만 20% 확률로 +3', () => {
   const [a, b, c] = trio();
   withCard(c, 'hyena');
   a.score = 100; b.score = 50;
-  assert.deepEqual(hyenaGains(a, [a, b, c], () => 0.19), [{ playerId: 'c', delta: 3 }]);
-  assert.deepEqual(hyenaGains(a, [a, b, c], () => 0.2), []);
-  assert.deepEqual(hyenaGains(b, [a, b, c], () => 0), []);
+  assert.deepEqual(hyenaGains(a, [a, b, c], 1, () => 0.19), [{ playerId: 'c', delta: 3 }]);
+  assert.deepEqual(hyenaGains(a, [a, b, c], 1, () => 0.2), []);
+  assert.deepEqual(hyenaGains(b, [a, b, c], 1, () => 0), []);
 });
 
 test('넓은 손 순위 보정: 4인 꼴찌 +20·3등 +10, 3인은 꼴찌만, 꼴찌 보정 꺼진 방은 없음, 상한 80', () => {

@@ -467,7 +467,9 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd', 'roundBegin', 'reboundUntil', 'lastClaimAt'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt'] as const) if (p[k] > since) p[k] += delta;
+  // 라운드 시작 시각: 출발 신호 레전드 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
+  if (p.roundBegin + LEGEND.headStartMs > since) p.roundBegin += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
   for (const k of Object.keys(p.debuffs) as DebuffId[]) if (p.debuffs[k]! > since) p.debuffs[k]! += delta;
 }
@@ -536,7 +538,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
 
 /** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false;
+  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false; p.rankReach = 0;
 }
 
 /** 능력(또는 저주)을 고른 직후 처리 */
@@ -610,12 +612,17 @@ export const luckyMods = (p: PlayerState, m: Mods): Mods => (combosOf(p.picks).h
 /** 여운 배율 (여운 레전드면 ×2) */
 export const afterMultOf = (p: PlayerState) => (hasLegend(p, 'afterglow') ? LEGEND.afterglowMult : 1.5);
 
-/** 과충전 레전드: 피버가 끝난 뒤 처음 불릴 때 남겨 둔 게이지를 채운다 (서버 틱·원 획득 때) */
+/**
+ * 피버가 끝난 뒤 처음 불릴 때 정리한다 (서버 틱·원 획득 때): 예열 레전드 배율을 지우고,
+ * 과충전 레전드면 남겨 둔 게이지를 채운다. 게이지가 바뀌었으면 true (상태를 다시 보내야 함)
+ */
 export function settleFever(p: PlayerState, now: number) {
-  if (p.feverCarry > 0 && p.feverUntil > 0 && now >= p.feverUntil) {
-    p.fever = Math.min(100, p.fever + p.feverCarry);
-    p.feverCarry = 0;
-  }
+  if (!(p.feverUntil > 0 && now >= p.feverUntil)) return false;
+  p.feverBonus = 0;
+  if (p.feverCarry <= 0) return false;
+  p.fever = Math.min(100, p.fever + p.feverCarry);
+  p.feverCarry = 0;
+  return true;
 }
 
 /** 판 뒤집기: 라운드가 끝날 때 1등과의 점수 차의 일부를 내 점수에 더한다 (1등 점수는 그대로) */
@@ -631,10 +638,10 @@ export function endRoundSpecials(players: PlayerState[]): RoundEffect[] {
   return out;
 }
 
-/** 하이에나: 1등(동점 포함)이 원을 잡을 때 하이에나를 가진 다른 사람마다 확률로 점수를 더한다 */
-export function hyenaGains(claimer: PlayerState, players: PlayerState[], rand = Math.random) {
+/** 하이에나: 1등(동점 포함)이 원을 잡아 점수를 얻을 때 하이에나를 가진 다른 사람마다 확률로 점수를 더한다 */
+export function hyenaGains(claimer: PlayerState, players: PlayerState[], gained: number, rand = Math.random) {
   const out: { playerId: string; delta: number }[] = [];
-  if (claimer.score < Math.max(...players.map((p) => p.score))) return out;
+  if (gained <= 0 || claimer.score < Math.max(...players.map((p) => p.score))) return out;
   for (const p of players) {
     if (p === claimer || !modsOf(p.picks).hyena || !(rand() < SPECIAL.hyenaChance)) continue;
     p.score += SPECIAL.hyenaGain;
@@ -697,9 +704,9 @@ function breakCombo(p: PlayerState, m: Mods, now: number, byOther = false) {
   // 콤보 고정 아이템·기세 특별 카드: 끊기지 않음
   if (buffOn(p, 'comboLock', now) || m.momentum) return false;
   // 철옹성 조합: 라운드마다 한 번 막음 (끊을 콤보가 있을 때만 씀)
-  if (p.combo > 0 && (p.ironLeft ?? 0) > 0) { p.ironLeft--; return false; }
-  const before = p.combo;
-  p.combo = Math.floor((p.combo * m.insurance) / 100);
+  const before = p.combo, kept = Math.floor((p.combo * m.insurance) / 100);
+  if (kept < before && (p.ironLeft ?? 0) > 0) { p.ironLeft--; return false; }
+  p.combo = kept;
   // 리바운드: 끊긴 뒤 잠깐 점수 보너스 (레전드는 끊긴 콤보 절반을 되찾을 수 있음)
   if (byOther && p.combo < before && m.rebound > 0) { p.reboundUntil = now + AUG.reboundMs; p.reboundLost = before - p.combo; p.reboundUsed = false; }
   return p.combo < before;
@@ -932,10 +939,10 @@ export function bossHitInfo(p: PlayerState, rand = Math.random) {
   const m = modsOf(p.picks);
   // 막타 독식: 피해·막타 점수 ×2
   const feast = m.bossFeast ? SPECIAL.feastMult : 1;
-  // 해머 레전드: 15% 확률로 3타
-  // 보스 헌터 조합: 피해 +1
-  let dmg = bossDamage(m, rand) + (combosOf(p.picks).has('bossHunter') ? COMBO.bossDmgAdd : 0);
+  // 해머 레전드: 15% 확률로 3타, 그다음 보스 헌터 조합 피해 +1
+  let dmg = bossDamage(m, rand);
   if (hasLegend(p, 'hammer') && rand() < LEGEND.hammerChance) dmg = Math.max(dmg, LEGEND.hammerDmg);
+  if (combosOf(p.picks).has('bossHunter')) dmg += COMBO.bossDmgAdd;
   return { damage: dmg * feast, hit: RULES.boss.hit + m.hammer, kill: (RULES.boss.kill + m.hunter) * feast, boost: scoreBoostOf(m) };
 }
 
@@ -957,15 +964,24 @@ export function addFever(p: PlayerState, amt: number, now: number, G: GameRules,
   if (amt > 0 && !raw) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1) / (m.berserker ? CURSE.berserker.gainDiv : 1);
   p.fever = Math.max(0, Math.min(100, p.fever + amt));
   if (p.fever >= 100) {
-    startFever(p, now, G, m);
-    // 방해 전파: 다른 사람 화면의 원을 흐리게
-    if (m.jammer) for (const o of players) if (o !== p) o.blurUntil = Math.max(o.blurUntil, now + m.jammer);
-    // 방해 전파 레전드: 상대 커서 감도 감소 (철벽 제외)
-    if (hasLegend(p, 'jammer')) for (const o of players) if (o !== p && !modsOf(o.picks).fortress) addDebuff(o, 'slow', LEGEND.jammerSlowMs, now);
+    burstFever(p, now, G, m, players);
     return true;
   }
   return false;
 }
+
+/** 게임 중 피버가 터질 때: 피버 시작과 방해 전파 (라운드 시작 피버에는 방해 전파 없음) */
+function burstFever(p: PlayerState, now: number, G: GameRules, m: Mods, players: PlayerState[]) {
+  startFever(p, now, G, m);
+  // 방해 전파: 다른 사람 화면의 원을 흐리게
+  if (m.jammer) for (const o of players) if (o !== p) o.blurUntil = Math.max(o.blurUntil, now + m.jammer);
+  // 방해 전파 레전드: 상대 커서 감도 감소 (철벽 제외)
+  if (hasLegend(p, 'jammer')) for (const o of players) if (o !== p && !modsOf(o.picks).fortress) addDebuff(o, 'slow', LEGEND.jammerSlowMs, now);
+}
+
+/** 콤보가 before에서 after로 오르며 every의 배수를 넘었는지 (한 번에 여러 칸 올라도 놓치지 않음) */
+export const crossedCombo = (before: number, after: number, every: number) =>
+  after > before && Math.floor(after / every) > Math.floor(before / every);
 
 /**
  * 원을 가져갔을 때의 결과를 계산하고 플레이어 상태를 바꾼다.
@@ -987,6 +1003,7 @@ export function resolveClaim(
   const K = combosOf(claimer.picks);
   // 속사 레전드: 이전 획득까지 쌓인 '다음 잭팟 확정' (이번 획득으로 새로 생긴 것은 다음 원에)
   const rapidForced = claimer.rapidJackpot;
+  const comboBefore = claimer.combo;
   const P = RULES.points;
   const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1, zone: 0 };
   let pts = 0;
@@ -997,7 +1014,7 @@ export function resolveClaim(
   if (kind === 'rainbow') {
     res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; claimer.combo++;
     // 무지개 사냥 레전드: 즉시 피버
-    if (L.has('rainbowHunt') && !fever) { startFever(claimer, now, G, m); res.feverStarted = true; }
+    if (L.has('rainbowHunt') && !fever) { burstFever(claimer, now, G, m, players); res.feverStarted = true; }
     else res.feverStarted = addFever(claimer, RULES.fever.rainbow, now, G, players);
   } else if (kind === 'y' && !fever && buffOn(claimer, 'paint', now)) {
     // 물들이기: 노란 원을 내 색으로 계산 (외길이면 그대로 0점)
@@ -1058,7 +1075,8 @@ export function resolveClaim(
         // 강탈 레전드: 1등을 견제하면 2배
         const top = owner.score >= Math.max(...players.map((x) => x.score));
         const plunder = m.plunder * (L.has('plunder') && top ? LEGEND.plunderTopMult : 1);
-        const take = (guarded ? 0 : plunder) + (m.vampire ? CURSE.vampire.drain : 0) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
+        // 보호막·철벽은 강탈과 견제한 사람의 흡혈을 막는다 (견제당한 사람 자신의 흡혈 저주 대가는 그대로)
+        const take = (guarded ? 0 : plunder + (m.vampire ? CURSE.vampire.drain : 0)) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
         res.plundered = Math.min(take, owner.score);
         owner.score -= res.plundered;
         // 방패 레전드: 견제당하면 견제한 사람 점수를 빼앗음
@@ -1097,7 +1115,7 @@ export function resolveClaim(
   }
   // 기세: 콤보 보너스가 더 자주. 콤보 장인 레전드 +10, 폭주 레전드는 피버 중 2배
   const every = m.momentum ? Math.min(SPECIAL.momentumEvery, comboPeriod(m.comboArtist)) : comboPeriod(m.comboArtist);
-  if (!steal && claimer.combo > 0 && claimer.combo % every === 0) {
+  if (!steal && crossedCombo(comboBefore, claimer.combo, every)) {
     res.comboBonus = true;
     pts += (RULES.comboBonus + (L.has('comboArtist') ? LEGEND.comboBonusAdd : 0) + (K.has('comboMachine') ? COMBO.comboBonusAdd : 0)) * (fever && L.has('frenzy') ? 2 : 1);
   }
