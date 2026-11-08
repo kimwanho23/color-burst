@@ -100,14 +100,14 @@ export const nextLaserIn = (rand = Math.random, chaos = false) => {
   return RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin);
 };
 
-/** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원 (보호 구역·화면 밖·skip 제외), 가까운 순 최대 max개 */
+/** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원·노란 원 (무지개·보호 구역·화면 밖·skip 제외), 가까운 순 최대 max개 */
 export function pickMagnetTargets(
   circles: Iterable<Circle>, color: ColorIndex, cursor: Point, t: number, radius: number, max: number, skip?: ReadonlySet<number>,
 ): Circle[] {
   const found: { c: Circle; d: number }[] = [];
   for (const c of circles) {
     // 이미 화면 밖으로 나간 원(서버는 지연 보정 때문에 잠깐 더 들고 있음)은 끌지 않는다
-    if (!isMine(c.kind, color) || skip?.has(c.id) || isGuarded(c, t) || isOut(c, t)) continue;
+    if (!isMine(c.kind, color) || c.kind === 'rainbow' || skip?.has(c.id) || isGuarded(c, t) || isOut(c, t)) continue;
     const p = circlePos(c, t);
     const d = Math.hypot(p.x - cursor.x, p.y - cursor.y);
     if (d <= radius) found.push({ c, d });

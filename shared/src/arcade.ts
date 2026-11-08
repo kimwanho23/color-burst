@@ -40,7 +40,7 @@ export const ARCADE = {
 export const LEGEND = {
   hammerChance: 0.15, hammerDmg: 3, comboBonusAdd: 10, headStartMs: 10_000, headStartMult: 1.5, jackpotMults: [2, 3, 5],
   preheatMult: 2, overtimeMs: 100, overchargeKeep: 50, afterglowMult: 2, shieldDrain: 3, plunderTopMult: 2,
-  jammerSlowMs: 2_000, wideHandMult: 1.5, magnetPerSec: 4, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
+  jammerSlowMs: 2_000, wideHandMult: 1.5, magnetPerSec: 2, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
   collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1, counterFever: 20,
   pickyFeverMult: 2, frenzyComboMult: 2, vanguardMult: 2, rainbowFeverMult: 2,
 } as const;
@@ -54,7 +54,8 @@ export const COMBO = {
 export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
 
 /** 새 증강 수치 */
-export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000, afterglowMult: 1.5 } as const;
+/** magnetPointPct: 자석으로 끌어온 원 점수(%, 콤보·콤보 보너스·잭팟·피버 게이지 없음) */
+export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000, afterglowMult: 1.5, magnetPointPct: 70 } as const;
 
 /** 특별 카드 수치 */
 export const SPECIAL = {
@@ -160,7 +161,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'taunt', name: '도발', cat: '견제', values: [5, 10, 15, 25], cap: 50, desc: (v) => `견제하면 상대 피버 게이지 −${v}%` },
   // 보조
   { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 70], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
-  { id: 'magnet', name: '자석', cat: '보조', values: [60, 90, 120, 240], cap: 240, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음` },
+  { id: 'magnet', name: '자석', cat: '보조', values: [45, 65, 90, 180], cap: 180, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (무지개 제외, 점수 ${AUG.magnetPointPct}%만)` },
   { id: 'missSave', name: '헛손질 보정', cat: '보조', values: [40, 60, 80, 120], cap: 160, desc: (v) => `빈 곳을 클릭하면 반경 ${v} 안의 가장 가까운 내 원을 대신 잡음` },
   { id: 'collector', name: '수집가', cat: '보조', values: [20, 40, 60, 100], cap: 200, desc: (v) => `아이템 효과 시간 +${v}%` },
 ];

@@ -53,8 +53,8 @@ export const RULES = {
     everyMin: 10_000, everyMax: 15_000, warnMs: 1_200, fireMs: 300, width: 135, stunMs: 1_500, startQuietMs: 3_000, endQuietMs: 1_000,
     immuneMs: 1_000, safeGap: 160, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
   },
-  /** 커서 자석: 끌려오는 시간, 플레이어마다 1초에 끌 수 있는 원 수 */
-  magnet: { pullMs: 250, perSec: 2 },
+  /** 커서 자석: 끌려오는 시간, 플레이어마다 1초에 끌 수 있는 원 수 (점수 비율은 AUG.magnetPointPct) */
+  magnet: { pullMs: 400, perSec: 1 },
   /** 방해 아이템: 효과 시간, 감도 감소 배율, 1등 저격 스턴, 효과가 끝난 뒤 커서가 마우스로 돌아오는 시간 */
   /** 방해: 효과 시간, 감도 감소 때 커서가 진짜 마우스를 따라가는 시간 상수(ms), 저격 스턴, 효과가 바뀔 때 미끄러지는 시간 */
   sabotage: { slowMs: 3_000, invertMs: 3_000, blindMs: 5_000, slowLagMs: 350, snipeStunMs: 3_000, slideMs: 150 },
@@ -151,7 +151,7 @@ export const RULES = {
     r: 34,
     /** 넓은 손 아이템의 범위, 자석 아이템의 커서 자석 반경 (능력과 더하고 능력 상한 적용) */
     wideHand: 35,
-    magnet: 90,
+    magnet: 70,
     /** 효과 시간(ms) */
     ms: { wideHand: 5000, magnet: 5000, missGuard: 8000, comboLock: 5000, guard: 5000, double: 5000, paint: 5000, rain: 3000 },
     goldCount: 5,
@@ -1091,6 +1091,8 @@ export function resolveClaim(
 ): ClaimResult {
   const via = opts.via ?? 'click';
   const blast = via === 'blast';
+  // 자석으로 끌어온 원: 점수만 (콤보·콤보 보너스·잭팟·피버 게이지 없음)
+  const magnet = via === 'magnet';
   const fever = isFever(claimer, now);
   const after = !fever && now < claimer.afterUntil;
   settleFever(claimer, now);
@@ -1104,31 +1106,33 @@ export function resolveClaim(
   const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1, zone: 0 };
   let pts = 0;
   let steal = false;
+  const bump = () => { if (!magnet) claimer.combo++; };
+  const gauge = (amt: number, raw = false) => !magnet && addFever(claimer, amt, now, G, players, raw);
 
   // 외길: 내 색 ×3, 노란색·무지개 0점
   const own = (P.own + m.picky) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
   if (kind === 'rainbow') {
-    res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; claimer.combo++;
+    res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; bump();
     // 무지개 사냥 레전드: 피버 게이지 2배
-    res.feverStarted = addFever(claimer, RULES.fever.rainbow * (L.has('rainbowHunt') ? LEGEND.rainbowFeverMult : 1), now, G, players);
+    res.feverStarted = gauge(RULES.fever.rainbow * (L.has('rainbowHunt') ? LEGEND.rainbowFeverMult : 1));
   } else if (kind === 'y' && !fever && buffOn(claimer, 'paint', now)) {
     // 물들이기: 노란 원을 내 색으로 계산 (외길이면 그대로 0점)
-    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
-    res.feverStarted = addFever(claimer, RULES.fever.own, now, G, players);
+    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; bump();
+    res.feverStarted = gauge(RULES.fever.own);
   } else if (kind === 'y' && fever) {
-    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
+    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; bump();
   } else if (kind === 'y' && K.has('gourmet')) {
     // 미식가 조합: 노란 원도 내 색 원처럼 (편식가 보너스 포함, 외길 저주면 노랑은 그대로 0점, 편식가 레전드면 게이지 2배)
-    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; claimer.combo++;
-    res.feverStarted = addFever(claimer, RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1), now, G, players);
+    res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; bump();
+    res.feverStarted = gauge(RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1));
   } else if (kind === 'y') {
-    res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); claimer.combo++;
+    res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); bump();
     // 노란 맛 레전드: 피버 게이지가 내 색만큼
-    res.feverStarted = addFever(claimer, L.has('yellowTaste') ? RULES.fever.own : RULES.fever.yellow, now, G, players);
+    res.feverStarted = gauge(L.has('yellowTaste') ? RULES.fever.own : RULES.fever.yellow);
   } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands)) {
     // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
-    res.type = 'own'; pts = own; claimer.combo++;
-    res.feverStarted = addFever(claimer, RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1), now, G, players);
+    res.type = 'own'; pts = own; bump();
+    res.feverStarted = gauge(RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1));
   } else {
     steal = true;
     const owner = players.find((p) => p.color === kind);
@@ -1194,7 +1198,7 @@ export function resolveClaim(
   // 견제왕 조합: 견제·반격 점수 ×3 (폭죽·필드 클리어 제외)
   if (steal && !blast && K.has('stealKing')) pts *= COMBO.stealMult;
   res.zone = opts.zone ?? 0;
-  if (!steal) {
+  if (!steal && !magnet) {
     // 찰나의 순간·중앙의 왕 레전드: 그 구역에서 잡으면 콤보 +1 더
     if ((res.zone === 2 && L.has('edge')) || (res.zone === 0 && L.has('centerKing'))) claimer.combo += LEGEND.zoneComboAdd;
     // 연장전 레전드: 피버 중 잡을 때마다 피버 시간 연장
@@ -1229,13 +1233,13 @@ export function resolveClaim(
   const viaLegend = (via === 'range' && L.has('wideHand')) ? LEGEND.wideHandMult : (via === 'save' && L.has('missSave')) ? LEGEND.missSaveMult : 1;
   const mult = (fever ? feverMultOf(claimer, G) : after ? afterMultOf(claimer) : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0)
     * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend;
-  // 잭팟은 맨 마지막에 곱한다 (블라스트는 없음). 속사 레전드면 이번 잭팟 확정
-  if (!blast) {
+  // 잭팟은 맨 마지막에 곱한다 (블라스트·자석은 없음). 속사 레전드면 이번 잭팟 확정
+  if (!blast && !magnet) {
     const forced = rapidForced && pts > 0;
     if (forced) claimer.rapidJackpot = false;
     res.jackpot = jackpotMult(forced ? { ...m, jackpot: 100 } : luckyMods(claimer, m), opts.rand, L.has('jackpot'));
   }
-  res.gained = Math.round(pts * mult * res.jackpot) + res.plundered;
+  res.gained = Math.round(pts * mult * res.jackpot * (magnet ? AUG.magnetPointPct / 100 : 1)) + res.plundered;
   claimer.score += res.gained;
   return res;
 }

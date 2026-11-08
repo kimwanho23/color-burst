@@ -1032,7 +1032,7 @@ export class Room {
       if (p.bot || !cur || radius <= 0 || isStunned(p, now)) continue;
       const log = (this.pullLog.get(p.id) ?? []).filter((t) => now - t < 1000);
       this.pullLog.set(p.id, log);
-      // 자석 레전드: 1초에 4개
+      // 자석 레전드: 1초에 LEGEND.magnetPerSec개
       const per = hasLegend(p, 'magnet') ? LEGEND.magnetPerSec : M.perSec;
       if (log.length >= per) continue;
       for (const c of pickMagnetTargets(this.circles.values(), p.color, cur, now, radius, per - log.length, new Set(this.pulls.keys()))) {
