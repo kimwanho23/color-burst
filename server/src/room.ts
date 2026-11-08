@@ -186,17 +186,51 @@ export class Room {
   /** '방 나가기'를 눌렀을 때. 바로 자리를 비운다 */
   leave(playerId: string, socketId: string) {
     if (this.socketOf.get(playerId) === socketId) this.socketOf.delete(playerId);
-    if (this.phase === 'play') {
-      const p = this.players.find((x) => x.id === playerId);
-      if (p) p.connected = false;
-      for (const [k, id] of this.keyToId) if (id === playerId) this.keyToId.delete(k);
-      this.passHostIfNeeded();
-      this.checkEmpty();
-      this.broadcastState();
-      this.emitPlayers();
-    } else {
-      this.remove(playerId);
+    const p = this.players.find((x) => x.id === playerId);
+    // 게임 중 여럿이 하는 방: 그 자리를 봇이 이어받는다. 혼자 하기·대기실: 자리를 비운다 (사람이 없으면 방 종료)
+    if (this.phase === 'play' && !this.solo && p) this.takeOver(p);
+    else this.remove(playerId);
+  }
+
+  /** 게임 중 나간 사람의 자리를 봇으로: 점수·증강·콤보·피버를 그대로 이어받는다 (다시 들어올 수 없음) */
+  private takeOver(p: PlayerState) {
+    if (p.bot) return;
+    const name = p.name;
+    p.bot = true;
+    p.connected = true;
+    p.name = `${name} (봇)`;
+    this.bots.set(p.id, new Bot(this.botLevel));
+    for (const [k, id] of this.keyToId) if (id === p.id) this.keyToId.delete(k);
+    this.socketOf.delete(p.id);
+    this.cursors.delete(p.id);
+    for (const [cid, pl] of this.pulls) if (pl.by === p.id) this.pulls.delete(cid);
+    // 일시정지를 건 사람이 나가면 바로 다시 시작 카운트다운
+    if (this.pausedAt && !this.resumeAt && this.pausedBy === p.id) this.beginResume();
+    // 증강 고르는 중이면 남은 선택을 바로 무작위로, 모두 골랐으면 다음 라운드
+    if (this.roundPhase === 'pick' && this.offers.has(p.id)) {
+      this.autoPick(p.id);
+      if ([...this.offers.values()].every((x) => x.chosen)) this.finishPick();
+      else this.emitArcade();
     }
+    this.passHostIfNeeded();
+    this.checkEmpty();
+    this.io.to(this.code).emit('player:left', { id: p.id, name });
+    this.broadcastState();
+    this.emitPlayers();
+  }
+
+  /** 아직 안 고른 사람의 남은 선택을 남은 카드에서 무작위로 */
+  private autoPick(id: string) {
+    const o = this.offers.get(id);
+    if (!o || o.chosen) return;
+    const p = this.players.find((x) => x.id === id);
+    while (p && o.need > 0 && o.options.length) {
+      const k = Math.floor(Math.random() * o.options.length);
+      applyPick(p, o.options[k]);
+      o.options.splice(k, 1);
+      o.need--;
+    }
+    o.chosen = true;
   }
 
   setColor(id: string, color: ColorIndex) {
@@ -766,18 +800,8 @@ export class Room {
   private finishPick() {
     if (this.roundPhase !== 'pick') return;
     this.clearPickTimers();
-    for (const [id, o] of this.offers) {
-      if (o.chosen) continue;
-      const p = this.players.find((x) => x.id === id);
-      // 남은 고를 수만큼 남은 카드에서 무작위로
-      while (p && o.need > 0 && o.options.length) {
-        const k = Math.floor(Math.random() * o.options.length);
-        applyPick(p, o.options[k]);
-        o.options.splice(k, 1);
-        o.need--;
-      }
-      o.chosen = true;
-    }
+    // 안 고른 사람은 남은 고를 수만큼 무작위로
+    for (const id of this.offers.keys()) this.autoPick(id);
     this.offers.clear();
     this.round++;
     this.roundPhase = 'play';

@@ -151,6 +151,8 @@ export interface ServerToClient {
   /** blocked: 방어형 보호막에 막힘 / enraged: 붉은 공격형을 때려 점수를 잃음 (gained가 음수) */
   'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number; jackpot: number; blocked?: boolean; enraged?: boolean; feverStarted?: boolean; comboBonus?: boolean }) => void;
   /** 보스 처치: by가 막타, mvp가 최다 타격 */
+  /** 게임 중 나간 사람 (name: 원래 이름). 그 자리는 봇이 이어받는다 */
+  'player:left': (d: { id: string; name: string }) => void;
   /**
    * solo: 독식한 사람 id들 (막타와 따로, 없으면 빈 배열). soloFever: 그중 독식 게이지(보스 헌터)로 피버가 터진 사람.
    * gained: 막타 친 사람의 타격 + 막타 + 독식. feverStarted·comboBonus: 막타 친 사람
