@@ -6,6 +6,7 @@ import {
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
+import { closeGuide, openGuide } from './guide.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
@@ -258,6 +259,17 @@ const openCodexHere = () => openCodex($('stage'), { rules: room ? rules : DEFAUL
 $('codexBtn').onclick = $('codexBtn2').onclick = $('codexTop').onclick = openCodexHere;
 $('codexTop').innerHTML = `${icon(UI.codex, 16)}<span class="bt">도감</span>`;
 $('codexBtn').innerHTML = $('codexBtn2').innerHTML = `${icon(UI.codex, 16)}<span>도감</span>`;
+// 게임 방법: 방 안이면 그 방 규칙 숫자로
+$('guideBtn').onclick = $('guideBtn2').onclick = () => openGuide($('stage'), room ? rules : DEFAULT_RULES, !!room);
+$('guideBtn').innerHTML = $('guideBtn2').innerHTML = `${icon(UI.guide, 16)}<span>게임 방법</span>`;
+/** 처음 접속한 사람에게 한 번만 자동으로 (브라우저에 저장, 저장이 안 되는 환경이면 띄우지 않음) */
+function firstGuide() {
+  try {
+    if (localStorage.getItem('cb-guide-seen')) return;
+    localStorage.setItem('cb-guide-seen', '1');
+  } catch { return; }
+  if (!room) openGuide($('stage'), DEFAULT_RULES, false);
+}
 $('settingsClose').innerHTML = icon(UI.close, 18);
 $('soloBtn').onclick = () => { initAudio(); socket.emit('room:solo', { name: getName(), key: KEY }, entered); };
 const join = () => socket.emit('room:join', { code: codeInput.value, name: getName(), key: KEY }, entered);
@@ -356,6 +368,7 @@ $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 // ---------- 게임 ----------
 function applyPlay(d: PlayPayload, fresh: boolean) {
   closeCodex();
+  closeGuide();
   roundOver = false;
   $('roundEnd').hidden = true;
   startAt = d.startAt; endAt = d.endAt; players = d.players; rules = d.rules;
@@ -984,6 +997,8 @@ function frame() {
 }
 requestAnimationFrame(frame);
 show('home');
+// 저장된 방으로 다시 들어가는 중이 아니면 첫 접속 안내
+if (!store('cb-room')) firstGuide();
 $('ver').textContent = `v${__APP_VERSION__}`;
 // 1.0.0-beta.1 → BETA, 1.0.0-rc.1 → RC
 const pre = __APP_VERSION__.split('-')[1]?.split('.')[0];
