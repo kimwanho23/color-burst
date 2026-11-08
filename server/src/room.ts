@@ -62,6 +62,11 @@ export class Room {
   private nextSample = 0;
   private pausedAt = 0;
   private pausedBy: string | null = null;
+  /** 30초 자동 재개 시각·타이머, 재개 카운트다운이 끝나는 시각·타이머 */
+  private pauseUntil = 0;
+  private resumeAt = 0;
+  private pauseTimer: NodeJS.Timeout | null = null;
+  private resumeTimer: NodeJS.Timeout | null = null;
   // ---------- 아케이드 ----------
   private round = 0;
   private roundPhase: 'play' | 'pick' = 'play';
@@ -248,17 +253,46 @@ export class Room {
     return null;
   }
 
-  /** 일시정지 권한: 혼자 하기는 본인, 멀티는 방장 */
-  canPause(id: string) { return this.solo ? this.players.some((p) => p.id === id) : id === this.hostId; }
+  /** 일시정지 권한: 혼자 하기는 본인, 멀티는 봇이 아닌 사람 누구나 (남은 횟수가 있을 때) */
+  canPause(id: string) {
+    const p = this.players.find((x) => x.id === id);
+    if (!p || p.bot) return false;
+    return this.solo || p.pausesLeft > 0;
+  }
+  /** 일시정지 해제: 방 안의 사람(봇 제외) 누구나 */
+  canResume(id: string) { return this.players.some((p) => p.id === id && !p.bot); }
 
   pause(id: string) {
-    // 능력 선택 중에는 제한 시간이 있어서 멈출 수 없다
+    // 능력 선택 중에는 제한 시간이 있어서 멈출 수 없다. 다시 시작 카운트다운 중에도 안 됨
     if (this.phase !== 'play' || this.roundPhase !== 'play' || this.pausedAt || !this.canPause(id)) return;
+    if (!this.solo) this.players.find((p) => p.id === id)!.pausesLeft--;
     this.doPause(id);
+    this.emitPlayers();
   }
 
+  /** 누가 풀면 카운트다운 뒤에 다시 시작 (이미 카운트다운 중이면 무시) */
   resume(id: string) {
-    if (this.phase !== 'play' || !this.pausedAt || !this.canPause(id)) return;
+    if (this.phase !== 'play' || !this.pausedAt || this.resumeAt || !this.canResume(id)) return;
+    this.beginResume();
+  }
+
+  private beginResume() {
+    this.clearPauseTimers();
+    this.resumeAt = Date.now() + RULES.pause.resumeMs;
+    this.io.to(this.code).emit('game:resuming', { at: this.resumeAt });
+    this.resumeTimer = setTimeout(() => this.finishResume(), RULES.pause.resumeMs);
+  }
+
+  private clearPauseTimers() {
+    if (this.pauseTimer) clearTimeout(this.pauseTimer);
+    if (this.resumeTimer) clearTimeout(this.resumeTimer);
+    this.pauseTimer = this.resumeTimer = null;
+  }
+
+  /** 카운트다운이 끝남: 멈춰 있던 시간(카운트다운 포함)만큼 모든 시각을 밀고 다시 시작 */
+  private finishResume() {
+    this.resumeTimer = null;
+    if (this.phase !== 'play' || !this.pausedAt) { this.resumeAt = 0; return; }
     const delta = Date.now() - this.pausedAt;
     // 멈춰 있던 시간만큼 모든 시각을 뒤로 민다
     this.startAt += delta; this.endAt += delta; this.lastSpawn += delta;
@@ -273,13 +307,18 @@ export class Room {
     for (const b of this.bots.values()) b.shift(delta);
     this.pausedAt = 0;
     this.pausedBy = null;
+    this.pauseUntil = 0;
+    this.resumeAt = 0;
     this.io.to(this.code).emit('game:sync', this.playPayload());
   }
 
   private doPause(id: string) {
     this.pausedAt = Date.now();
     this.pausedBy = id;
-    this.io.to(this.code).emit('game:pause', { by: id });
+    // 멀티: maxMs가 지나면 저절로 풀린다 (멈춘 사람이 나가도 그대로)
+    this.pauseUntil = this.solo ? 0 : this.pausedAt + RULES.pause.maxMs;
+    if (this.pauseUntil) this.pauseTimer = setTimeout(() => { this.pauseTimer = null; if (this.pausedAt && !this.resumeAt) this.beginResume(); }, RULES.pause.maxMs);
+    this.io.to(this.code).emit('game:pause', { by: id, until: this.pauseUntil });
   }
 
   /** 아케이드: 능력 고르기 */
@@ -521,7 +560,7 @@ export class Room {
   private playPayload() {
     return {
       startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
-      rules: this.rules, pausedBy: this.pausedBy, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
+      rules: this.rules, pausedBy: this.pausedBy, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
       pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
     };
   }
@@ -558,6 +597,9 @@ export class Room {
     this.spawnQueue = [];
     this.pausedAt = 0;
     this.pausedBy = null;
+    this.clearPauseTimers();
+    this.pauseUntil = 0;
+    this.resumeAt = 0;
     this.nextSample = HISTORY_STEP_MS;
     const now = Date.now();
     this.startAt = now + RULES.countdownMs;
@@ -1090,6 +1132,9 @@ export class Room {
   private stop() {
     if (this.loop) clearInterval(this.loop);
     this.loop = null;
+    this.clearPauseTimers();
+    this.pauseUntil = 0;
+    this.resumeAt = 0;
   }
 
   private freeColor(): ColorIndex | null {

@@ -259,14 +259,17 @@ test('자석: 스턴 중이거나 커서가 오래되면 끌지 않는다', () =
 const lineAB = { a: { x: 0, y: 0 }, b: { x: 1, y: 1 } };
 test('일시정지가 풀리면 모든 볼리의 발사 시각이 그만큼 밀린다', (t) => {
   const { room } = playingRoom();
-  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
   const at = Date.now() + 500;
   priv(room).lasers = [{ lines: [lineAB], at, hit: new Set() }, { lines: [lineAB], at: at + 700, hit: new Set() }];
   const host = priv(room).hostId;
   room.pause(host);
   t.mock.timers.tick(2000);
   room.resume(host);
-  assert.deepEqual(priv(room).lasers.map((l) => l.at), [at + 2000, at + 2700]);
+  // 풀면 3초 카운트다운 뒤에 다시 시작: 그동안도 멈춰 있던 시간
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  const d = 2000 + RULES.pause.resumeMs;
+  assert.deepEqual(priv(room).lasers.map((l) => l.at), [at + d, at + 700 + d]);
   room.destroy();
 });
 
@@ -744,5 +747,97 @@ test('잭팟 레전드는 보스 타격에도 ×2~×5', (t) => {
   const p0 = circlePosOf(boss, now);
   room.click(me.id, { circleId: 95, x: p0.x, y: p0.y });
   assert.equal(me.score, 8);
+  room.destroy();
+});
+
+// ---------- 일시정지 규칙 ----------
+type PauseState = { pausedAt: number; resumeAt: number; endAt: number; canPause(id: string): boolean; canResume(id: string): boolean };
+const ps = (room: Room) => room as unknown as PauseState;
+
+test('일시정지: 사람마다 3번, 누구나 풀고, 풀면 3초 카운트다운 뒤 시작', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  const other = room.players.find((p) => p.id !== me.id)!;
+  room.pause(me.id);
+  assert.equal(me.pausesLeft, RULES.pause.perGame - 1);
+  room.resume(other.id); // 방장이 아니어도 풂
+  assert.ok(ps(room).pausedAt > 0 && ps(room).resumeAt > 0, '카운트다운 중에는 아직 멈춰 있음');
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.deepEqual([ps(room).pausedAt, ps(room).resumeAt], [0, 0]);
+  for (let i = 0; i < RULES.pause.perGame - 1; i++) { room.pause(me.id); room.resume(me.id); t.mock.timers.tick(RULES.pause.resumeMs); }
+  assert.equal(me.pausesLeft, 0);
+  room.pause(me.id);
+  assert.equal(ps(room).pausedAt, 0, '다 쓰면 못 멈춤');
+  room.pause(other.id);
+  assert.ok(ps(room).pausedAt > 0, '다른 사람은 자기 횟수로 멈춤');
+  room.destroy();
+});
+
+test('일시정지: 30초가 지나면 저절로 풀리고 카운트다운 뒤 시작', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  room.pause(me.id);
+  t.mock.timers.tick(RULES.pause.maxMs - 1);
+  assert.equal(ps(room).resumeAt, 0);
+  t.mock.timers.tick(1);
+  assert.ok(ps(room).resumeAt > 0);
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.equal(ps(room).pausedAt, 0);
+  room.destroy();
+});
+
+test('일시정지: 카운트다운 중에 또 풀거나 멈춰도 시간이 한 번만 밀림', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  const other = room.players.find((p) => p.id !== me.id)!;
+  const endBefore = ps(room).endAt;
+  room.pause(me.id);
+  t.mock.timers.tick(1000);
+  room.resume(me.id); room.resume(other.id); room.pause(other.id);
+  assert.equal(other.pausesLeft, RULES.pause.perGame, '카운트다운 중 멈춤은 무시, 횟수도 안 씀');
+  // 모의 타이머는 한 번에 넘기면 콜백 안의 Date.now()가 끝 시각이라 나눠서 넘긴다
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  t.mock.timers.tick(RULES.pause.maxMs);
+  assert.equal(ps(room).endAt, endBefore + 1000 + RULES.pause.resumeMs);
+  room.destroy();
+});
+
+test('일시정지: 멈춘 사람이 방을 나가도 30초 자동 재개는 그대로', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.join('s3', 'k3', 'C');
+  room.fillBots = false;
+  t.after(() => room.destroy());
+  assert.equal(room.start(a.id), null);
+  room.pause(a.id);
+  room.leave(a.id, 's1');
+  t.mock.timers.tick(RULES.pause.maxMs);
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.equal(ps(room).pausedAt, 0);
+  room.destroy();
+});
+
+test('혼자 하기 일시정지: 횟수가 줄지 않고 30초가 지나도 안 풀림, 봇은 못 멈춤', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const room = new Room(fakeIo(), 'SOLO', () => {}, true);
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  assert.equal(room.start(a.id), null);
+  const me = room.players.find((p) => p.id === a.id)!;
+  const bot = room.players.find((p) => p.bot)!;
+  assert.equal(ps(room).canPause(bot.id), false);
+  assert.equal(ps(room).canResume(bot.id), false);
+  room.pause(me.id);
+  assert.equal(me.pausesLeft, RULES.pause.perGame);
+  t.mock.timers.tick(RULES.pause.maxMs * 3);
+  assert.ok(ps(room).pausedAt > 0);
+  room.resume(me.id);
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.equal(ps(room).pausedAt, 0);
   room.destroy();
 });

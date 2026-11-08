@@ -80,6 +80,10 @@ export interface PlayPayload {
   rules: RoomRules;
   /** 일시정지 중이면 멈춘 사람 id */
   pausedBy: string | null;
+  /** 일시정지가 저절로 풀리기 시작하는 시각 (혼자 하기·멈추지 않았으면 0) */
+  pauseUntil: number;
+  /** 풀려서 카운트다운 중이면 다시 시작하는 시각 (아니면 0) */
+  resumeAt: number;
   /** 아케이드 모드가 아니면 null */
   arcade: ArcadeState | null;
   zones: Zone[];
@@ -98,7 +102,10 @@ export interface ServerToClient {
   'game:start': (d: PlayPayload) => void;
   /** 진행 중인 판 상태 전체 (재접속, 일시정지 해제 때) */
   'game:sync': (d: PlayPayload) => void;
-  'game:pause': (d: { by: string }) => void;
+  /** until: 저절로 풀리기 시작하는 시각 (혼자 하기는 0) */
+  'game:pause': (d: { by: string; until: number }) => void;
+  /** 일시정지가 풀림: at에 다시 시작 (그때까지 카운트다운) */
+  'game:resuming': (d: { at: number }) => void;
   /** 아케이드: 라운드가 끝나 능력 선택 시작, 또는 선택 현황이 바뀜 */
   'arcade:pick': (d: ArcadeState) => void;
   /** 아케이드: 라운드가 끝날 때 적용된 저주 결과 */

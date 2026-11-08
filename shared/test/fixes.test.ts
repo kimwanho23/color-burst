@@ -116,3 +116,10 @@ test('레전드 문장의 숫자는 수치 상수에서', () => {
   assert.ok(LEGEND_TEXT.jackpot!.includes(`×${LEGEND.jackpotMults.at(-1)}`));
   assert.ok(LEGEND_TEXT.vanguard!.includes(`${LEGEND.vanguardMult}배`));
 });
+
+test('새 게임이면 남은 일시정지가 처음 횟수로', () => {
+  const p = pl('p', 0);
+  p.pausesLeft = 0;
+  resetForRound(p);
+  assert.equal(p.pausesLeft, 3);
+});

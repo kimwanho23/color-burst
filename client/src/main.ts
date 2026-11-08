@@ -77,7 +77,12 @@ let rules: RoomRules = DEFAULT_RULES;
 let pausedView = 0;
 const viewNow = () => (pausedView || serverNow());
 /** 혼자 하기는 본인, 멀티는 방장만 일시정지 가능 */
-const canPause = () => !!room && (room.solo || room.hostId === myId());
+/** 한 판 더·규칙 바꾸기 권한: 혼자 하기는 본인, 멀티는 방장 */
+const isHost = () => !!room && (room.solo || room.hostId === myId());
+/** 일시정지: 혼자 하기는 언제나, 멀티는 남은 횟수가 있을 때 */
+const canPause = () => { const m = me(); return !!room && !!m && (room.solo || m.pausesLeft > 0); };
+/** 일시정지가 저절로 풀리기 시작하는 시각, 풀려서 다시 시작하는 시각 (카운트다운 중) */
+let pauseUntil = 0, resumeAt = 0;
 
 // ---------- 아케이드 ----------
 let arcade: ArcadeState | null = null;
@@ -318,13 +323,17 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   // 고른 카드 연출이 끝난 뒤에 선택 화면을 닫는다 (카운트다운 3초 동안이라 게임에는 영향 없음)
   const wait = Math.max(0, animUntil - performance.now());
   setTimeout(() => { if (!picking()) { $('pickOv').hidden = true; renderedSig = ''; } }, wait);
-  setPaused(d.pausedBy);
+  setPaused(d.pausedBy, d.pauseUntil, d.resumeAt);
 }
 socket.on('game:start', (d) => applyPlay(d, true));
 socket.on('game:sync', (d) => applyPlay(d, false));
-socket.on('game:pause', ({ by }) => setPaused(by));
+socket.on('game:pause', ({ by, until }) => setPaused(by, until, 0));
+// 일시정지가 풀림: 일시정지 화면을 닫고 at까지 카운트다운 (게임은 그때까지 멈춰 있음)
+socket.on('game:resuming', ({ at }) => { resumeAt = at; lastCount = -1; $('pauseOv').hidden = true; });
 
-function setPaused(by: string | null) {
+function setPaused(by: string | null, until = 0, resuming = 0) {
+  pauseUntil = by ? until : 0;
+  resumeAt = by ? resuming : 0;
   if (by) {
     // 멈춰 있는 동안 레이저 발사음이 나지 않게 (다시 시작하면 game:sync로 다시 예약)
     laserFireTimers.forEach(clearTimeout); laserFireTimers = [];
@@ -332,19 +341,42 @@ function setPaused(by: string | null) {
     stopMusic();
     const who = players.find((p) => p.id === by);
     $('pauseWho').textContent = room?.solo ? '' : `${by === myId() ? '내가' : `${who?.name ?? '방장'}님이`} 멈췄어요`;
-    $<HTMLButtonElement>('resumeBtn').hidden = !canPause();
-    $('pauseOv').hidden = false;
+    // 멀티는 누구나 풀 수 있다
+    $<HTMLButtonElement>('resumeBtn').hidden = !room;
+    $('pauseOv').hidden = !!resumeAt;
+    renderPauseLeft();
   } else {
     pausedView = 0;
     $('pauseOv').hidden = true;
     startMusic(() => { const m = me(); return !!m && isFever(m, serverNow()); });
   }
 }
-function togglePause() {
-  if (!playing || !canPause() || picking()) return;
-  socket.emit(pausedView ? 'game:resume' : 'game:pause');
+/** 일시정지 화면: 저절로 풀릴 때까지 남은 시간 */
+function renderPauseLeft() {
+  const sec = pauseUntil ? Math.max(0, Math.ceil((pauseUntil - serverNow()) / 1000)) : 0;
+  const el = $('pauseLeft');
+  el.hidden = !pauseUntil;
+  if (pauseUntil) el.textContent = `${sec}초 뒤 자동으로 다시 시작해요`;
 }
-$('pauseBtn').innerHTML = `${icon(UI.pause, 16)}<span class="bt">일시정지</span>`;
+function togglePause() {
+  if (!playing || picking()) return;
+  if (pausedView) { if (!resumeAt) socket.emit('game:resume'); return; }
+  if (canPause()) socket.emit('game:pause');
+  else if (room && !room.solo) pushFeed($('feed'), icon(UI.pause, 18), '남은 일시정지가 없어요', '#ff5d73');
+}
+/** 위쪽 일시정지 버튼: 멀티는 남은 횟수 "2/3", 다 쓰면 흐리게 */
+let pauseBtnSig = '';
+function renderPauseBtn() {
+  const m = me();
+  const b = $<HTMLButtonElement>('pauseBtn');
+  b.hidden = !(playing && room && m && !picking());
+  const multi = !!room && !room.solo;
+  const sig = multi && m ? `${m.pausesLeft}` : 'solo';
+  if (sig === pauseBtnSig) return;
+  pauseBtnSig = sig;
+  b.innerHTML = `${icon(UI.pause, 16)}<span class="bt">일시정지${multi && m ? ` ${m.pausesLeft}/${RULES.pause.perGame}` : ''}</span>`;
+  b.classList.toggle('used', multi && !!m && m.pausesLeft <= 0);
+}
 $('pauseBtn').onclick = togglePause;
 $('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
 document.addEventListener('keydown', (e) => {
@@ -607,7 +639,7 @@ socket.on('game:over', (d) => {
   $('graphBox').innerHTML = r.graph;
   if (room) room.wins = d.wins;
   (pos === 1 ? sfx.win : sfx.lose)();
-  const again = canPause();
+  const again = isHost();
   $<HTMLButtonElement>('rematchBtn').hidden = !again;
   $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
   $('resultHint').textContent = again ? '' : '방장이 한 판 더를 누르면 바로 시작해요';
@@ -736,15 +768,17 @@ function updateHud(now: number) {
   $('timer').textContent = String(Math.ceil(left / 1000));
   $('timer').classList.toggle('hot', playing && left <= RULES.finalRushMs);
 
-  const cd = Math.ceil((startAt - now) / 1000);
+  // 시작 카운트다운, 일시정지가 풀린 뒤 다시 시작 카운트다운
+  const cd = resumeAt ? Math.ceil((resumeAt - serverNow()) / 1000) : Math.ceil((startAt - now) / 1000);
   const showCd = playing && !picking() && cd > 0;
+  if (pausedView && pauseUntil && !resumeAt) renderPauseLeft();
   $('countdown').hidden = !showCd;
   if (showCd && cd !== lastCount) { $('countdown').textContent = String(cd); sfx.tick(); lastCount = cd; }
 }
 
 function frame() {
   const now = viewNow();
-  $('pauseBtn').hidden = !(playing && canPause() && !picking());
+  renderPauseBtn();
   // 게임 중에는 진짜 마우스 커서를 숨기고 게임 커서를 그린다
   $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView);
   // 자석에 끌려오는 원은 화면 밖으로 나가도 잡힐 때까지 그린다

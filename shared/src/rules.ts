@@ -38,6 +38,8 @@ export const RULES = {
   comebackGain: 1.25,
   /** 꼴찌 보정이 켜졌을 때 넓은 손 순위 보정 [꼴찌, 4인 방의 3등] */
   rankReach: [20, 10],
+  /** 일시정지 (멀티): 사람마다 한 게임 perGame번, 한 번에 최대 maxMs, 풀 때 resumeMs 카운트다운 (혼자 하기는 카운트다운만) */
+  pause: { perGame: 3, maxMs: 30_000, resumeMs: 3_000 },
   /** 클릭 판정 여유(필드 단위) */
   hitPad: 12,
   /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */
@@ -438,6 +440,8 @@ export interface PlayerState {
   reboundUsed: boolean;
   /** 철옹성 조합: 이번 라운드에 남은 콤보 끊김 막기 */
   ironLeft: number;
+  /** 이번 게임에 남은 일시정지 (멀티) */
+  pausesLeft: number;
   /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
   lastClaimAt: number;
   rapidStreak: number;
@@ -534,12 +538,14 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, ironLeft: 0,
+    pausesLeft: RULES.pause.perGame,
   };
 }
 
 /** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
   p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false; p.rankReach = 0;
+  p.pausesLeft = RULES.pause.perGame;
 }
 
 /** 능력(또는 저주)을 고른 직후 처리 */
