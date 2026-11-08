@@ -1,6 +1,6 @@
 /** 게임 커서: 화면이 직접 그리는 내 커서. 평소에는 진짜 마우스 위치와 같고, 효과가 걸리면 움직임이 바뀐다 */
 import {
-  FIELD, RULES, cursorTarget, followCursor, iceStep, movesCursor, patternActive, pushOut, relativeCursor, slideBack, vortexStep,
+  FIELD, RULES, cursorTarget, followCursor, eyeOf, iceStep, movesCursor, patternActive, pushOut, relativeCursor, slideBack, trapIn, vortexBend,
   type CursorMode, type MapPattern, type Point,
 } from '@color-burst/shared';
 
@@ -26,6 +26,8 @@ export class GameCursor {
   private iceVel: Point = { x: 0, y: 0 };
   /** 지금 커서를 바꾸는 맵 패턴 (오오라 끌림도 벽 밖으로) */
   private fx: FieldFx | null = null;
+  /** 갇힌 소용돌이 번호 (없으면 −1). 패턴이 끝날 때까지 그 눈 밖으로 못 나간다 */
+  trapped = -1;
 
   /** real: 진짜 마우스의 필드 좌표, delta: 이번 이동량(필드 단위) */
   move(real: Point, delta: Point) {
@@ -54,6 +56,7 @@ export class GameCursor {
       this.key = key;
       this.off = { x: 0, y: 0 };
       this.iceVel = { x: 0, y: 0 };
+      this.trapped = -1;
     }
     this.fx = field;
     if (field) { this.fieldStep(field, d, mode, dtMs, inAura); return; }
@@ -77,16 +80,24 @@ export class GameCursor {
    * - 벽·막대·빙판: 진짜 위치(반대면 거울 위치, 오오라에 끌린 양 포함)를 목표로 따라간다. 진짜 마우스와 어긋남이 쌓이지 않아
    *   창 끝에 걸리지 않는다. 벽·막대는 STEP씩 쪼개 밀어내서 뚫고 지나가지 않고(벽을 따라 미끄러짐), 막대가 쓸고 와도 밀려난다.
    *   빙판은 목표를 스프링으로 따라가 미끄러진다
-   * - 소용돌이: 움직인 양(반대면 반대로, 감도 감소면 절반)으로 움직이고 중심 쪽으로 끌린다
+   * - 소용돌이: 진짜 위치를 끌림 구역 안이면 중심 쪽으로 쏠린 자리로 부드럽게 따라간다. 눈에 들어가면 패턴이 끝날 때까지
+   *   그 눈 안에 갇힌다 (안에서는 자유롭게 움직이고 클릭 가능)
    */
   private fieldStep(fx: FieldFx, d: Point, mode: CursorMode | null, dtMs: number, inAura: boolean) {
     const p = fx.pattern, t = fx.t;
+    if (!inAura) this.off = { x: 0, y: 0 };
     if (p.id === 'vortex') {
-      const k = (mode?.invert ? -1 : 1) * (mode?.slow ? 0.5 : 1);
-      this.pos = vortexStep(p, clampField({ x: this.pos!.x + d.x * k, y: this.pos!.y + d.y * k }), t, dtMs);
+      const target = this.targetOf(mode);
+      const goal = this.trapped >= 0 ? trapIn(p, this.trapped, target) : vortexBend(p, target, t);
+      // 감도 감소면 그만큼 늦게, 아니면 짧게 부드럽게 (소용돌이가 생기는 순간 튀지 않게)
+      const lag = mode?.slow ? followCursor(this.pos!, goal, dtMs, true) : null;
+      const k = 1 - Math.exp(-Math.max(0, dtMs) / RULES.patterns.vortex.followMs);
+      let q = lag ?? { x: this.pos!.x + (goal.x - this.pos!.x) * k, y: this.pos!.y + (goal.y - this.pos!.y) * k };
+      if (this.trapped < 0) this.trapped = eyeOf(p, q, t);
+      if (this.trapped >= 0) q = trapIn(p, this.trapped, q);
+      this.pos = q;
       return;
     }
-    if (!inAura) this.off = { x: 0, y: 0 };
     const target = this.targetOf(mode);
     if (p.id === 'ice') {
       const r = iceStep(this.pos!, this.iceVel, target, dtMs);
@@ -108,8 +119,9 @@ export class GameCursor {
     if (dd < 1e-6) return;
     const k = Math.min(1, dist / dd);
     let next = clampField({ x: this.pos.x + dx * k, y: this.pos.y + dy * k });
-    // 맵 패턴 중이면 벽·막대 안으로는 끌려 들어가지 않는다
+    // 맵 패턴 중이면 벽·막대 안으로는 끌려 들어가지 않고, 갇힌 소용돌이 눈 밖으로도 안 나간다
     if (this.fx) next = pushOut(this.fx.pattern, next, this.fx.t);
+    if (this.fx && this.trapped >= 0) next = trapIn(this.fx.pattern, this.trapped, next);
     if (this.key && this.key !== 'a') this.off = { x: this.off.x + next.x - this.pos.x, y: this.off.y + next.y - this.pos.y };
     this.pos = next;
   }
@@ -130,7 +142,7 @@ export class GameCursor {
   }
 
   /** 창을 떠남(탭 전환·다른 창): 커서를 지운다 */
-  leave() { this.pos = null; this.real = null; this.key = ''; this.slideFrom = null; this.delta = { x: 0, y: 0 }; this.off = { x: 0, y: 0 }; this.fx = null; }
+  leave() { this.pos = null; this.real = null; this.key = ''; this.slideFrom = null; this.delta = { x: 0, y: 0 }; this.off = { x: 0, y: 0 }; this.fx = null; this.trapped = -1; }
 }
 
 const clampField = (p: Point): Point => ({ x: Math.max(0, Math.min(FIELD.w, p.x)), y: Math.max(0, Math.min(FIELD.h, p.y)) });

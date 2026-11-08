@@ -36,7 +36,8 @@ export interface MapPattern {
   walls?: Rect[];
   balls?: Mover[];
   bar?: { cx: number; cy: number; a0: number };
-  vortex?: Point;
+  /** 소용돌이 중심들: [0]은 at에, [1]은 at + secondAfterMs에 생긴다 */
+  vortices?: Point[];
   fog?: Mover[];
 }
 
@@ -86,11 +87,17 @@ export function makePattern(id: PatternId, at: number, rand = Math.random): MapP
   } else if (id === 'bar') {
     p.bar = { cx: C.x, cy: C.y, a0: rand() * Math.PI };
   } else if (id === 'vortex') {
-    let v = C;
-    for (let tries = 0; tries < 20 && Math.hypot(v.x - C.x, v.y - C.y) < R.vortex.centerClear; tries++) {
-      v = { x: between(150, FIELD.w - 150, rand), y: between(150, FIELD.h - 150, rand) };
+    // 둘 다 중앙 발사 지점을 피하고, 서로의 눈이 끌림 구역에 들어가지 않게 떨어뜨린다
+    const V = R.vortex, out: Point[] = [];
+    for (let i = 0; i < 2; i++) {
+      let v: Point = C;
+      for (let tries = 0; tries < 40; tries++) {
+        v = { x: between(V.eye + 30, FIELD.w - V.eye - 30, rand), y: between(V.eye + 30, FIELD.h - V.eye - 30, rand) };
+        if (Math.hypot(v.x - C.x, v.y - C.y) >= V.centerClear && out.every((o) => Math.hypot(o.x - v.x, o.y - v.y) >= V.r + V.eye)) break;
+      }
+      out.push(v);
     }
-    p.vortex = v;
+    p.vortices = out;
   } else if (id === 'fog') {
     p.fog = Array.from({ length: R.fog.count }, () => mover(0, R.fog.speed, rand));
   }
@@ -182,14 +189,37 @@ export function spikeHit(p: MapPattern | null | undefined, pt: Point, t: number,
   return (p.balls ?? []).findIndex((b, i) => !popped.has(i) && Math.hypot(pt.x - moverAt(b, p.at, t, r).x, pt.y - moverAt(b, p.at, t, r).y) <= r);
 }
 
-/** 소용돌이: 반경 안이면 중심 쪽으로 초당 pull만큼 (넘어가지 않음) */
-export function vortexStep(p: MapPattern | null | undefined, pt: Point, t: number, dtMs: number): Point {
-  if (!patternActive(p, t) || p.id !== 'vortex' || !p.vortex) return pt;
-  const V = P().vortex, c = p.vortex;
-  const d = Math.hypot(c.x - pt.x, c.y - pt.y);
-  if (d > V.r || d < 1e-6) return pt;
-  const k = Math.min(1, (V.pull * dtMs / 1000) / d);
-  return { x: pt.x + (c.x - pt.x) * k, y: pt.y + (c.y - pt.y) * k };
+/** 소용돌이가 생기는 시각들 */
+export const vortexTimes = (p: MapPattern) => (p.vortices ?? []).map((_, i) => p.at + i * P().vortex.secondAfterMs);
+
+/** 지금 나와 있는 소용돌이 번호들 */
+export const vortexAlive = (p: MapPattern | null | undefined, t: number) =>
+  patternActive(p, t) && p.id === 'vortex' ? vortexTimes(p).flatMap((at, i) => (t >= at ? [i] : [])) : [];
+
+/** 미리보기(경고) 중인 소용돌이 번호들: 생기기 warnMs 전부터 */
+export const vortexWarned = (p: MapPattern | null | undefined, t: number) =>
+  p?.id === 'vortex' ? vortexTimes(p).flatMap((at, i) => (t >= at - P().warnMs && t < at ? [i] : [])) : [];
+
+/** 끌림: 가장 가까운 소용돌이의 끌림 구역 안이면 그 중심 쪽으로 쏠린 자리 (가까울수록 많이, 최대 maxBend, 중심을 넘지 않음) */
+export function vortexBend(p: MapPattern | null | undefined, pt: Point, t: number): Point {
+  const V = P().vortex;
+  let best = -1, bd = Infinity;
+  for (const i of vortexAlive(p, t)) { const c = p!.vortices![i], d = Math.hypot(c.x - pt.x, c.y - pt.y); if (d < bd) { bd = d; best = i; } }
+  if (best < 0 || bd > V.r || bd < 1e-6) return pt;
+  const c = p!.vortices![best], s = Math.min(bd, V.maxBend * (1 - bd / V.r)) / bd;
+  return { x: pt.x + (c.x - pt.x) * s, y: pt.y + (c.y - pt.y) * s };
+}
+
+/** 이 점이 들어 있는 소용돌이 눈 번호, 없으면 −1 */
+export function eyeOf(p: MapPattern | null | undefined, pt: Point, t: number) {
+  for (const i of vortexAlive(p, t)) { const c = p!.vortices![i]; if (Math.hypot(c.x - pt.x, c.y - pt.y) <= P().vortex.eye) return i; }
+  return -1;
+}
+
+/** 갇힌 커서: i번 눈 안으로 (밖이면 테두리 안쪽에 붙음) */
+export function trapIn(p: MapPattern, i: number, pt: Point): Point {
+  const c = p.vortices![i], r = P().vortex.eye - 1, d = Math.hypot(pt.x - c.x, pt.y - c.y);
+  return d <= r ? pt : { x: c.x + (pt.x - c.x) * (r / d), y: c.y + (pt.y - c.y) * (r / d) };
 }
 
 /** 빙판: 목표를 스프링으로 따라간다 (멈춰도 조금 지나쳤다 돌아옴). 16ms 이하로 쪼개 계산, 속도는 초당 */

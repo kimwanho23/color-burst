@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, COMBOS, COLORS, DEFAULT_RULES, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
@@ -86,6 +86,8 @@ const canPause = () => { const m = me(); return !!room && !!m && (room.solo || m
 /** 맵 패턴 (경고 중이거나 나와 있는 것)과 사라진 가시 공 */
 let mapPattern: MapPattern | null = null;
 let popped = new Set<number>();
+/** 두 번째 소용돌이 경고음을 냈는지 */
+let vortexWarnHeard = false;
 /** 일시정지가 저절로 풀리기 시작하는 시각, 풀려서 다시 시작하는 시각 (카운트다운 중) */
 let pauseUntil = 0, resumeAt = 0;
 
@@ -889,7 +891,14 @@ function frame() {
   const aura = live && gameCursor.pos ? auraUnder(gameCursor.pos, now) : null;
   cursorMode = live && m ? cursorModeOf(m, now) ?? (aura ? {} : null) : null;
   const fx = live && mapPattern ? { pattern: mapPattern, t: now } : null;
+  const wasTrapped = gameCursor.trapped;
   gameCursor.frame(cursorMode, dt * 1000, !!aura, fx);
+  // 소용돌이에 갇힘: 글자·소리
+  if (wasTrapped < 0 && gameCursor.trapped >= 0 && gameCursor.pos) { sfx.aura(); renderer.text(gameCursor.pos.x, gameCursor.pos.y - 40, '갇힘!', '#d4bcff', 1.1); }
+  // 두 번째 소용돌이 미리보기가 시작되면 작은 경고음
+  const vw = live && mapPattern ? vortexWarned(mapPattern, now).includes(1) : false;
+  if (vw && !vortexWarnHeard) sfx.laserWarn();
+  vortexWarnHeard = vw;
   if (aura) gameCursor.pull(aura, RULES.aura.pullSpeed * dt);
   updateHud(now);
   renderer.draw({
@@ -910,6 +919,7 @@ function frame() {
     myAura: !!aura,
     pattern: mapPattern,
     popped,
+    trapped: gameCursor.trapped,
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),
   });
   requestAnimationFrame(frame);

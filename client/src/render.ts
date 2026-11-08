@@ -3,7 +3,7 @@
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
 import {
-  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE,
+  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, vortexAlive, vortexWarned,
   type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern,
 } from '@color-burst/shared';
 
@@ -97,6 +97,8 @@ export interface DrawState {
   /** 맵 패턴 (경고 중이면 반투명 미리보기), 사라진 가시 공 번호 */
   pattern?: MapPattern | null;
   popped?: ReadonlySet<number>;
+  /** 내 커서가 갇힌 소용돌이 번호 (없으면 −1) */
+  trapped?: number;
 }
 
 export class Renderer {
@@ -279,7 +281,7 @@ export class Renderer {
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
     for (const l of s.lasers ?? []) this.drawLaser(l, s.now, now);
-    if (s.pattern) this.drawPattern(s.pattern, s.popped ?? new Set(), s.now, now);
+    if (s.pattern) this.drawPattern(s.pattern, s.popped ?? new Set(), s.now, now, s.trapped ?? -1);
     const base = ctx.globalAlpha;
     // 발사 보호 구역 안의 원은 반투명 (아직 잡을 수 없음)
     const fade = (c: Circle) => { ctx.globalAlpha = isGuarded(c, s.now) ? base * 0.4 : base; };
@@ -471,7 +473,7 @@ export class Renderer {
 
   /** 내 게임 커서: 흰 십자 고리 (스턴이면 회색 + 도는 별), 넓은 손 범위(실선)·자석 범위(점선) */
   /** 맵 패턴: 경고 중에는 반투명 미리보기, 나와 있으면 실제 모양. 사라지기 직전 0.5초는 흐려진다 */
-  private drawPattern(p: MapPattern, popped: ReadonlySet<number>, t: number, frameNow: number) {
+  private drawPattern(p: MapPattern, popped: ReadonlySet<number>, t: number, frameNow: number, trapped = -1) {
     if (t < p.warnAt || t >= p.until) return;
     const ctx = this.ctx, R = RULES.patterns;
     const warn = t < p.at;
@@ -511,18 +513,30 @@ export class Renderer {
       ctx.beginPath(); ctx.moveTo(sg.a.x, sg.a.y); ctx.lineTo(sg.b.x, sg.b.y); ctx.stroke();
       ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(sg.a.x, sg.a.y); ctx.lineTo(sg.b.x, sg.b.y); ctx.stroke();
-    } else if (p.id === 'vortex' && p.vortex) {
-      const v = p.vortex, spin = reduceMotion ? 0 : frameNow / 400;
-      ctx.strokeStyle = '#b48cff'; ctx.lineWidth = 3;
-      for (let arm = 0; arm < 3; arm++) {
-        ctx.beginPath();
-        for (let k = 0; k <= 40; k++) {
-          const f = k / 40, a = spin + arm * (Math.PI * 2 / 3) + f * Math.PI * 3, rr = f * R.vortex.r * 0.6;
-          ctx[k ? 'lineTo' : 'moveTo'](v.x + Math.cos(a) * rr, v.y + Math.sin(a) * rr);
+    } else if (p.id === 'vortex' && p.vortices) {
+      // 나와 있는 것은 진하게, 생기기 전(경고)은 깜빡이는 반투명. 바깥 점선 = 끌림 구역, 안쪽 실선 = 눈 (갇히면 밝게)
+      const alive = new Set(vortexAlive(p, t)), warned = new Set(vortexWarned(p, t));
+      const pulse = 0.25 + 0.15 * Math.abs(Math.sin(frameNow / 120));
+      const spin = reduceMotion ? 0 : frameNow / 400;
+      p.vortices.forEach((v, i) => {
+        if (!alive.has(i) && !warned.has(i) && !(warn && i === 0)) return;
+        ctx.globalAlpha = alive.has(i) ? fade : pulse;
+        ctx.strokeStyle = '#b48cff'; ctx.lineWidth = 3;
+        for (let arm = 0; arm < 3; arm++) {
+          ctx.beginPath();
+          for (let k = 0; k <= 40; k++) {
+            const f = k / 40, a = spin + arm * (Math.PI * 2 / 3) + f * Math.PI * 3, rr = f * R.vortex.eye;
+            ctx[k ? 'lineTo' : 'moveTo'](v.x + Math.cos(a) * rr, v.y + Math.sin(a) * rr);
+          }
+          ctx.stroke();
         }
-        ctx.stroke();
-      }
-      ctx.setLineDash([10, 12]); ctx.beginPath(); ctx.arc(v.x, v.y, R.vortex.r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+        ctx.setLineDash([10, 12]); ctx.beginPath(); ctx.arc(v.x, v.y, R.vortex.r, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+        const caught = trapped === i;
+        ctx.strokeStyle = caught ? '#ffd43b' : '#d4bcff'; ctx.lineWidth = caught ? 6 : 4;
+        if (caught && !reduceMotion) { ctx.shadowColor = '#ffd43b'; ctx.shadowBlur = 18; }
+        ctx.beginPath(); ctx.arc(v.x, v.y, R.vortex.eye, 0, Math.PI * 2); ctx.stroke();
+        ctx.shadowBlur = 0;
+      });
     } else if (p.id === 'ring') {
       // 안전 구역 밖(위험 구역)을 붉게
       const e = ringE(p, tt), cx = FIELD.w / 2, cy = FIELD.h / 2;

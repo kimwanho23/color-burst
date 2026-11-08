@@ -62,11 +62,12 @@ export const RULES = {
    * 패턴마다 유지 시간 ms와 모양·움직임 수치 (거리는 필드 단위, 속도는 초당)
    */
   patterns: {
-    warnMs: 1_500, startMs: 5_000, endQuietMs: 12_000,
+    warnMs: 3_000, startMs: 5_000, endQuietMs: 12_000,
     walls: { ms: 10_000, count: [2, 3], thick: 40, len: [300, 450], centerClear: 220 },
     spikes: { ms: 10_000, count: 3, r: 28, speed: 260, stunMs: 1_000 },
     bar: { ms: 9_000, len: 1100, thick: 36, degPerSec: 45 },
-    vortex: { ms: 8_000, r: 450, pull: 90, centerClear: 250 },
+    /** 소용돌이: 첫 번째 생성 secondAfterMs 뒤 하나 더 (그 전 warnMs 동안 미리보기). 끌림 구역 r 안이면 중심 쪽으로 최대 maxBend 쏠림, 눈 eye 안에 들어가면 끝까지 갇힘. 커서는 followMs로 부드럽게 따라감 */
+    vortex: { ms: 10_000, r: 380, eye: 170, maxBend: 120, secondAfterMs: 4_000, centerClear: 250, followMs: 80 },
     ice: { ms: 8_000, stiff: 40, damp: 6 },
     ring: { ms: 10_000, shrinkMs: 6_000, holdMs: 3_000, startE: 1.5, minE: 0.7, stunMs: 1_000 },
     fog: { ms: 8_000, count: 3, r: 220, speed: 60 },

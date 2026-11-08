@@ -81,13 +81,25 @@ test('GameCursor 벽: 빠르게 움직여도 벽을 뚫지 않고, 생길 때 �
   assert.ok(h.pos!.x < 500 || h.pos!.x > 540, '밖으로 밀려남');
 });
 
-test('GameCursor 소용돌이: 가만히 있어도 중심 쪽으로 끌림', (t) => {
-  clock(t);
-  const v = { id: 'vortex' as const, warnAt: -1500, at: 0, until: 8000, vortex: { x: 800, y: 450 } };
+test('GameCursor 소용돌이: 끌림 구역이면 쏠리고, 눈에 들어가면 끝날 때까지 갇힘 (안에서는 자유)', (t) => {
+  const c = clock(t);
+  const v = { id: 'vortex' as const, warnAt: -3000, at: 0, until: 10_000, vortices: [{ x: 400, y: 450 }, { x: 1300, y: 450 }] };
   const g = new GameCursor();
-  g.move({ x: 1000, y: 450 }, { x: 0, y: 0 });
-  for (let i = 0; i < 60; i++) g.frame(null, 16, false, { pattern: v, t: 100 + i * 16 });
-  assert.ok(g.pos!.x < 1000 - 60, `${g.pos!.x}`);
+  const step = (x: number, y: number, tt: number, n = 30) => { g.move({ x, y }, { x: 0, y: 0 }); for (let i = 0; i < n; i++) g.frame(null, 16, false, { pattern: v, t: tt + i * 16 }); };
+  step(700, 450, 100);
+  assert.ok(g.pos!.x < 700 && g.pos!.x > 600, `쏠림 ${g.pos!.x}`);
+  assert.equal(g.trapped, -1);
+  step(450, 450, 600);
+  assert.equal(g.trapped, 0, '눈에 들어가면 갇힘');
+  step(480, 500, 1100);
+  assert.deepEqual(round(g.pos), { x: 480, y: 500 }, '눈 안에서는 자유');
+  step(900, 450, 1600);
+  assert.ok(Math.hypot(g.pos!.x - 400, g.pos!.y - 450) < 170, '밖으로 못 나감');
+  // 끝나면 풀려 진짜 위치로 미끄러져 돌아옴
+  g.frame(null, 16, false, { pattern: v, t: 10_000 });
+  c.now += 1000;
+  g.frame(null, 16, false, { pattern: v, t: 10_100 });
+  assert.deepEqual([round(g.pos), g.trapped], [{ x: 900, y: 450 }, -1]);
 });
 
 test('GameCursor 빙판: 멈춘 뒤에도 조금 더 가다 돌아옴', (t) => {
@@ -105,7 +117,7 @@ test('GameCursor 빙판: 멈춘 뒤에도 조금 더 가다 돌아옴', (t) => {
 
 test('GameCursor 패턴 + 반대: 이동이 반대로, 패턴이 끝나면 미끄러져 거울 위치로', (t) => {
   const c = clock(t);
-  const v = { id: 'vortex' as const, warnAt: -1500, at: 0, until: 8000, vortex: { x: 100, y: 100 } }; // 멀리 있어 끌림 없음
+  const v = { id: 'walls' as const, warnAt: -3000, at: 0, until: 8000, walls: [{ x: 10, y: 10, w: 40, h: 40 }] }; // 멀리 있는 벽
   const g = new GameCursor();
   g.move({ x: 800, y: 450 }, { x: 0, y: 0 });
   g.frame({ invert: true }, 16, false, { pattern: v, t: 100 });
