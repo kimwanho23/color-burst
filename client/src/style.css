@@ -437,3 +437,45 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .cx-done { color: #1b1500; background: #ffd43b; }
 .cx-prog { color: var(--muted); border: 1px solid var(--line); }
 .cx-list > li.cx-mine { border-color: #ffd43b; }
+
+/* 점수판 칩 배지: 특별 카드·완성 조합 */
+.picks-mini .pk.badge { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; font: 800 10px var(--body); line-height: 16px; border-radius: 6px; }
+.picks-mini .pk.badge.sp { border-color: #ffd166; color: #ffd166; background: #2a0b10; }
+.picks-mini .pk.badge.cb { border-color: #ffd43b; color: #1b1500; background: #ffd43b; }
+.chip { cursor: pointer; }
+.chip.open { border-color: color-mix(in srgb, var(--fg) 40%, var(--line)); }
+
+/* 빌드 타일 (상대 빌드·점수판 팝업·결과) */
+.tiles { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; }
+.tiles li { position: relative; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 5px; border-radius: 9px; border: 1.5px solid var(--t0); background: var(--panel); color: var(--fg); font: 700 12px var(--body); cursor: help; }
+.tiles li span { white-space: nowrap; }
+.tiles li em { font: 800 10.5px var(--body); font-style: normal; color: var(--muted); }
+.tiles li i { font-style: normal; color: #ffd43b; font-size: 11px; }
+.tiles li.t1 { border-color: var(--t1); } .tiles li.t1 svg { color: var(--t1); }
+.tiles li.t2 { border-color: var(--t2); } .tiles li.t2 svg { color: var(--t2); }
+.tiles li.t3 { border-color: transparent; background: linear-gradient(var(--panel), var(--panel)) padding-box, var(--prism) border-box; } .tiles li.t3 svg { color: #ffd43b; }
+.tiles li.curse { border-color: var(--curse); background: var(--curse-bg); color: #ff8095; }
+.tiles li.special { border-color: #ffd166; background: #2a0b10; color: #ffd166; }
+.rank .tiles { margin-top: 4px; }
+.rank .tiles li { font-size: 11px; padding: 2px 6px 2px 4px; }
+
+/* 빌드 카드 */
+.bcard { display: flex; flex-direction: column; gap: 7px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 11px; }
+.bcard.me { border-color: color-mix(in srgb, var(--yellow) 50%, var(--line)); }
+.bhead { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.bhead b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brank { font: 700 12px var(--body); color: var(--muted); }
+.bscore { font: 400 18px var(--display); font-variant-numeric: tabular-nums; }
+.bcombos { display: flex; flex-wrap: wrap; gap: 5px; }
+.bcombos span { display: inline-flex; align-items: center; gap: 4px; font: 700 11.5px var(--body); color: #1b1500; background: #ffd43b; border-radius: 6px; padding: 1px 7px; }
+.bcard .hint { margin: 0; }
+.rivals { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 8px; }
+.bcard { min-width: 0; }
+
+/* 점수판 팝업 */
+.chippop { position: fixed; z-index: 30; width: min(340px, calc(100vw - 16px)); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); border-radius: 12px; }
+.chippop[hidden] { display: none; }
+.chip .pk { width: 21px; height: 21px; }
+.chip .pk.badge { width: auto; }
+/* 좁은 화면: 점수판 칩 아이콘이 점수를 가리지 않게 작게 */
+@media (max-width: 700px) { .chip .pk { width: 17px; height: 17px; } .chip .pk svg { width: 12px; height: 12px; } }

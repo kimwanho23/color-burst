@@ -8,7 +8,7 @@ import { closeCodex, openCodex } from './codex.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
-import { pickChips, renderPick } from './arcadeUI.ts';
+import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, icon, itemIcon } from './icons.ts';
 import { buffChips, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
 import { GameCursor, startCursorSync } from './cursor.ts';
@@ -94,6 +94,12 @@ let combosReady = false;
 let lastIron: number | null = null;
 /** 방을 나가면 조합 알림 기준을 비운다 (다른 방에 들어가 받은 첫 상태는 알리지 않음) */
 function resetComboNotice() { myCombos = new Set(); combosReady = false; lastIron = null; }
+/** 점수판 칩 빌드 카드: 보고 있는 사람, 눌러서 고정했는지 */
+let popFor: string | null = null, popPinned = false;
+const chipPop = document.createElement('div');
+chipPop.className = 'chippop';
+chipPop.hidden = true;
+document.body.appendChild(chipPop);
 let picked = false;
 /** 방금 끝난 라운드의 저주 결과 */
 let effects: RoundEffect[] = [];
@@ -283,6 +289,7 @@ $('startBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { 
 function resetToHome(err = '') {
   room = null; players = []; playing = false; circles.clear(); pending.clear();
   resetComboNotice();
+  closeChipPop();
   stopMusic();
   $('roomTag').hidden = true;
   $('netBanner').hidden = true;
@@ -648,6 +655,7 @@ socket.on('game:over', (d) => {
   $<HTMLButtonElement>('rematchBtn').hidden = !again;
   $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
   $('resultHint').textContent = again ? '' : '방장이 한 판 더를 누르면 바로 시작해요';
+  closeChipPop();
   show('result');
 });
 
@@ -736,8 +744,41 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
-  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [])}${buffChips(p, serverNow())}</div>`).join('');
+  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [])}${buffChips(p, serverNow())}</div>`).join('');
+  renderChipPop();
 }
+
+// 점수판 칩 빌드 카드: 마우스를 올리면 보이고, 누르면 고정 (다시 누르거나 바깥을 누르면 닫힘). 점수판을 다시 그려도 열린 채로
+function renderChipPop() {
+  const p = popFor ? players.find((x) => x.id === popFor) : undefined;
+  const chip = p ? $('scores').querySelector<HTMLElement>(`.chip[data-id="${p.id}"]`) : null;
+  if (!p || !chip) { closeChipPop(); return; }
+  chipPop.innerHTML = buildCard(p, rankOf(p, players), myId());
+  chipPop.hidden = false;
+  const r = chip.getBoundingClientRect();
+  chipPop.style.left = `${Math.max(8, Math.min(innerWidth - chipPop.offsetWidth - 8, r.left))}px`;
+  chipPop.style.top = `${r.bottom + 6}px`;
+}
+function closeChipPop() {
+  const had = popFor !== null;
+  popFor = null; popPinned = false; chipPop.hidden = true;
+  if (had) $('scores').querySelector('.chip.open')?.classList.remove('open');
+}
+$('scores').addEventListener('click', (e) => {
+  const chip = (e.target as HTMLElement).closest<HTMLElement>('.chip');
+  if (!chip) return;
+  e.stopPropagation();
+  if (popPinned && popFor === chip.dataset.id) { closeChipPop(); return; }
+  popFor = chip.dataset.id!; popPinned = true;
+  renderScores();
+});
+$('scores').addEventListener('pointerover', (e) => {
+  if (popPinned) return;
+  const id = (e.target as HTMLElement).closest<HTMLElement>('.chip')?.dataset.id;
+  if (id && id !== popFor) { popFor = id; renderScores(); }
+});
+$('scores').addEventListener('pointerleave', () => { if (!popPinned && popFor) { closeChipPop(); } });
+document.addEventListener('click', (e) => { if (popPinned && !chipPop.contains(e.target as Node)) closeChipPop(); });
 
 let lastBuffSec = 0;
 function updateHud(now: number) {
