@@ -287,10 +287,6 @@ export const PRESETS = {
     name: '느긋하게', desc: '천천히, 처음 하는 친구와 함께',
     rules: { ...DEFAULT_RULES, speed: 0.75, density: 0.75, roundSec: 90, comeback: true, missPenalty: false, laser: false, sabotage: false, mapPct: 0 },
   },
-  chaos: {
-    name: '카오스', desc: '모든 게 켜진 진정한 난장판',
-    rules: { ...DEFAULT_RULES, speed: 1.25, density: 1.3, feverMult: 5, rainbowPct: 10, comeback: true, chaos: true, mapPct: 80, themePct: 30, eventPct: 30, laserWidth: 30 },
-  },
   obstacle: {
     name: '장애물 코스', desc: '맵 패턴이 라운드마다 꼭 나와요',
     rules: { ...DEFAULT_RULES, mapPct: 100, sabotage: false },
@@ -299,7 +295,12 @@ export const PRESETS = {
     name: '정밀 사격', desc: '작은 원, 빈 곳 감점, 방해 없음',
     rules: { ...DEFAULT_RULES, circleScale: 0.75, missPenalty: true, mapPct: 0, sabotage: false, laser: false },
   },
-} as const satisfies Record<string, { name: string; desc: string; rules: RoomRules }>;
+  // 카오스는 맨 끝(커스텀 바로 앞)에, 붉은 경고와 함께
+  chaos: {
+    name: '카오스', desc: '모든 게 켜진 진정한 난장판', warn: '레이저 간격이 매우 짧아집니다!',
+    rules: { ...DEFAULT_RULES, speed: 1.25, density: 1.3, feverMult: 5, rainbowPct: 10, comeback: true, chaos: true, mapPct: 80, themePct: 30, eventPct: 30, laserWidth: 30 },
+  },
+} as const satisfies Record<string, { name: string; desc: string; warn?: string; rules: RoomRules }>;
 export type PresetId = keyof typeof PRESETS;
 
 /** 현재 규칙이 어떤 프리셋과 같은지. 다르면 null(사용자 설정) */

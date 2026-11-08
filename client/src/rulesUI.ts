@@ -72,7 +72,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <div class="lbl">방 규칙${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="presets">
       ${(Object.entries(PRESETS) as [PresetId, (typeof PRESETS)[PresetId]][]).map(([id, p]) =>
-        `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" ${dis}>${icon(UI[id], 20, 'pi')}<b>${p.name}</b><span>${p.desc}</span></button>`).join('')}
+        `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" ${dis}>${icon(UI[id], 20, 'pi')}<b>${p.name}</b><span>${p.desc}</span>${'warn' in p ? `<em class="pwarn">${p.warn}</em>` : ''}</button>`).join('')}
       <button type="button" class="preset custom" aria-pressed="${!current}" ${dis}>${icon(UI.custom, 20, 'pi')}<b>커스텀</b><span>고급 설정에서 직접 정한 규칙</span></button>
     </div>
     <details class="adv">
