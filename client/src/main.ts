@@ -220,6 +220,8 @@ $('createBtn').onclick = () => socket.emit('room:create', { name: getName(), key
 const openCodexHere = () => openCodex($('stage'), { rules: room ? rules : DEFAULT_RULES, picks: me()?.picks });
 $('codexBtn').onclick = $('codexBtn2').onclick = $('codexTop').onclick = openCodexHere;
 $('codexTop').innerHTML = `${icon(UI.codex, 16)}<span class="bt">도감</span>`;
+$('codexBtn').innerHTML = $('codexBtn2').innerHTML = `${icon(UI.codex, 16)}<span>도감</span>`;
+$('settingsClose').innerHTML = icon(UI.close, 18);
 $('soloBtn').onclick = () => { initAudio(); socket.emit('room:solo', { name: getName(), key: KEY }, entered); };
 const join = () => socket.emit('room:join', { code: codeInput.value, name: getName(), key: KEY }, entered);
 $('joinBtn').onclick = join;
@@ -257,7 +259,7 @@ function renderLobby() {
   $('codeBlock').hidden = room.solo;
   $('soloTitle').hidden = !room.solo;
   $('fillBotsRow').hidden = room.solo;
-  $('leaveBtn').textContent = room.solo ? '처음으로' : '방 나가기';
+  $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
   $('hostOpts').hidden = !host;
   $<HTMLInputElement>('fillBots').checked = room.fillBots;
   $('botLevel').innerHTML = LEVELS.map((l, i) => `<button type="button" data-l="${i}" aria-pressed="${room!.botLevel === i}">${i === 0 ? icon(UI.bot, 15) : ''}${i === 0 ? '봇 ' : ''}${l}</button>`).join('');

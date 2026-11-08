@@ -422,3 +422,18 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 
 /* 일시정지 횟수를 다 쓰면 흐리게 */
 .iconbtn.used { opacity: .45; }
+
+/* 보조 버튼: 아이콘 + 글자 (도감·방 나가기), 닫기 ✕ */
+.btn.iconlbl { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: 600 14px var(--body); padding: 9px 14px; border-radius: 12px; }
+.btn.iconlbl:hover { border-color: color-mix(in srgb, var(--fg) 35%, var(--line)); }
+#home .btn.iconlbl { align-self: center; }
+.btnrow { display: flex; gap: 8px; justify-content: center; }
+.btnrow .btn { flex: 1; min-width: 0; }
+.btn.ghost.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, var(--line)); }
+.btn.ghost.danger:hover { background: color-mix(in srgb, var(--red) 12%, var(--panel)); }
+.iconbtn.x { padding: 6px; border-radius: 999px; line-height: 0; }
+/* 도감 조합 탭: 내 진행도 */
+.cx-done, .cx-prog { margin-left: 8px; font: 700 11.5px var(--body); font-style: normal; border-radius: 6px; padding: 1px 6px; }
+.cx-done { color: #1b1500; background: #ffd43b; }
+.cx-prog { color: var(--muted); border: 1px solid var(--line); }
+.cx-list > li.cx-mine { border-color: #ffd43b; }
