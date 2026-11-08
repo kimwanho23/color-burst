@@ -46,9 +46,9 @@ test('무지개 사냥 레전드로 게이지가 차서 터진 피버도 방해 
 test('출발 신호 레전드: 일시정지한 만큼 창이 늦게 끝남', () => {
   const p = pl('p', 0, L('headStart'));
   startRound(p, 0, G);
-  shiftTimes(p, 5_000, 3_000); // 5초에 멈춰 3초 뒤 재개
-  assert.equal(extraMult(p, 12_000, [p]), LEGEND.headStartMult);
-  assert.equal(extraMult(p, 13_000, [p]), 1);
+  shiftTimes(p, 5_000, 3_000); // 5초에 멈춰 3초 뒤 재개 (레전드 15초 창 → 18초까지)
+  assert.equal(extraMult(p, 17_999, [p]), LEGEND.headStartMult);
+  assert.equal(extraMult(p, 18_000, [p]), 1);
   // 창이 끝난 뒤에 멈추면 그대로
   const q = pl('q', 0, L('headStart'));
   startRound(q, 0, G);

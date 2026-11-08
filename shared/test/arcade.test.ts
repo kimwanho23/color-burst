@@ -10,8 +10,8 @@ const two = (): [PlayerState, PlayerState] => [newPlayer('a', 'A', 0), newPlayer
 /** 정해진 순서로 값을 내는 난수 */
 const seq = (...v: number[]) => { let i = 0; return () => v[i++ % v.length]; };
 
-test('잭팟 확률 중첩 상한 50%', () => {
-  assert.equal(modsOf([{ id: 'jackpot', tier: 3 }, { id: 'jackpot', tier: 3 }]).jackpot, 50);
+test('잭팟 확률 중첩 상한 35%', () => {
+  assert.equal(modsOf([{ id: 'jackpot', tier: 3 }, { id: 'jackpot', tier: 3 }]).jackpot, 35);
 });
 
 test('jackpotMult: 확률을 넘으면 1, 터지면 ×1.5 / ×2 / ×3', () => {
@@ -62,9 +62,9 @@ test('reachOf·magnetOf: 능력 + 아이템, 능력 상한', () => {
   addBuff(c, 'wideHand', 5000, 0);
   assert.equal(reachOf(c, 0), 80);
   addBuff(c, 'magnet', 5000, 0);
-  assert.equal(magnetOf(c, 0), 90);
+  assert.equal(magnetOf(c, 0), 70);
   c.picks = [{ id: 'magnet', tier: 3 }];
-  assert.equal(magnetOf(c, 0), 240); // 레전드 240 + 아이템 90, 상한 240
+  assert.equal(magnetOf(c, 0), 180); // 레전드 180 + 아이템 70, 상한 180
 });
 
 test('groupPicks: 같은 증강은 하나로, 가장 높은 등급, 개수', () => {

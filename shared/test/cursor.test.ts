@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FIELD, RULES, auraAt, canLaserStun, holdLasers, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, cursorTarget, followCursor, relativeCursor, nextLaserIn,
+  FIELD, LEGEND, RULES, auraAt, canLaserStun, holdLasers, cursorActive, cursorModeOf, distToSegment, inAura, laserHits, lensWarp, modsOf, newPlayer, cursorTarget, followCursor, relativeCursor, nextLaserIn,
   pickMagnetTargets, rollLaser, rollVolley, slideBack, volleyHits, type Circle, type Point,
 } from '../src/index.ts';
 
@@ -109,7 +109,7 @@ test('nextLaserIn: 10~15초', () => {
 const at = (id: number, kind: Circle['kind'], x: number, y: number): Circle =>
   ({ id, kind, angle: Math.atan2(y - CY, x - CX), speed: Math.hypot(x - CX, y - CY), r: 40, born: 0 });
 
-test('pickMagnetTargets: 내 원만, 가까운 순, 최대 개수, 보호 구역·skip·범위 밖 제외', () => {
+test('pickMagnetTargets: 내 원·노란 원만(무지개 제외), 가까운 순, 최대 개수, 보호 구역·skip·범위 밖 제외', () => {
   const cur = { x: CX + 400, y: CY };
   const cs = [
     at(1, 0, CX + 450, CY), // 내 색, 50
@@ -120,15 +120,16 @@ test('pickMagnetTargets: 내 원만, 가까운 순, 최대 개수, 보호 구역
     at(6, 0, CX + 20, CY), // 가운데 보호 구역
   ];
   assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 2).map((c) => c.id), [2, 1]);
-  assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 5).map((c) => c.id), [2, 1, 5]);
-  assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 5, new Set([2])).map((c) => c.id), [1, 5]);
+  assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 5).map((c) => c.id), [2, 1]);
+  assert.deepEqual(pickMagnetTargets(cs, 0, cur, 1000, 90, 5, new Set([2])).map((c) => c.id), [1]);
   assert.deepEqual(pickMagnetTargets(cs, 0, { x: CX + 20, y: CY }, 1000, 90, 5).map((c) => c.id), []);
 });
 
-test('자석 능력 60 / 90 / 120 / 240(레전드 = 에픽 × 2), 상한 240, 아이템 +90', () => {
-  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'magnet', tier: t as 0 }]).magnet), [60, 90, 120, 240]);
-  assert.equal(modsOf([{ id: 'magnet', tier: 3 }, { id: 'magnet', tier: 3 }]).magnet, 240);
-  assert.equal(RULES.items.magnet, 90);
+test('자석 능력 45 / 65 / 90 / 180(레전드 = 에픽 × 2), 상한 180, 아이템 +70, 0.4초, 1초 1개(레전드 2)', () => {
+  assert.deepEqual([0, 1, 2, 3].map((t) => modsOf([{ id: 'magnet', tier: t as 0 }]).magnet), [45, 65, 90, 180]);
+  assert.equal(modsOf([{ id: 'magnet', tier: 3 }, { id: 'magnet', tier: 3 }]).magnet, 180);
+  assert.equal(RULES.items.magnet, 70);
+  assert.deepEqual([RULES.magnet.pullMs, RULES.magnet.perSec, LEGEND.magnetPerSec], [400, 1, 2]);
 });
 
 test('cursorActive: 탭이 숨겨졌거나 창이 포커스를 잃으면 커서를 보내지 않는다', () => {

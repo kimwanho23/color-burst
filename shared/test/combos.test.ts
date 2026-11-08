@@ -43,8 +43,8 @@ test('행운아: 잭팟 확률 +10 / 변두리: 가장자리 커서면 자석 ×
   const n = pl(0, 'jackpot');
   assert.equal(resolveClaim(n, 0, [n], 100, G, { rand: () => 0.12 }).jackpot, 1);
   const m = pl(0, 'edge', 'magnet');
-  assert.equal(magnetOf(m, 0, { x: 800, y: 450 }), 60);
-  assert.equal(magnetOf(m, 0, { x: 30, y: 450 }), 90);
+  assert.equal(magnetOf(m, 0, { x: 800, y: 450 }), 45);
+  assert.equal(magnetOf(m, 0, { x: 30, y: 450 }), 67.5);
 });
 
 test('철옹성: 끊길 때마다 80% 유지 (보험 20%보다 많이), 기세면 안 줄어듦', () => {

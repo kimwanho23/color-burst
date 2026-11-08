@@ -19,7 +19,7 @@ test('legendOf: 레전드로 고른 능력만, 저주·특별 카드 제외', ()
 });
 
 test('레전드 수치 = 에픽 × 2 (상한 안에서)', () => {
-  for (const id of ['picky', 'rainbowHunt', 'headStart', 'jackpot', 'overcharge', 'hunter', 'counterPro', 'jammer', 'wideHand', 'magnet'] as AbilityId[]) {
+  for (const id of ['picky', 'rainbowHunt', 'jackpot', 'overcharge', 'hunter', 'counterPro', 'jammer', 'wideHand', 'magnet'] as AbilityId[]) {
     const a = ABILITY[id];
     assert.equal(a.values[3], Math.min(a.cap ?? Infinity, a.values[2] * 2), id);
   }
@@ -51,11 +51,12 @@ test('콤보 장인 레전드: 콤보 보너스 +15, 폭주 레전드는 피버 
   assert.equal(resolveClaim(f, 0, [f], 100, G).gained, Math.round((3 + 10) * feverMultOf(f, G)));
 });
 
-test('출발 신호 레전드: 라운드 처음 10초 ×1.5', () => {
+test('출발 신호 레전드: 창(레전드 15초) 동안 ×1.5, 시작 보너스 점수 없음', () => {
   const p = pl('a', 0, 'headStart');
   startRound(p, 1000, G);
-  assert.equal(extraMult(p, 10_999, [p]), 1.5);
-  assert.equal(extraMult(p, 11_000, [p]), 1);
+  assert.equal(p.score, 0);
+  assert.equal(extraMult(p, 15_999, [p]), 1.5);
+  assert.equal(extraMult(p, 16_000, [p]), 1);
 });
 
 test('잭팟 레전드: 배율 ×2~×5', () => {
@@ -120,8 +121,9 @@ test('방패·강탈·반격 전문가 레전드', () => {
   const r = resolveClaim(a, 1, [a, b], 100, G);
   assert.deepEqual([a.score, b.score, r.drained], [10 - 3 + 1, 53, 3]);
   const c = pl('c', 0, 'plunder'), d = newPlayer('d', 'D', 1);
+  // 강탈 레전드 5%: 상대 라운드 점수 100의 5% = 5, 1등이라 ×2 = 10
   c.score = 0; d.score = 100;
-  assert.equal(resolveClaim(c, 1, [c, d], 100, G).plundered, 8);
+  assert.equal(resolveClaim(c, 1, [c, d], 100, G).plundered, 10);
   const e = pl('e', 0, 'counterPro'), f = newPlayer('f', 'F', 1);
   f.markedUntil = 10_000; f.combo = 5;
   const rc = resolveClaim(e, 1, [e, f], 100, G);

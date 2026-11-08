@@ -220,10 +220,10 @@ test('레이저: 0.5초 넘게 소식 없는 커서는 안 맞는다', (t) => {
   room.destroy();
 });
 
-test('자석: 커서 근처 내 원을 1초에 2개까지 끌어와 0.25초 뒤 잡는다, 끌리는 원은 남이 못 잡음', () => {
+test('자석: 커서 근처 내 원을 1초에 2개까지(레전드) 끌어와 0.4초 뒤 잡는다(점수 70%), 끌리는 원은 남이 못 잡음', () => {
   const { room, me, circles } = playingRoom();
   const other = room.players.find((p) => p.id !== me.id)!;
-  me.picks = [{ id: 'magnet', tier: 0 }]; // 반경 60
+  me.picks = [{ id: 'magnet', tier: 3 }]; // 반경 180, 1초 2개
   const now = Date.now();
   room.cursor(me.id, { x: CX + 300, y: CY });
   for (const [id, x] of [[81, CX + 320], [82, CX + 340], [83, CX + 280]] as const) circles.set(id, slowAt(id, me.color, x, CY, now));
@@ -234,7 +234,10 @@ test('자석: 커서 근처 내 원을 1초에 2개까지 끌어와 0.25초 뒤 
   room.click(other.id, { circleId: 81, x: CX + 320, y: CY });
   assert.equal(other.score, 0);
   priv(room).updatePulls(now + 300);
-  assert.equal(me.score, 12); // 원 2개 × 3점 × 사이 구역 ×2
+  assert.equal(me.score, 0); // 아직 끌려오는 중 (0.4초)
+  priv(room).updatePulls(now + 450);
+  assert.equal(me.score, 8); // 원 2개 × round(3점 × 사이 구역 ×2 × 70%) = 2 × 4
+  assert.equal(me.combo, 0); // 자석은 콤보를 올리지 않음
   assert.equal(circles.has(82), true);
   // 1.1초 뒤에도 커서를 계속 움직이고 있다고 본다 (커서가 오래되면 끌지 않음)
   (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors.set(me.id, { x: CX + 300, y: CY, at: now + 1100 });
@@ -291,7 +294,7 @@ test('라운드가 끝날 때 끌려오던 원은 끄는 사람이 잡은 것으
   r.circles.set(95, slowAt(95, me.color, CX + 300, CY, now));
   r.pulls.set(95, { circleId: 95, by: me.id, from: { x: CX + 300, y: CY }, at: now, ms: 250 });
   r.endRound();
-  assert.equal(me.score, 6); // 3점 × 사이 구역 ×2 (가운데에서 300)
+  assert.equal(me.score, 4); // round(3점 × 사이 구역 ×2 × 자석 70%) (가운데에서 300)
   assert.equal(r.pulls.size, 0);
 });
 
@@ -504,6 +507,7 @@ test('황금 원은 직접 클릭으로만, 다른 원처럼 배율 (피버·아
   room.click(me.id, { circleId: 91, x: 906, y: 550 });
   // 20 × 피버 3 × 점수 2배 2 × 사이 구역 2 = 240, 콤보·게이지 그대로
   assert.deepEqual([me.score, me.combo, me.fever, circles.has(91)], [240, 4, 30, false]);
+  assert.deepEqual([me.stats.src.gold, me.stats.src.fever], [240, 240]); // 점수 출처: 황금 원 (피버 중)
   assert.ok(sent.includes('gold:got'));
   // 넓은 손 범위 안이어도 안 잡힘
   circles.set(92, gold(92));
@@ -760,7 +764,7 @@ test('헛손질 보정은 지연 보정 위치로 판정 (0.1초 전 자리를 �
   room.destroy();
 });
 
-test('잭팟 레전드는 보스 타격에도 ×2~×5', (t) => {
+test('잭팟 레전드는 보스 타격에도 ×2~×5 (보스도 점수 구역 배율)', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
   me.picks = [{ id: 'jackpot', tier: 3 }, { id: 'hammer', tier: 2 }]; // 타격 1 + 3 = 4
@@ -769,7 +773,7 @@ test('잭팟 레전드는 보스 타격에도 ×2~×5', (t) => {
   t.mock.method(Math, 'random', () => 0.2); // 잭팟 터짐(0.2 < 0.3), 첫 배율 (일반 1.5, 레전드 2)
   const p0 = circlePosOf(boss, now);
   room.click(me.id, { circleId: 95, x: p0.x, y: p0.y });
-  assert.equal(me.score, 8);
+  assert.equal(me.score, 24); // 타격 4 × 피해 1 × 가장자리 ×3 × 잭팟 ×2
   room.destroy();
 });
 
@@ -1063,4 +1067,46 @@ test('리뷰: 철옹성이면 오오라에서도 콤보가 80%만 남음', () =>
   (room as unknown as { updateAura(now: number): void }).updateAura(now);
   assert.equal(me.combo, 8);
   room.destroy();
+});
+
+// ---------- 밸런스 정리 · 보스 빌드 ----------
+test('2장 차례: 꼴찌의 첫 묶음엔 등급 보장, 첫 장을 고른 뒤 새 3장엔 보장 없음', (t) => {
+  const { room, me, other, r } = arcadeRoom();
+  t.after(() => room.destroy());
+  me.score = 900; other.score = 1000; // 꼴찌지만 역전 기회(60% 미만)는 아님
+  t.mock.method(Math, 'random', () => 0); // 등급은 늘 가장 낮게 (노말 제외라 레어)
+  openPick(r, 4); // 4라운드 뒤: 보장 레전드, 2장
+  const o = r.offers.get(me.id)!;
+  const plain = (cs: Pick[]) => cs.filter((c) => !isCurse(c.id) && !isSpecial(c.id));
+  assert.equal(me.comeback, false);
+  assert.equal(plain(o.options).filter((c) => c.tier === 3).length, 1);
+  const k = o.options.findIndex((c) => !isCurse(c.id));
+  room.choose(me.id, k);
+  assert.equal(o.need, 1);
+  assert.ok(plain(o.options).every((c) => c.tier < 3), '두 번째 묶음은 보장 없음');
+});
+
+test('화면 밖으로 나간 보스는 독식·막타 없음, 피해 기록도 지워짐', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  // 가운데 보호 구역 밖(오른쪽 300)에 거의 멈춰 있는 보스
+  const b: Circle = { ...slowAt(96, 'boss', CX + 300, CY, now), boss: 'normal', r: 90, hp: 24, maxHp: 24 };
+  circles.set(96, b);
+  const p0 = circlePosOf(b, now);
+  for (let i = 0; i < 13; i++) room.click(me.id, { circleId: 96, x: p0.x, y: p0.y });
+  const hits = (room as unknown as { bossHits: Map<number, Map<string, number>> }).bossHits;
+  assert.ok((hits.get(96)?.get(me.id) ?? 0) >= 12, '절반 넘게 깎음');
+  const before = me.score;
+  sent.length = 0;
+  b.born = now - 100_000_000; b.speed = 1000; // 이미 화면 밖
+  // startAt을 0으로 당겨 둔 방이라, 점수 기록·원 생성·보스 예약이 한꺼번에 몰리지 않게 막고 한 틱만 돌린다
+  const tp = room as unknown as { tick(): void; nextSample: number; lastSpawn: number; bossQueue: number[]; goldQueue: number[] };
+  tp.nextSample = Infinity; tp.lastSpawn = Date.now(); tp.bossQueue = []; tp.goldQueue = [];
+  tp.tick();
+  assert.equal(circles.has(96), false);
+  assert.equal(hits.has(96), false);
+  assert.ok(sent.includes('boss:escaped'));
+  assert.ok(!sent.includes('boss:killed'));
+  assert.equal(me.score, before);
 });
