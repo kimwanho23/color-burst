@@ -117,3 +117,26 @@ test('GameCursor 패턴 + 반대: 이동이 반대로, 패턴이 끝나면 미�
   g.frame({ invert: true }, 16, false, { pattern: v, t: 8100 });
   assert.deepEqual(round(g.pos), { x: 700, y: 450 }, '진짜 900의 거울 위치');
 });
+
+test('리뷰: 벽은 진짜 위치를 따라가며 막힐 뿐, 마우스를 되돌리면 어긋남 없이 진짜 위치로', (t) => {
+  clock(t);
+  const g = new GameCursor();
+  g.move({ x: 400, y: 450 }, { x: 0, y: 0 });
+  g.frame(null, 16, false, { pattern: walls, t: 100 });
+  g.move({ x: 700, y: 450 }, { x: 300, y: 0 }); // 벽 너머로 밀어도
+  g.frame(null, 16, false, { pattern: walls, t: 116 });
+  assert.ok(g.pos!.x < 500);
+  g.move({ x: 400, y: 450 }, { x: -300, y: 0 }); // 되돌리면
+  g.frame(null, 16, false, { pattern: walls, t: 132 });
+  assert.deepEqual(round(g.pos), { x: 400, y: 450 }, '진짜 위치 그대로 (어긋남 쌓이지 않음)');
+});
+
+test('리뷰: 맵 패턴 중 오오라에 끌려도 벽 안으로 들어가지 않음', (t) => {
+  clock(t);
+  const g = new GameCursor();
+  g.move({ x: 480, y: 450 }, { x: 0, y: 0 });
+  g.frame(null, 16, false, { pattern: walls, t: 100 });
+  for (let i = 0; i < 20; i++) { g.pull({ x: 600, y: 450 }, 10); g.frame(null, 16, true, { pattern: walls, t: 116 + i * 16 }); }
+  g.pull({ x: 600, y: 450 }, 10);
+  assert.ok(g.pos!.x < 500 || g.pos!.x > 540, `벽 밖 ${g.pos!.x}`);
+});

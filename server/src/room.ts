@@ -114,6 +114,9 @@ export class Room {
   private pullLog = new Map<string, number[]>();
   /** 플레이어 id → 마지막으로 오오라 감점을 받은 시각 */
   private auraLast = new Map<string, number>();
+  /** 오오라 안에 있는 사람, 오오라로 피버가 반감된 시각 (들락날락해도 한 번만) */
+  private auraIn = new Set<string>();
+  private auraHalvedAt = new Map<string, number>();
   // ---------- 발사 패턴 ----------
   /** 다음 웨이브 시점(판 시작 후 ms) */
   private nextWaveAt = 0;
@@ -385,8 +388,9 @@ export class Room {
       if (d.circleId !== null) this.rejectTo(id, d.circleId);
       return;
     }
-    // 벽·회전 막대 안을 누르면 아무 일 없음 (커서가 들어갈 수 없는 곳, 빈 곳 감점도 없음)
-    if (blockedAt(this.pattern, d, now)) {
+    // 벽·회전 막대 안을 누르면 아무 일 없음 (커서가 들어갈 수 없는 곳, 빈 곳 감점도 없음).
+    // 지연 보정: 최근 LAG_WINDOW_MS 동안 계속 막혀 있던 곳만 (막 덮친 막대에 밀리는 사람의 클릭은 받아 줌)
+    if (this.blockedAll(d, now)) {
       if (d.circleId !== null) this.rejectTo(id, d.circleId);
       return;
     }
@@ -432,6 +436,12 @@ export class Room {
     }
   }
 
+  /** 지연 시간 동안 줄곧 벽·막대 안이었는지 */
+  private blockedAll(pt: Point, now: number) {
+    for (let dt = 0; dt <= LAG_WINDOW_MS; dt += 25) if (!blockedAt(this.pattern, pt, now - dt)) return false;
+    return true;
+  }
+
   /** 맵 패턴 지우기 (라운드 시작·끝, 게임 끝) */
   private clearPattern() {
     this.pattern = null;
@@ -458,7 +468,7 @@ export class Room {
     for (const p of this.players) {
       const cur = this.freshCursor(p.id, now);
       if (p.bot || !cur) continue;
-      let by: 'spike' | 'ring' | null = null, ms = 0;
+      let by: 'spike' | 'ring' | null = null, ms = -1;
       if (pt.id === 'spikes') {
         const i = spikeHit(pt, cur, now, this.popped);
         if (i < 0) continue;
@@ -469,7 +479,8 @@ export class Room {
       } else if (inRingDanger(pt, cur, now)) {
         by = 'ring'; ms = hazardStun(p, now, R.ring.stunMs, this.G, this.players);
       }
-      if (by && ms > 0) { this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by }); changed = true; }
+      if (by && ms >= 0) changed = true;
+      if (by && ms > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by });
     }
     if (changed) this.emitPlayers();
   }
@@ -492,10 +503,16 @@ export class Room {
     let changed = false;
     for (const p of this.players) {
       const cur = this.freshCursor(p.id, now);
-      if (p.bot || !cur || !this.auraUnder(cur, now)) { this.auraLast.delete(p.id); continue; }
+      // 벗어나도 마지막 적용 시각은 남겨 둬서, 경계를 들락날락해도 tickMs마다 한 번만
+      if (p.bot || !cur || !this.auraUnder(cur, now)) { this.auraIn.delete(p.id); continue; }
+      // 들어갈 때 피버 반감 (halveCooldownMs 안에는 다시 안 함)
+      if (!this.auraIn.has(p.id)) {
+        this.auraIn.add(p.id);
+        const h = this.auraHalvedAt.get(p.id);
+        if ((h === undefined || now - h >= A.halveCooldownMs) && halveFever(p, now)) { this.auraHalvedAt.set(p.id, now); changed = true; }
+      }
       const last = this.auraLast.get(p.id);
       if (last !== undefined && now - last < A.tickMs) continue;
-      if (last === undefined) halveFever(p, now);
       this.auraLast.set(p.id, now);
       addFever(p, -A.feverLoss, now, this.G, this.players);
       p.combo = Math.floor((p.combo * A.comboKeepPct) / 100);
@@ -670,6 +687,8 @@ export class Room {
     this.pullLog.clear();
     this.cursors.clear();
     this.auraLast.clear();
+    this.auraIn.clear();
+    this.auraHalvedAt.clear();
     this.spawnQueue = [];
     this.pausedAt = 0;
     this.pausedBy = null;
@@ -984,9 +1003,11 @@ export class Room {
         if (p.bot || l.hit.has(p.id) || !cur || !volleyHits(cur, l.lines, this.G.laserHalf)) continue;
         l.hit.add(p.id);
         // 위험 스턴 공통: 철벽·무적 시간, 방해 내성, 피버 중이면 피버 절반
-        if (!hazardStun(p, now, L.stunMs, this.G, this.players)) continue;
+        const r = hazardStun(p, now, L.stunMs, this.G, this.players);
+        if (r < 0) continue;
+        // 스턴이 없어도(완전 면역) 피버 게이지가 바뀌었을 수 있어 상태를 보낸다
         stunned = true;
-        this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
+        if (r > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
       }
     }
     if (stunned) this.emitPlayers();

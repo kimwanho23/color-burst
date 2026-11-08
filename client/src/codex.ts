@@ -1,5 +1,5 @@
 /** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, COMBOS, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, SPECIALS, TIERS, comboProgress, type AbilityCategory, type Pick, type RoomRules } from '@color-burst/shared';
+import { ABILITIES, ABILITY, COMBOS, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, comboProgress, type AbilityCategory, type Pick, type RoomRules } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, icon, itemIcon } from './icons.ts';
 import { scoreTable } from './rulesUI.ts';
 
@@ -16,7 +16,7 @@ const BOSSES: [string, string][] = [
   ['일반', '여럿이 함께 때려 잡는 큰 원. 때릴 때 +1, 막타 +20, 가장 많이 때린 사람 +5'],
   ['방어형', '주기적으로 보호막을 두른다. 보호막 중에는 때려도 막힘(0점)'],
   ['공격형', '주기적으로 붉어진다. 붉을 때 때리면 감점(라운드 안에서 때린 횟수만큼 커짐)'],
-  ['이동형', '작고 빠르며 벽에서 튕긴다. 둘레의 보랏빛 오오라에 커서가 들어가면 보스 쪽으로 끌리고 0.5초마다 −1, 오오라를 클릭하면 −2'],
+  ['이동형', `작고 빠르며 벽에서 튕긴다. 둘레의 보랏빛 오오라에 커서가 들어가면 보스 쪽으로 끌리고 ${RULES.aura.tickMs / 1000}초마다 피버 게이지 −${RULES.aura.feverLoss}, 콤보 ${100 - RULES.aura.comboKeepPct}% 감소 (피버 중이면 들어갈 때 남은 피버 시간 절반)`],
   ['황금 원 (보스 아님)', '작고 아주 빠르게 벽에서 튕기는 금빛 원. 한 판에 1~3번, 5초 뒤 사라짐. 직접 클릭으로 잡으면 +20 고정 (배율 없음)'],
 ];
 

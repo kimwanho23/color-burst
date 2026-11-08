@@ -72,7 +72,7 @@ export const RULES = {
     fog: { ms: 8_000, count: 3, r: 220, speed: 60 },
   },
   /** 이동형 보스 오오라: 몸통 밖 반경 +extra, 커서를 초당 pullSpeed로 끌고, tickMs마다 −touchPenalty, 클릭하면 −clickPenalty */
-  aura: { extra: 80, pullSpeed: 120, tickMs: 1_000, feverLoss: 15, comboKeepPct: 70 },
+  aura: { extra: 80, pullSpeed: 120, tickMs: 1_000, feverLoss: 15, comboKeepPct: 70, halveCooldownMs: 3_000 },
   /**
    * 점수 구역: 가운데에서의 타원 거리 e = √(((x−800)/800)² + ((y−450)/450)²)로 나눈다.
    * e < bounds[0] 중앙, e < bounds[1] 사이, 그 밖은 가장자리. 일반 원 점수에 mult를 곱한다
@@ -490,6 +490,8 @@ export interface PlayerState {
   reboundUsed: boolean;
   /** 철옹성 조합: 이번 라운드에 남은 콤보 끊김 막기 */
   ironLeft: number;
+  /** 위험 피격 무적이 끝나는 시각 (스턴이 없어도 맞으면 생김) */
+  hazardUntil?: number;
   /** 이번 게임에 남은 일시정지 (멀티) */
   pausesLeft: number;
   /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
@@ -670,10 +672,13 @@ export function halveFever(p: PlayerState, now: number) {
  */
 export function hazardStun(p: PlayerState, now: number, baseMs: number, G: GameRules, players: PlayerState[]) {
   const m = modsOf(p.picks);
-  if (m.fortress || now < p.stunUntil + RULES.laser.immuneMs) return 0;
+  if (m.fortress || now < p.stunUntil + RULES.laser.immuneMs || now < (p.hazardUntil ?? 0)) return -1;
+  const ms = Math.max(0, baseMs * (1 - m.laserProof / 100));
+  // 스턴이 없어도(완전 면역) 무적 시간을 둔다: 링처럼 계속 닿아 있어도 한 번만
+  p.hazardUntil = now + ms + RULES.laser.immuneMs;
+  // 피버 반감을 먼저 (방해 내성 레전드 +20으로 막 터진 피버는 줄지 않게), 완전 면역이면 반감 없음
+  if (ms > 0) halveFever(p, now);
   if (hasLegend(p, 'laserProof')) addFever(p, LEGEND.laserFever, now, G, players, true);
-  halveFever(p, now);
-  const ms = baseMs * (1 - m.laserProof / 100);
   if (ms <= 0) return 0;
   p.stunUntil = now + ms;
   return ms;

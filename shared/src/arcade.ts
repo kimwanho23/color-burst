@@ -269,7 +269,7 @@ export const SPECIALS: readonly AbilityDef[] = ([
   ['chaser', '추격자', `모든 구역 점수 배율 +${S.chaserAdd}`],
   ['momentum', '기세', `콤보가 끊기지 않고, 콤보 보너스가 ${S.momentumEvery}콤보마다`],
   ['allHands', '만능 손', '남의 색 원도 내 색 원처럼 점수, 견제 페널티·표적 없음'],
-  ['fortress', '철벽', '견제(콤보 끊김·강탈·흡혈)·레이저·방해 아이템에 걸리지 않음'],
+  ['fortress', '철벽', '견제(콤보 끊김·강탈·흡혈)·레이저·위험 패턴·방해 아이템에 걸리지 않음'],
   ['chainBlast', '연쇄 폭발', `원을 잡으면 ${Math.round(S.chainChance * 100)}% 확률로 반지름 ${S.chainR} 안의 내 원도 함께`],
   ['bossFeast', '막타 독식', `보스에게 주는 피해 ${S.feastMult}배, 막타 점수 ${S.feastMult}배`],
   ['lastFlame', '마지막 불꽃', `라운드 마지막 ${sec(S.flameMs)} 동안 점수 ×${S.flameMult}`],

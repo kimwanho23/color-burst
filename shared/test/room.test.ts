@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { RULES, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type MapPattern, type Pick } from '../src/index.ts';
+import { RULES, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type MapPattern, type Pick } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -1011,5 +1011,39 @@ test('맵 패턴: 아케이드 라운드가 끝나면 지워지고 다음 라운
   r.popped.add(0);
   r.endRound();
   assert.deepEqual([r.pattern, r.pendingPattern, r.popped.size], [null, null, 0]);
+  room.destroy();
+});
+
+test('리뷰: 오오라를 벗어났다 1초 안에 다시 들어와도 콤보 감소·피버 반감은 한 번', () => {
+  const { room, me, circles } = playingRoom();
+  const now = Date.now();
+  circles.set(77, runnerAt(now));
+  const pos = circlePosOf(circles.get(77)!, now);
+  me.combo = 100; me.feverUntil = now + 8000;
+  const cursors = (room as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors;
+  const r = room as unknown as { updateAura(now: number): void };
+  for (let t = 0; t < 1000; t += 100) {
+    const inside = (t / 100) % 2 === 0;
+    cursors.set(me.id, { x: pos.x + (inside ? 100 : 400), y: pos.y, at: now + t });
+    r.updateAura(now + t);
+  }
+  assert.equal(me.combo, 70);
+  assert.equal(me.feverUntil, now + 4000);
+  room.destroy();
+});
+
+test('리뷰: 회전 막대가 지연 시간 안에 막 덮친 곳의 클릭은 받아 줌', () => {
+  const { room, me } = mapRoom(0);
+  const r = mp(room);
+  (room as unknown as { startAt: number }).startAt = 0;
+  const now = Date.now();
+  // 막대가 0°(가로)에서 출발: 30ms 전에는 막대 밖이던 점이 지금은 막대 안
+  r.pattern = { id: 'bar', warnAt: now - 3000, at: now - 1000, until: now + 8000, bar: { cx: 800, cy: 450, a0: 0 } };
+  const ang = (45 * Math.PI / 180) * (1000 / 1000), rho = 400;
+  const inNow = { x: 800 + Math.cos(ang) * rho, y: 450 + Math.sin(ang) * rho - 15 };
+  assert.ok(blockedAtPub(r.pattern, inNow, now));
+  me.combo = 5;
+  room.click(me.id, { circleId: null, x: inNow.x, y: inNow.y });
+  assert.equal(me.stats.misses, 1, '막대에 계속 덮여 있던 게 아니면 평소처럼 처리 (여기선 빈 곳)');
   room.destroy();
 });
