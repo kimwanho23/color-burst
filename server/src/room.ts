@@ -355,8 +355,9 @@ export class Room {
     // 카드 id가 다르면(두 장 차례에 빠르게 두 번 누름 등) 무시
     if (!o || !p || o.chosen || !pick || (cardId !== undefined && pick.id !== cardId)) return;
     applyPick(p, pick);
-    // 두 장 고르는 차례: 새 카드를 다시 깔아 한 장 더 (이벤트 선물·저주 배달은 첫 번째에만)
+    // 두 장 고르는 차례: 새 카드를 다시 깔아 한 장 더 (이벤트 선물·저주 배달·꼴찌 등급 보장은 첫 번째에만)
     o.need--;
+    o.firstDone = true;
     if (o.need > 0) {
       o.extra = { gift: false, curse: false };
       o.options = this.roll(p, o);
@@ -763,7 +764,7 @@ export class Room {
       const allLegend = p.legendNext;
       p.legendNext = false;
       const extra: RollExtra = { gift: ev?.giftTo === p.id, curse: ev?.curseTo === p.id };
-      const o: Offer = { options: [], rerolls: ARCADE.rerollsPerPick, need: ARCADE.picksPerRound[Math.min(k, ARCADE.picksPerRound.length - 1)], chosen: false, last, comeback: p.comeback, allLegend, extra };
+      const o: Offer = { options: [], rerolls: ARCADE.rerollsPerPick, need: ARCADE.picksPerRound[Math.min(k, ARCADE.picksPerRound.length - 1)], chosen: false, firstDone: false, last, comeback: p.comeback, allLegend, extra };
       o.options = this.roll(p, o);
       this.offers.set(p.id, o);
     }
@@ -817,7 +818,7 @@ export class Room {
       curses, allLegend: o.allLegend || (o.comeback && k === C.legendAt), forceCurse: o.extra.curse,
       exclude: this.offPool(),
       minTier: (k >= ARCADE.noNormalFrom ? 1 : 0) as 0 | 1,
-      guarantee: o.last ? ARCADE.lastGuarantee[Math.min(k, ARCADE.lastGuarantee.length - 1)] as 0 | 1 | 2 | 3 : undefined,
+      guarantee: o.last && !o.firstDone ? ARCADE.lastGuarantee[Math.min(k, ARCADE.lastGuarantee.length - 1)] as 0 | 1 | 2 | 3 : undefined,
       special: o.comeback && k === C.specialAt && !p?.picks.some((x) => isSpecial(x.id)),
       owned: p?.picks,
     };
@@ -1283,5 +1284,7 @@ interface RollExtra { gift: boolean; curse: boolean }
 /** 한 사람의 이번 선택: 남은 카드, 남은 고를 수(need), 꼴찌·역전·뽑기 옵션 */
 interface Offer {
   options: Pick[]; rerolls: number; need: number; chosen: boolean;
+  /** 이 차례의 첫 카드를 골랐는지 (꼴찌 등급 보장은 첫 묶음에만) */
+  firstDone: boolean;
   last: boolean; comeback: boolean; allLegend: boolean; extra: RollExtra;
 }

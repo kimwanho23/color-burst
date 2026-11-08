@@ -27,8 +27,8 @@ export const ARCADE = {
   picksPerRound: [1, 1, 2, 2],
   /** 이 차례부터 모두 노말 등급이 안 나온다 */
   noNormalFrom: 1,
-  /** 꼴찌: 차례별로 이 등급 이상 카드가 1장 이상 */
-  lastGuarantee: [1, 2, 3, 3],
+  /** 꼴찌: 차례별로 이 등급 이상 카드가 1장 이상 (2장 고르는 차례는 첫 묶음에만) */
+  lastGuarantee: [1, 2, 2, 3],
   /**
    * 역전 기회: 꼴찌 점수 < 1등 × ratio이면 켜짐. from 차례부터 판정(2라운드 끝),
    * specialAt 차례에 특별 카드 1장, legendAt 차례에 전부 레전드. 켜진 동안 꼴찌 점수에 방 인원별 배율
