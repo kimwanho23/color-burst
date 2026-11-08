@@ -841,3 +841,33 @@ test('혼자 하기 일시정지: 횟수가 줄지 않고 30초가 지나도 안
   assert.equal(ps(room).pausedAt, 0);
   room.destroy();
 });
+
+test('혼자 하기: 재개 카운트다운 중에 연결이 끊기거나 다시 멈추면 카운트다운을 취소하고 멈춰 있음', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const room = new Room(fakeIo(), 'SOLO', () => {}, true);
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  assert.equal(room.start(a.id), null);
+  room.pause(a.id);
+  room.resume(a.id);
+  room.disconnect(a.id, 's1');
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.ok(ps(room).pausedAt > 0, '연결이 끊긴 채로는 다시 시작하지 않음');
+  assert.equal(ps(room).resumeAt, 0);
+  room.join('s2', 'k1', 'A');
+  room.resume(a.id);
+  room.pause(a.id); // 탭을 다시 숨김
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.ok(ps(room).pausedAt > 0, '다시 멈추면 카운트다운 취소');
+});
+
+test('멀티: 카운트다운 중 다시 멈추기는 그대로 무시', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  room.pause(me.id);
+  room.resume(me.id);
+  room.pause(me.id);
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.equal(ps(room).pausedAt, 0);
+});

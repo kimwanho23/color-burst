@@ -161,7 +161,10 @@ export class Room {
     if (!p) return;
     p.connected = false;
     // 혼자 하기에서 연결이 끊기면(새로고침 등) 자동으로 멈춰 둔다
-    if (this.solo && this.phase === 'play' && this.roundPhase === 'play' && !this.pausedAt) this.doPause(playerId);
+    if (this.solo && this.phase === 'play' && this.roundPhase === 'play') {
+      if (!this.pausedAt) this.doPause(playerId);
+      else if (this.resumeAt) this.cancelResume(playerId);
+    }
     if (this.phase === 'lobby') {
       this.dropTimers.set(playerId, setTimeout(() => this.remove(playerId), LOBBY_GRACE_MS));
     }
@@ -263,7 +266,9 @@ export class Room {
   canResume(id: string) { return this.players.some((p) => p.id === id && !p.bot); }
 
   pause(id: string) {
-    // 능력 선택 중에는 제한 시간이 있어서 멈출 수 없다. 다시 시작 카운트다운 중에도 안 됨
+    // 혼자 하기: 다시 시작 카운트다운 중에 다시 멈추면(탭 숨김 등) 카운트다운을 취소
+    if (this.solo && this.phase === 'play' && this.pausedAt && this.resumeAt && this.canPause(id)) { this.cancelResume(id); return; }
+    // 능력 선택 중에는 제한 시간이 있어서 멈출 수 없다. 멀티는 다시 시작 카운트다운 중에도 안 됨
     if (this.phase !== 'play' || this.roundPhase !== 'play' || this.pausedAt || !this.canPause(id)) return;
     if (!this.solo) this.players.find((p) => p.id === id)!.pausesLeft--;
     this.doPause(id);
@@ -281,6 +286,14 @@ export class Room {
     this.resumeAt = Date.now() + RULES.pause.resumeMs;
     this.io.to(this.code).emit('game:resuming', { at: this.resumeAt });
     this.resumeTimer = setTimeout(() => this.finishResume(), RULES.pause.resumeMs);
+  }
+
+  /** 혼자 하기: 카운트다운을 취소하고 다시 멈춘 상태로 */
+  private cancelResume(id: string) {
+    this.clearPauseTimers();
+    this.resumeAt = 0;
+    this.pausedBy = id;
+    this.io.to(this.code).emit('game:pause', { by: id, until: 0 });
   }
 
   private clearPauseTimers() {

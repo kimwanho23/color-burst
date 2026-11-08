@@ -12,6 +12,8 @@ export class GameCursor {
   private key = '';
   private slideFrom: Point | null = null;
   private slideAt = 0;
+  /** 반대·감도 감소 중 오오라에 끌려간 양 (목표 위치에 더한다. 오오라를 벗어나면 미끄러져 0으로) */
+  private off: Point = { x: 0, y: 0 };
 
   /** real: 진짜 마우스의 필드 좌표, delta: 이번 이동량(필드 단위) */
   move(real: Point, delta: Point) {
@@ -26,7 +28,7 @@ export class GameCursor {
    * 매 프레임: 효과에 맞춰 커서를 옮긴다. 반대는 거울 위치, 감도 감소는 늦게 따라감, 오오라만이면 이동량 그대로.
    * 효과가 바뀌어 목표가 튀는 순간(반대가 걸리거나 풀림, 효과가 끝남)은 slideMs 동안 미끄러져 옮겨 간다
    */
-  frame(mode: CursorMode | null, dtMs: number) {
+  frame(mode: CursorMode | null, dtMs: number, inAura = false) {
     const d = this.delta;
     this.delta = { x: 0, y: 0 };
     if (!this.real || !this.pos) return;
@@ -36,9 +38,15 @@ export class GameCursor {
       if (!key.includes('s') && key !== 'a') { this.slideFrom = this.pos; this.slideAt = performance.now(); }
       else this.slideFrom = null;
       this.key = key;
+      this.off = { x: 0, y: 0 };
     }
     if (key === 'a') { this.pos = relativeCursor(this.pos, d); return; }
-    const target = cursorTarget(this.real, mode);
+    // 오오라를 벗어나면 끌려간 양을 버리고 미끄러져 돌아간다
+    if (!inAura && (this.off.x || this.off.y)) {
+      this.off = { x: 0, y: 0 };
+      if (!key.includes('s')) { this.slideFrom = this.pos; this.slideAt = performance.now(); }
+    }
+    const target = this.targetOf(mode);
     if (this.slideFrom) {
       const e = performance.now() - this.slideAt;
       if (e < RULES.sabotage.slideMs) { this.pos = slideBack(this.slideFrom, target, e); return; }
@@ -47,18 +55,37 @@ export class GameCursor {
     this.pos = followCursor(this.pos, target, dtMs, !!mode?.slow);
   }
 
-  /** 오오라 끌림: target 쪽으로 dist만큼 (넘어가지 않음) */
+  /** 오오라 끌림: target 쪽으로 dist만큼 (넘어가지 않음). 반대·감도 감소 중이면 끌린 양을 따로 쌓아 다음 프레임에도 유지 */
   pull(target: Point, dist: number) {
     if (!this.pos) return;
     const dx = target.x - this.pos.x, dy = target.y - this.pos.y, dd = Math.hypot(dx, dy);
     if (dd < 1e-6) return;
     const k = Math.min(1, dist / dd);
-    this.pos = { x: Math.max(0, Math.min(FIELD.w, this.pos.x + dx * k)), y: Math.max(0, Math.min(FIELD.h, this.pos.y + dy * k)) };
+    const next = clampField({ x: this.pos.x + dx * k, y: this.pos.y + dy * k });
+    if (this.key && this.key !== 'a') this.off = { x: this.off.x + next.x - this.pos.x, y: this.off.y + next.y - this.pos.y };
+    this.pos = next;
+  }
+
+  /**
+   * 누르는 순간: 터치처럼 움직임 없이 누르면 이번 진짜 위치로 바로 맞춘다 (다음 프레임을 기다리지 않음).
+   * 미끄러지는 중·감도 감소·오오라만 걸린 때는 그대로 (그때는 늦게 따라가는 게 효과)
+   */
+  snap(mode: CursorMode | null) {
+    if (!this.real || !this.pos || this.slideFrom || mode?.slow || this.key === 'a') return;
+    this.pos = this.targetOf(mode);
+  }
+
+  /** 효과에 맞는 목표 위치 + 오오라에 끌린 양 (필드 안) */
+  private targetOf(mode: CursorMode | null) {
+    const t = cursorTarget(this.real!, mode);
+    return clampField({ x: t.x + this.off.x, y: t.y + this.off.y });
   }
 
   /** 창을 떠남(탭 전환·다른 창): 커서를 지운다 */
-  leave() { this.pos = null; this.real = null; this.key = ''; this.slideFrom = null; this.delta = { x: 0, y: 0 }; }
+  leave() { this.pos = null; this.real = null; this.key = ''; this.slideFrom = null; this.delta = { x: 0, y: 0 }; this.off = { x: 0, y: 0 }; }
 }
+
+const clampField = (p: Point): Point => ({ x: Math.max(0, Math.min(FIELD.w, p.x)), y: Math.max(0, Math.min(FIELD.h, p.y)) });
 
 /**
  * 커서 위치를 서버로 보낸다 (초당 sendHz번). 움직이지 않아도 0.25초마다 한 번은 보내서

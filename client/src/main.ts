@@ -397,7 +397,8 @@ document.addEventListener('keydown', (e) => {
 });
 // 혼자 하기: 다른 탭으로 가면 자동으로 멈춤
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && playing && room?.solo && !pausedView) socket.emit('game:pause');
+  // 다시 시작 카운트다운 중이어도 다시 멈춘다 (서버가 카운트다운을 취소)
+  if (document.hidden && playing && room?.solo && (!pausedView || resumeAt)) socket.emit('game:pause');
 });
 const BOSS_NAME = { normal: '보스', guard: '방어형 보스', rage: '공격형 보스', runner: '이동형 보스' } as const;
 /** 같은 틱에 여러 마리가 나오면 알림을 한 번만 */
@@ -687,12 +688,15 @@ let lastFrameAt = performance.now();
 // 캔버스 밖으로 나가도 계속 받는다: 게임 커서는 사라지지 않고 가장자리에 붙어 있다 (창 밖이면 마지막 위치)
 window.addEventListener('pointermove', moveCursor);
 $('cv').addEventListener('pointerdown', (e) => {
+  // 고정한 빌드 카드가 열려 있으면 이 클릭은 닫기만 한다 (빈 곳 감점이 되지 않게)
+  if (popPinned) { closeChipPop(); return; }
   if (!playing || pausedView || picking() || roundOver) return;
   ensureMusic();
   const now = serverNow();
   if (now < startAt) return;
   // 클릭은 게임 커서 위치로 판정한다 (터치는 누른 자리로 커서를 옮긴 뒤)
   moveCursor(e);
+  gameCursor.snap(cursorMode);
   const { x, y } = gameCursor.pos ?? renderer.toField(e.clientX, e.clientY);
   lastClick = { x, y };
   const meNow = me();
@@ -764,7 +768,9 @@ function renderChipPop() {
   const p = popFor ? players.find((x) => x.id === popFor) : undefined;
   const chip = p ? $('scores').querySelector<HTMLElement>(`.chip[data-id="${p.id}"]`) : null;
   if (!p || !chip) { closeChipPop(); return; }
-  chipPop.innerHTML = buildCard(p, rankOf(p, players), myId());
+  // 내용이 같으면 다시 그리지 않는다 (타일에 마우스를 올려 보는 설명이 1초마다 꺼지지 않게)
+  const html = buildCard(p, rankOf(p, players), myId());
+  if (chipPop.dataset.html !== html) { chipPop.innerHTML = html; chipPop.dataset.html = html; }
   chipPop.hidden = false;
   const r = chip.getBoundingClientRect();
   chipPop.style.left = `${Math.max(8, Math.min(innerWidth - chipPop.offsetWidth - 8, r.left))}px`;
@@ -850,7 +856,7 @@ function frame() {
   const live = playing && !picking() && !roundOver && !pausedView;
   const aura = live && gameCursor.pos ? auraUnder(gameCursor.pos, now) : null;
   cursorMode = live && m ? cursorModeOf(m, now) ?? (aura ? {} : null) : null;
-  gameCursor.frame(cursorMode, dt * 1000);
+  gameCursor.frame(cursorMode, dt * 1000, !!aura);
   if (aura) gameCursor.pull(aura, RULES.aura.pullSpeed * dt);
   updateHud(now);
   renderer.draw({
