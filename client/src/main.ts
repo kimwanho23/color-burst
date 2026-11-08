@@ -5,6 +5,7 @@ import {
   type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
+import { closeConfirm, confirmDialog } from './confirm.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
@@ -317,6 +318,7 @@ function renderLobby() {
 $<HTMLInputElement>('fillBots').onchange = (e) => socket.emit('lobby:options', { fillBots: (e.target as HTMLInputElement).checked });
 $('startBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
 function resetToHome(err = '') {
+  closeConfirm();
   room = null; players = []; playing = false; circles.clear(); pending.clear();
   resetComboNotice();
   closeChipPop();
@@ -332,7 +334,20 @@ $('ver').textContent = `v${__APP_VERSION__}`;
 const pre = __APP_VERSION__.split('-')[1]?.split('.')[0];
 if (pre) { $('stageBadge').textContent = pre.toUpperCase(); $('stageBadge').hidden = false; }
 }
-$('leaveBtn').onclick = () => { socket.emit('room:leave'); store('cb-room', null); resetToHome(); };
+const leaveRoom = () => { socket.emit('room:leave'); store('cb-room', null); resetToHome(); };
+$('leaveBtn').onclick = leaveRoom;
+/** 게임 중 나가기: 확인 창 뒤 나간다 (여럿이면 봇이 이어받음, 혼자 하기는 게임 끝) */
+async function askLeave() {
+  const ok = await confirmDialog($('stage'), {
+    title: '게임에서 나갈까요?',
+    text: room?.solo ? '게임이 끝나요.' : '봇이 이어서 플레이하고, 다시 들어올 수 없어요.',
+    ok: '나가기', cancel: '계속하기',
+  });
+  if (ok && playing) leaveRoom();
+}
+$('leaveTop').onclick = $('pauseLeaveBtn').onclick = () => { void askLeave(); };
+$('leaveTop').innerHTML = `${icon(UI.leave, 16)}<span class="bt">나가기</span>`;
+socket.on('player:left', ({ name }) => pushFeed($('feed'), icon(UI.leave, 18), `${name}님이 나갔어요. 봇이 이어받아요.`, '#9ca2d6'));
 $('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
 $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 
@@ -425,6 +440,7 @@ function renderPauseBtn() {
   const m = me();
   const b = $<HTMLButtonElement>('pauseBtn');
   b.hidden = !(playing && room && m && !picking());
+  $('leaveTop').hidden = !(playing && room);
   const multi = !!room && !room.solo;
   const sig = multi && m ? `${m.pausesLeft}` : 'solo';
   if (sig === pauseBtnSig) return;
