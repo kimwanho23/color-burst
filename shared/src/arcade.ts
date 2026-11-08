@@ -54,8 +54,11 @@ export const COMBO = {
 export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
 
 /** 새 증강 수치 */
-/** magnetPointPct: 자석으로 끌어온 원 점수(%, 콤보·콤보 보너스·잭팟·피버 게이지 없음) */
-export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000, afterglowMult: 1.5, magnetPointPct: 70 } as const;
+/**
+ * magnetPointPct: 자석으로 끌어온 원 점수(%, 콤보·콤보 보너스·잭팟·피버 게이지 없음).
+ * plunderMax: 강탈 한 번에 빼앗는 최대 점수. headStartMult: 출발 신호 배율
+ */
+export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000, afterglowMult: 1.5, magnetPointPct: 70, plunderMax: 30, headStartMult: 1.3 } as const;
 
 /** 특별 카드 수치 */
 export const SPECIAL = {
@@ -129,7 +132,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'yellowTaste', name: '노란 맛', cat: '점수', values: [1, 2, 3, 6], desc: (v) => `노란색 +${v}점` },
   { id: 'rainbowHunt', name: '무지개 사냥', cat: '점수', values: [3, 6, 9, 18], desc: (v) => `무지개 +${v}점` },
   { id: 'comboArtist', name: '콤보 장인', cat: '점수', values: [1, 2, 3, 6], cap: 7, desc: (v) => `콤보 보너스가 ${comboPeriod(v)}콤보마다` },
-  { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 10, 15, 30], desc: (v) => `라운드 시작할 때 +${v}점` },
+  { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 8, 10, 15], cap: 20, desc: (v) => `라운드 처음 ${v}초 동안 점수 ×${AUG.headStartMult}` },
   { id: 'jackpot', name: '잭팟', cat: '점수', values: [5, 10, 15, 30], cap: 35, desc: (v) => `원을 잡을 때 ${v}% 확률로 잭팟 (×1.5~×3)` },
   { id: 'rapid', name: '속사', cat: '점수', values: [1, 2, 3, 6], cap: 12, desc: (v) => `${AUG.rapidMs / 1000}초 안에 연달아 잡으면 두 번째부터 +${v}점` },
   { id: 'chainCombo', name: '연쇄 콤보', cat: '점수', values: [1, 1, 2, 3], cap: 5, desc: (v) => `${AUG.chainEvery}콤보마다 근처(반경 ${AUG.chainR}) 내 원 ${v}개 자동 획득` },
@@ -154,7 +157,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'laserProof', name: '방해 내성', cat: '유지', values: [25, 40, 60, 100], cap: 100, desc: (v) => (v >= 100 ? '레이저·위험 패턴·방해 아이템에 걸리지 않음' : `레이저·위험 패턴 스턴과 방해 아이템 시간 −${v}%`) },
   // 견제
   { id: 'thickSkin', name: '철면피', cat: '견제', values: [1, 2, 3, 99], provisional: true, desc: (v) => (v >= 99 ? '견제해도 표적이 되지 않음' : `표적 시간 −${v}초`) },
-  { id: 'plunder', name: '강탈', cat: '견제', values: [1, 1, 2, 4], provisional: true, desc: (v) => `견제하면 상대 점수 ${v}점을 빼앗음` },
+  { id: 'plunder', name: '강탈', cat: '견제', values: [1, 2, 3, 5], provisional: true, desc: (v) => `견제하면 상대의 이번 라운드 점수 ${v}%를 빼앗음 (최대 ${AUG.plunderMax}점)` },
   { id: 'counterPro', name: '반격 전문가', cat: '견제', values: [2, 4, 6, 12], provisional: true, desc: (v) => `반격 +${v}점` },
   { id: 'reflect', name: '견제 반사', cat: '견제', values: [1, 2, 3, 6], desc: (v) => `내 색을 견제당하면 내가 잡은 것으로, 견제한 사람은 콤보 끊김·표적 (라운드당 ${v}번)` },
   { id: 'jammer', name: '방해 전파', cat: '견제', values: [500, 1000, 1500, 3000], provisional: true, desc: (v) => `내 피버가 터지면 상대 원이 ${sec(v)} 동안 흐려짐` },
@@ -175,7 +178,7 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   picky: `내 색 원을 잡으면 피버 게이지가 ${L_.pickyFeverMult}배로 참`, yellowTaste: '노란 원도 피버 게이지가 내 색 원만큼 참',
   rainbowHunt: `무지개 원의 피버 게이지 ${L_.rainbowFeverMult}배`, comboArtist: `콤보 보너스 점수 +${L_.comboBonusAdd}`,
-  headStart: `라운드 처음 ${sec(L_.headStartMs)} 동안 점수 ×${L_.headStartMult}`, jackpot: `잭팟 배율 ×${L_.jackpotMults[0]}~×${L_.jackpotMults.at(-1)}`,
+  headStart: `배율 ×${AUG.headStartMult} → ×${L_.headStartMult}, 최소 ${sec(L_.headStartMs)}`, jackpot: `잭팟 배율 ×${L_.jackpotMults[0]}~×${L_.jackpotMults.at(-1)}`,
   edge: `가장자리에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
   preheat: `라운드 첫 피버 배율 +${L_.preheatMult}`, overtime: `피버 중 원을 잡을 때마다 피버 시간 +${sec(L_.overtimeMs)}`,
   overcharge: `피버가 끝나도 게이지 ${L_.overchargeKeep}%가 남음`,

@@ -528,8 +528,8 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
   for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt'] as const) if (p[k] > since) p[k] += delta;
-  // 라운드 시작 시각: 출발 신호 레전드 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
-  if (p.roundBegin + LEGEND.headStartMs > since) p.roundBegin += delta;
+  // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
+  if (p.roundBegin + headStartMsOf(p) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
   for (const k of Object.keys(p.debuffs) as DebuffId[]) if (p.debuffs[k]! > since) p.debuffs[k]! += delta;
 }
@@ -620,7 +620,6 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.roundEnd = endAt || startAt + G.roundMs;
   p.roundBegin = startAt; p.firstFever = true; p.feverBonus = 0; p.feverCarry = 0;
   p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false;
-  p.score += m.headStart;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
   // 표적 자처: 라운드 내내 표적
   if (m.selfTarget) p.markedUntil = endAt || startAt + G.roundMs;
@@ -656,11 +655,18 @@ export function sweepComeback(players: PlayerState[]) {
   for (const p of players) if (p.comeback && !isLast(p, players)) p.comeback = false;
 }
 
-/** 원·보스·황금 원 점수에 더 곱하는 배율: 역전 기회 × 마지막 불꽃 */
+/** 출발 신호 창 길이(ms): 증강 초 × 1000, 레전드면 최소 LEGEND.headStartMs, 없으면 0 */
+export function headStartMsOf(p: PlayerState) {
+  const ms = modsOf(p.picks).headStart * 1000;
+  return hasLegend(p, 'headStart') ? Math.max(ms, LEGEND.headStartMs) : ms;
+}
+
+/** 원·보스·황금 원 점수에 더 곱하는 배율: 역전 기회 × 마지막 불꽃 × 출발 신호 */
 export function extraMult(p: PlayerState, now: number, players: PlayerState[]) {
   const flame = modsOf(p.picks).lastFlame && p.roundEnd && now >= p.roundEnd - SPECIAL.flameMs ? SPECIAL.flameMult : 1;
-  // 출발 신호 레전드: 라운드 처음 10초 ×1.5
-  const start = hasLegend(p, 'headStart') && now < p.roundBegin + LEGEND.headStartMs ? LEGEND.headStartMult : 1;
+  // 출발 신호: 라운드 처음 N초 ×1.3 (레전드 ×1.5, 최소 10초)
+  const hs = headStartMsOf(p);
+  const start = hs > 0 && now < p.roundBegin + hs ? (hasLegend(p, 'headStart') ? LEGEND.headStartMult : AUG.headStartMult) : 1;
   return comebackMult(p, players) * flame * start;
 }
 
@@ -1179,9 +1185,11 @@ export function resolveClaim(
       }
       // 강탈·흡혈귀: 상대 점수를 빼앗음 (배율 없음). 흡혈귀를 가진 사람은 견제당할 때도 빼앗긴다
       if (owner && res.type !== 'counter') {
-        // 강탈 레전드: 1등을 견제하면 2배
+        // 강탈: 상대의 이번 라운드 점수 %(최소 1, 상한 AUG.plunderMax). 레전드: 1등을 견제하면 2배 (상한도 2배)
         const top = owner.score >= Math.max(...players.map((x) => x.score));
-        const plunder = m.plunder * (L.has('plunder') && top ? LEGEND.plunderTopMult : 1);
+        const roundPts = Math.max(0, owner.score - owner.roundStart);
+        const base = m.plunder > 0 && roundPts > 0 ? Math.min(AUG.plunderMax, Math.max(1, Math.round(roundPts * m.plunder / 100))) : 0;
+        const plunder = base * (L.has('plunder') && top ? LEGEND.plunderTopMult : 1);
         // 보호막·철벽은 강탈과 견제한 사람의 흡혈을 막는다 (견제당한 사람 자신의 흡혈 저주 대가는 그대로)
         const take = (guarded ? 0 : plunder + (m.vampire ? CURSE.vampire.drain : 0)) + (modsOf(owner.picks).vampire ? CURSE.vampire.drain : 0);
         res.plundered = Math.min(take, owner.score);
