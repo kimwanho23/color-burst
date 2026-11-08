@@ -98,6 +98,8 @@ export const RULES = {
   spawnGuardR: 90,
   /** 매크로 방지: 1인 초당 최대 클릭 */
   maxClicksPerSec: 15,
+  /** 한 번 획득에 곱하는 배율(잭팟 제외)의 상한 */
+  multCap: 20,
   boss: {
     /** 때릴 때마다 */
     hit: 1,
@@ -634,6 +636,9 @@ export const feverMultOf = (p: PlayerState, G: GameRules) => {
   return G.feverMult + m.frenzy + (m.berserker ? CURSE.berserker.multAdd : 0) + (m.focusFire ? SPECIAL.focusMult : 0) + (p.feverBonus ?? 0)
     + (combosOf(p.picks).has('feverMaster') ? COMBO.feverAdd : 0);
 };
+/** 배율 쌓임 상한: 잭팟 전 배율의 곱을 RULES.multCap까지 (잭팟은 그 위에 곱한다) */
+export const capMult = (x: number) => Math.min(RULES.multCap, x);
+
 /** 유리 대포·표적 자처·대역전: 모든 점수 배율 */
 export const scoreBoostOf = (m: Mods) =>
   1 + ((m.glassCannon ? CURSE.glassCannon.boostPct : 0) + (m.selfTarget ? CURSE.selfTarget.boostPct : 0)) / 100
@@ -1231,8 +1236,8 @@ export function resolveClaim(
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준). 점수 구역 배율도 곱한다
   const rebound = now < claimer.reboundUntil ? 1 + m.rebound / 100 : 1;
   const viaLegend = (via === 'range' && L.has('wideHand')) ? LEGEND.wideHandMult : (via === 'save' && L.has('missSave')) ? LEGEND.missSaveMult : 1;
-  const mult = (fever ? feverMultOf(claimer, G) : after ? afterMultOf(claimer) : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0)
-    * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend;
+  const mult = capMult((fever ? feverMultOf(claimer, G) : after ? afterMultOf(claimer) : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0)
+    * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend);
   // 잭팟은 맨 마지막에 곱한다 (블라스트·자석은 없음). 속사 레전드면 이번 잭팟 확정
   if (!blast && !magnet) {
     const forced = rapidForced && pts > 0;
@@ -1251,8 +1256,8 @@ export function resolveClaim(
 export function goldGain(p: PlayerState, now: number, players: PlayerState[], G: GameRules, zone: ZoneIndex, rand = Math.random) {
   const m = modsOf(p.picks);
   const fever = isFever(p, now), after = !fever && now < p.afterUntil;
-  const mult = (fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * scoreBoostOf(m) * itemMult(p, now, true)
-    * zoneMult(zone, m) * extraMult(p, now, players);
+  const mult = capMult((fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * scoreBoostOf(m) * itemMult(p, now, true)
+    * zoneMult(zone, m) * extraMult(p, now, players));
   const jackpot = jackpotMult(luckyMods(p, m), rand, hasLegend(p, 'jackpot'));
   return { gained: Math.round(RULES.gold.points * mult * jackpot), jackpot };
 }
