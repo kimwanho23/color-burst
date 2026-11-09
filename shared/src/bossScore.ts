@@ -39,6 +39,9 @@ export interface BossStrike {
  * - 배율은 일반 원과 같고(상한 RULES.multCap), 잭팟은 그 위. 선봉은 보스마다 내 첫 타 ×N
  * - 막타: 막타 친 사람이 독식했으면 막타 점수 ×killMult. 독식 보너스는 막타와 따로 절반 이상 깎은 사람 모두(보스 헌터면 피버 게이지). MVP는 고정 점수
  */
+/** 보스 점수의 피버 배율: 방 규칙 피버 배율까지만 (증강으로 올린 몫은 일반 원에만) */
+export const bossFeverMult = (p: PlayerState, G: GameRules) => Math.min(feverMultOf(p, G), G.feverMult);
+
 export function strikeBoss(
   p: PlayerState, c: Circle, hits: Map<string, number>, players: PlayerState[], now: number, G: GameRules, rand: () => number = Math.random,
 ): BossStrike {
@@ -81,7 +84,7 @@ export function strikeBoss(
   out.comboBonus = bonus > 0;
   if (addFever(p, B.feverGain, now, G, players)) out.feverStarted = true;
 
-  const mult = capMult((fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * info.boost * itemMult(p, now, true)
+  const mult = capMult((fever ? bossFeverMult(p, G) : after ? afterMultOf(p) : 1) * info.boost * itemMult(p, now, true)
     * zoneMult(zoneOf(circlePos(c, now)), m) * extraMult(p, now, players));
   out.jackpot = rollJackpot(p, m, rand);
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
@@ -108,7 +111,7 @@ export function strikeBoss(
       // 서바이벌에서 탈락한 사람은 독식을 받지 않는다
       if (!q || q.outAt || !isSolo(id)) continue;
       const qFever = isFever(q, now);
-      const qMult = q === p ? mult : capMult((qFever ? feverMultOf(q, G) : now < q.afterUntil ? afterMultOf(q) : 1)
+      const qMult = q === p ? mult : capMult((qFever ? bossFeverMult(q, G) : now < q.afterUntil ? afterMultOf(q) : 1)
         * scoreBoostOf(modsOf(q.picks)) * itemMult(q, now, false) * zoneMult(zone, modsOf(q.picks)) * extraMult(q, now, players));
       const gained = Math.round(S.points * qMult);
       q.score += gained;
