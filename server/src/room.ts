@@ -54,6 +54,8 @@ export class Room {
   private keyToId = new Map<string, string>();
   /** 내보낸 사람의 키: 이 방에 다시 못 들어온다 */
   private kicked = new Set<string>();
+  /** 게임이 막 끝남: 방장의 [바로 한 판 더]는 준비 확인 없이 (규칙·옵션이 바뀌거나 누가 들어오면 닫힘) */
+  private rematchOpen = false;
   /** 플레이어 id → 현재 소켓 id */
   private socketOf = new Map<string, string>();
   private dropTimers = new Map<string, NodeJS.Timeout>();
@@ -165,6 +167,7 @@ export class Room {
     const np = newPlayer(randomUUID().slice(0, 8), name.slice(0, 12) || '플레이어', color);
     // 팀: 들어온 순서대로 인원이 적은 팀 (같으면 0팀)
     np.team = this.smallerTeam();
+    this.rematchOpen = false;
     this.players.push(np);
     this.keyToId.set(key, np.id);
     this.attach(np, socketId);
@@ -283,13 +286,14 @@ export class Room {
 
   /** 방장을 뺀 사람 중 아직 준비하지 않은 수 (봇 제외) */
   notReady() {
-    return this.humans.filter((p) => p.id !== this.hostId && !p.ready).length;
+    // 끊긴 사람은 시작할 때 어차피 빠지므로 세지 않는다
+    return this.humans.filter((p) => p.id !== this.hostId && p.connected && !p.ready).length;
   }
 
   /** 방장 넘기기: 방장이 봇이 아닌 다른 사람에게 */
   giveHost(id: string, to: string) {
     const t = this.players.find((x) => x.id === to);
-    if (id !== this.hostId || !t || t.bot || to === id) return;
+    if (id !== this.hostId || this.phase !== 'lobby' || !t || t.bot || !t.connected || to === id) return;
     this.hostId = to;
     t.ready = false;
     this.broadcastState();
@@ -308,7 +312,7 @@ export class Room {
     this.remove(target);
   }
 
-  private unready() { for (const p of this.players) p.ready = false; }
+  private unready() { for (const p of this.players) p.ready = false; this.rematchOpen = false; }
 
   /** 내 원인지 (팀전이면 같은 팀 색도) */
   private owns(kind: CircleKind, p: PlayerState) { return ownsKind(kind, p, this.players, this.rules.team); }
@@ -328,10 +332,12 @@ export class Room {
     this.broadcastState();
   }
 
-  start(id: string): string | null {
+  /** rematch: 결과 화면의 [바로 한 판 더] (게임이 막 끝났고 그 뒤로 규칙·사람이 그대로면 준비 확인 없이) */
+  start(id: string, rematch = false): string | null {
     if (id !== this.hostId) return '방장만 시작할 수 있어요.';
     if (this.phase !== 'lobby') return '이미 진행 중이에요.';
-    if (!this.solo && this.notReady() > 0) return '아직 준비 안 한 사람이 있어요.';
+    if (!this.solo && !(rematch && this.rematchOpen) && this.notReady() > 0) return '아직 준비 안 한 사람이 있어요.';
+    this.rematchOpen = false;
 
     // 대기실에서 끊긴 채로 남아 있던 사람은 이번 판에서 제외
     for (const p of this.humans.filter((h) => !h.connected)) this.remove(p.id, false);
@@ -834,8 +840,10 @@ export class Room {
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
     // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
-    const eventId = rollEvent(this.players, this.eventsUsed, Math.random, this.G.eventChance, { round: this.round, usedIds: this.eventsUsedIds });
-    const ev = eventId ? applyEvent(eventId, this.players, this.G) : null;
+    // 서바이벌: 탈락한 사람은 이벤트 대상이 아니다
+    const live = this.players.filter((p) => !p.outAt);
+    const eventId = rollEvent(live, this.eventsUsed, Math.random, this.G.eventChance, { round: this.round, usedIds: this.eventsUsedIds });
+    const ev = eventId ? applyEvent(eventId, live, this.G) : null;
     this.lastEvent = ev;
     let delay = 0;
     if (ev) {
@@ -927,10 +935,11 @@ export class Room {
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
   private applyRoundCurses() {
     if (!this.G.arcade) return;
-    const effects = [...this.players.flatMap((p) => endRoundCurses(p)), ...endRoundSpecials(this.players)];
+    const live = this.players.filter((p) => !p.outAt);
+    const effects = [...live.flatMap((p) => endRoundCurses(p)), ...endRoundSpecials(live)];
     // 세금: 이번 라운드에 가장 많이 번 사람이 받는다 (동점이면 나눔)
     if (this.taxPot > 0) {
-      effects.push(...payTax(this.players, this.taxPot));
+      effects.push(...payTax(live, this.taxPot));
       this.taxPot = 0;
     }
     if (effects.length) this.io.to(this.code).emit('arcade:effects', effects);
@@ -1138,6 +1147,8 @@ export class Room {
     p.outRank = alive;
     for (const [cid, pl] of this.pulls) if (pl.by === p.id) this.pulls.delete(cid);
     this.cursors.delete(p.id);
+    // 탈락한 사람 색의 원 소나기도 멈춘다
+    if (this.rain?.color === p.color) this.rain = null;
     this.io.to(this.code).emit('player:out', { id: p.id, rank: alive });
     this.emitPlayers();
   }
@@ -1378,6 +1389,7 @@ export class Room {
     this.bots.clear();
     this.phase = 'lobby';
     this.unready();
+    this.rematchOpen = true;
     // 게임 중에 끊겼던 사람은 대기실 기준 유예 시간을 다시 준다
     for (const p of this.humans) {
       if (!p.connected && !this.dropTimers.has(p.id)) {

@@ -1013,6 +1013,9 @@ export function ownsKind(kind: CircleKind, me: PlayerState, players: readonly Pl
   return team && typeof kind === 'number' && players.some((p) => p.id !== me.id && p.color === kind && p.team === me.team);
 }
 
+/** 방해 대상인지: 나 아닌 사람, 팀전이면 상대 팀만 */
+export const isFoe = (me: PlayerState, o: PlayerState, team: boolean) => o !== me && !(team && o.team === me.team);
+
 /** 팀 순위: 팀 점수 합 내림차순, 같으면 팀 최고 개인 점수 */
 export function teamRanking(players: readonly PlayerState[]) {
   return ([0, 1] as const).map((team) => {
@@ -1205,9 +1208,9 @@ export function addFever(p: PlayerState, amt: number, now: number, G: GameRules,
 function burstFever(p: PlayerState, now: number, G: GameRules, m: Mods, players: PlayerState[]) {
   startFever(p, now, G, m);
   // 방해 전파: 다른 사람 화면의 원을 흐리게
-  if (m.jammer) for (const o of players) if (o !== p) o.blurUntil = Math.max(o.blurUntil, now + m.jammer);
+  if (m.jammer) for (const o of players) if (isFoe(p, o, G.team)) o.blurUntil = Math.max(o.blurUntil, now + m.jammer);
   // 방해 전파 레전드: 상대 커서 감도 감소 (철벽 제외)
-  if (hasLegend(p, 'jammer')) for (const o of players) if (o !== p && !modsOf(o.picks).fortress) addDebuff(o, 'slow', LEGEND.jammerSlowMs, now);
+  if (hasLegend(p, 'jammer')) for (const o of players) if (isFoe(p, o, G.team) && !modsOf(o.picks).fortress) addDebuff(o, 'slow', LEGEND.jammerSlowMs, now);
 }
 
 /** 콤보가 before에서 after로 오르며 every의 배수를 넘었는지 (한 번에 여러 칸 올라도 놓치지 않음) */

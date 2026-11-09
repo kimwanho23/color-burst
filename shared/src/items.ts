@@ -4,7 +4,7 @@
  */
 import { AUG } from './arcade.ts';
 import {
-  RULES, BLIND_KINDS, addBuff, addDebuff, addFever, isFever, isLast, startFever,
+  RULES, BLIND_KINDS, addBuff, addDebuff, addFever, isFever, isFoe, isLast, startFever,
   type BuffId, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 import { SPECIAL, SYN, modsOf, synergiesOf } from './arcade.ts';
@@ -70,9 +70,9 @@ export type RoomActionKind = 'zone' | 'bomb' | 'fieldClear' | 'timeStop' | 'rain
 export type RoomAction = null | { kind: RoomActionKind } | { kind: 'snipe'; target: string | null };
 
 /** 1등 저격 대상: 점수 1등(동점은 앞 순번), 잡은 사람이 1등이면 2등, 없으면 null */
-export function snipeTarget(p: PlayerState, players: PlayerState[]): PlayerState | null {
+export function snipeTarget(p: PlayerState, players: PlayerState[], team = false): PlayerState | null {
   const order = [...players].sort((a, b) => b.score - a.score);
-  return order.find((x) => x !== p && !modsOf(x.picks).fortress) ?? null;
+  return order.find((x) => isFoe(p, x, team) && !modsOf(x.picks).fortress) ?? null;
 }
 
 /** 아이템 발동: 플레이어 효과를 적용하고, 방 단위 효과면 그 종류를 돌려준다 */
@@ -109,7 +109,7 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
       const debuff = id === 'slowCursor' ? 'slow' : id === 'invertCursor' ? 'invert' : 'blind';
       for (const o of players) {
         // 철벽은 방해에 걸리지 않는다. 방해 내성만큼 시간이 줄고 100%면 안 걸림
-        if (o === p || modsOf(o.picks).fortress) continue;
+        if (!isFoe(p, o, G.team) || modsOf(o.picks).fortress) continue;
         const base = debuff === 'slow' ? RULES.sabotage.slowMs : debuff === 'invert' ? RULES.sabotage.invertMs : RULES.sabotage.blindMs;
         const ms = base * (1 - modsOf(o.picks).laserProof / 100);
         if (ms <= 0) continue;
@@ -119,7 +119,7 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
       return null;
     }
     case 'snipe': {
-      const t = snipeTarget(p, players);
+      const t = snipeTarget(p, players, G.team);
       if (t) { t.stunUntil = Math.max(t.stunUntil, now + RULES.sabotage.snipeStunMs); t.combo = 0; }
       return { kind: 'snipe', target: t?.id ?? null };
     }

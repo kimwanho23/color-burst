@@ -115,9 +115,12 @@ io.on('connection', (socket) => {
     if (before && !s.room.players.some((p) => p.id === to)) for (const [sid, st] of seat) if (st.room === s.room && st.id === to) seat.delete(sid);
   });
   socket.on('lobby:rules', (d) => { const s = here(); if (s && d && typeof d === 'object') s.room.setRules(s.id, d); });
-  socket.on('game:start', (ack) => {
+  // 첫 인자로 { rematch: true }가 올 수 있다 (결과 화면의 바로 한 판 더)
+  socket.on('game:start', (a: unknown, b?: unknown) => {
+    const ack = (typeof a === 'function' ? a : b) as ((r: { ok: true } | { ok: false; error: string }) => void) | undefined;
+    const rematch = typeof a === 'object' && a !== null && (a as { rematch?: unknown }).rematch === true;
     const s = here();
-    const err = s ? s.room.start(s.id) : '방에 들어가 있지 않아요.';
+    const err = s ? s.room.start(s.id, rematch) : '방에 들어가 있지 않아요.';
     if (typeof ack === 'function') ack(err ? { ok: false, error: err } : { ok: true });
   });
   socket.on('game:pause', () => { const s = here(); if (s) s.room.pause(s.id); });

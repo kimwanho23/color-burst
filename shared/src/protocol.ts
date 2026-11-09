@@ -201,7 +201,8 @@ export interface ClientToServer {
   'lobby:kick': (playerId: string) => void;
   /** 방 규칙 변경(방장). preset을 주면 그 프리셋으로 덮어쓴 뒤 rules를 반영 */
   'lobby:rules': (d: { preset?: PresetId; rules?: Partial<RoomRules> }) => void;
-  'game:start': (ack: Ack) => void;
+  /** 결과 화면의 [바로 한 판 더]는 { rematch: true }를 먼저 보낸다 (준비 확인 없이) */
+  'game:start': ((ack: Ack) => void) | ((d: { rematch: true }, ack: Ack) => void);
   /** 혼자 하기는 본인, 멀티는 방장만 */
   'game:pause': () => void;
   'game:resume': () => void;

@@ -450,7 +450,7 @@ socket.on('player:out', ({ id }) => {
   if (id === myId()) pushFeed($('feed'), icon(UI.leave, 18), '탈락했어요. 끝날 때까지 구경해요', '#ff5d73');
 });
 socket.on('player:left', ({ name }) => pushFeed($('feed'), icon(UI.leave, 18), `${name}님이 나갔어요. 봇이 이어받아요.`, '#9ca2d6'));
-$('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
+$('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', { rematch: true }, (r: { ok: true } | { ok: false; error: string }) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
 $('toLobbyBtn').onclick = () => { if (room?.timeAttack) { leaveRoom(); return; } show('lobby'); renderLobby(); };
 
 
