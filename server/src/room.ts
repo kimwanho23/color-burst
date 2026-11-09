@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, isMine, itemMult, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -157,6 +157,8 @@ export class Room {
     if (color === null) return { error: '방이 가득 찼어요.' };
 
     const np = newPlayer(randomUUID().slice(0, 8), name.slice(0, 12) || '플레이어', color);
+    // 팀: 들어온 순서대로 인원이 적은 팀 (같으면 0팀)
+    np.team = this.smallerTeam();
     this.players.push(np);
     this.keyToId.set(key, np.id);
     this.attach(np, socketId);
@@ -257,7 +259,8 @@ export class Room {
     let base = this.rules;
     // 프리셋은 점수·속도 규칙만 바꾸고 모드 설정은 유지
     if (d.preset && d.preset in PRESETS) {
-      base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec };
+      base = { ...PRESETS[d.preset].rules };
+      for (const k of MODE_KEYS) (base as unknown as Record<string, unknown>)[k] = this.rules[k];
     }
     this.rules = sanitizeRules(base, d.rules ?? {});
     this.unready();
@@ -301,6 +304,24 @@ export class Room {
 
   private unready() { for (const p of this.players) p.ready = false; }
 
+  /** 내 원인지 (팀전이면 같은 팀 색도) */
+  private owns(kind: CircleKind, p: PlayerState) { return ownsKind(kind, p, this.players, this.rules.team); }
+
+  /** 인원이 적은 팀 (같으면 0팀) */
+  private smallerTeam(): 0 | 1 {
+    const n = (t: 0 | 1) => this.players.filter((p) => p.team === t).length;
+    return n(1) < n(0) ? 1 : 0;
+  }
+
+  /** 팀 바꾸기: 대기실에서 본인, 한 팀 RULES.team.size명까지 */
+  setTeam(id: string, team: 0 | 1) {
+    const p = this.players.find((x) => x.id === id);
+    if (!p || this.phase !== 'lobby' || (team !== 0 && team !== 1) || p.team === team) return;
+    if (this.players.filter((x) => x.team === team).length >= RULES.team.size) return;
+    p.team = team;
+    this.broadcastState();
+  }
+
   start(id: string): string | null {
     if (id !== this.hostId) return '방장만 시작할 수 있어요.';
     if (this.phase !== 'lobby') return '이미 진행 중이에요.';
@@ -310,10 +331,12 @@ export class Room {
     for (const p of this.humans.filter((h) => !h.connected)) this.remove(p.id, false);
     this.players = this.players.filter((p) => !p.bot);
     this.bots.clear();
-    if (this.fillBots) {
+    // 팀전은 늘 4명이 되게 봇으로 채운다
+    if (this.fillBots || this.rules.team) {
       let n = 1;
       for (let c = this.freeColor(); c !== null && this.players.length < MAX_PLAYERS; c = this.freeColor()) {
         const bot = newPlayer(`bot-${n}`, `봇 ${String.fromCharCode(64 + n)}`, c, true);
+        bot.team = this.smallerTeam();
         this.players.push(bot);
         this.bots.set(bot.id, new Bot(this.botLevel));
         n++;
@@ -498,7 +521,7 @@ export class Room {
     if (reach > 0) {
       let ranged = false;
       for (const c of [...this.circles.values()]) {
-        if (!isMine(c.kind, p.color) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) continue;
+        if (!this.owns(c.kind, p) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) continue;
         this.claim(p, c, now, 'range', true);
         ranged = got = true;
       }
@@ -968,7 +991,7 @@ export class Room {
       const owner = this.players.find((p) => p.id === z.by);
       if (!owner) continue;
       for (const c of [...this.circles.values()]) {
-        if (!isMine(c.kind, owner.color) || isGuarded(c, now)) continue;
+        if (!this.owns(c.kind, owner) || isGuarded(c, now)) continue;
         const q = circlePos(c, now);
         if (Math.hypot(q.x - z.x, q.y - z.y) <= c.r + z.r) { this.claim(owner, c, now, 'zone', true); zoned = true; }
       }
@@ -978,7 +1001,7 @@ export class Room {
     for (const p of this.players) {
       const bot = this.bots.get(p.id);
       if (!bot) continue;
-      const target = bot.think(p, this.botCandidates(), this.players, now);
+      const target = bot.think(p, this.botCandidates(), this.players, now, this.rules.team);
       if (!target) continue;
       if (target.kind === 'boss') this.hitBoss(p, target, now);
       else if (target.kind === 'item') this.claimItem(p, target, now);
@@ -1109,7 +1132,7 @@ export class Room {
       // 자기장 레전드: 발동 중 1초에 하나 더
       const per = (hasLegend(p, 'magnet') ? LEGEND.magnetPerSec : M.perSec) + (hasLegend(p, 'autoMagnet') && buffOn(p, 'magnet', now) ? LEGEND.autoMagnetAdd : 0);
       if (log.length >= per) continue;
-      for (const c of pickMagnetTargets(this.circles.values(), p.color, cur, now, radius, per - log.length, new Set(this.pulls.keys()))) {
+      for (const c of pickMagnetTargets(this.circles.values(), (k) => this.owns(k, p), cur, now, radius, per - log.length, new Set(this.pulls.keys()))) {
         const pl: Pull = { circleId: c.id, by: p.id, from: circlePos(c, now), at: now, ms: M.pullMs };
         this.pulls.set(c.id, pl);
         log.push(now);
@@ -1175,7 +1198,7 @@ export class Room {
     }
     if (via !== 'blast' && modsOf(p.picks).chainBlast && Math.random() < SPECIAL.chainChance) {
       for (const o of [...this.circles.values()]) {
-        if (!isMine(o.kind, p.color) || isGuarded(o, now)) continue;
+        if (!this.owns(o.kind, p) || isGuarded(o, now)) continue;
         const q = circlePos(o, now);
         if (Math.hypot(q.x - x, q.y - y) <= SPECIAL.chainR + o.r) this.claim(p, o, now, 'blast', true);
       }
@@ -1188,7 +1211,7 @@ export class Room {
     if (radius <= 0) return null;
     let best: Circle | null = null, bd = Infinity;
     for (const c of this.circles.values()) {
-      if (!isMine(c.kind, p.color) || isGuarded(c, now) || this.pulls.has(c.id)) continue;
+      if (!this.owns(c.kind, p) || isGuarded(c, now) || this.pulls.has(c.id)) continue;
       let d = Infinity;
       for (let t = now; t >= now - LAG_WINDOW_MS; t -= 25) {
         const q = circlePos(c, t);
@@ -1202,7 +1225,7 @@ export class Room {
   /** 자동 획득(연쇄 콤보·점화·사냥꾼 레전드): 가까운 내 원부터 n개를 'blast'로 잡는다 (다시 연쇄하지 않음) */
   private autoClaim(p: PlayerState, from: Point, radius: number, n: number, now: number) {
     const list = [...this.circles.values()]
-      .filter((c) => isMine(c.kind, p.color) && !isGuarded(c, now) && !this.pulls.has(c.id))
+      .filter((c) => this.owns(c.kind, p) && !isGuarded(c, now) && !this.pulls.has(c.id))
       .map((c) => { const q = circlePos(c, now); return { c, d: Math.hypot(q.x - from.x, q.y - from.y) }; })
       .filter((o) => o.d <= radius + o.c.r)
       .sort((a, b) => a.d - b.d);
@@ -1289,10 +1312,13 @@ export class Room {
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
     const rank = ranking(this.players);
     const top = rank[0]?.score ?? 0;
-    // 공동 1등은 모두 1승 (사람만 기록)
-    for (const p of rank) if (p.score === top && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
+    // 팀전: 이긴 팀 사람마다 1승. 아니면 공동 1등은 모두 1승 (사람만 기록)
+    const teams = this.rules.team ? teamRanking(this.players) : undefined;
+    const winners = teams ? new Set(teams[0].ids) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
+    for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
     this.io.to(this.code).emit('game:over', {
       ranking: rank,
+      teams,
       titles: awardTitles(this.players),
       history: { stepMs: HISTORY_STEP_MS, scores: this.history },
       wins: Object.fromEntries(this.wins),

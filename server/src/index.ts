@@ -103,6 +103,7 @@ io.on('connection', (socket) => {
   socket.on('room:leave', leaveCurrent);
   socket.on('lobby:color', (c) => { const s = here(); if (s && [0, 1, 2, 3].includes(c)) s.room.setColor(s.id, c as ColorIndex); });
   socket.on('lobby:options', (o) => { const s = here(); if (s) s.room.setOptions(s.id, o ?? {}); });
+  socket.on('lobby:team', (t) => { const s = here(); if (s && (t === 0 || t === 1)) s.room.setTeam(s.id, t); });
   socket.on('lobby:ready', (on) => { const s = here(); if (s) s.room.setReady(s.id, on === true); });
   socket.on('lobby:host', (to) => { const s = here(); if (s && typeof to === 'string') s.room.giveHost(s.id, to); });
   socket.on('lobby:kick', (to) => {

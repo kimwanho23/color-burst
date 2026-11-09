@@ -1,4 +1,4 @@
-import { bossState, isFever, isGuarded, isMarked, isOut, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
+import { bossState, isFever, isGuarded, isMarked, isOut, ownsKind, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
 
 /**
  * gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms).
@@ -19,7 +19,8 @@ export class Bot {
   shift(ms: number) { if (this.next) this.next += ms; }
 
   /** 이번 틱에 가져갈 원을 고른다. 없으면 null */
-  think(me: PlayerState, circles: Circle[], players: PlayerState[], now: number): Circle | null {
+  /** team: 팀전이면 같은 팀 색도 내 색처럼 노린다 */
+  think(me: PlayerState, circles: Circle[], players: PlayerState[], now: number, team = false): Circle | null {
     const L = LEVELS[this.level];
     if (!this.next) this.next = now + 800 + Math.random() * 600;
     if (now < this.next) return null;
@@ -39,7 +40,7 @@ export class Bot {
       }
       if (c.kind === 'item') return 5;
       if (c.kind === 'rainbow' || c.kind === 'gold') return 6;
-      if (c.kind === me.color) return 5;
+      if (c.kind === me.color || (team && ownsKind(c.kind, me, players, true))) return 5;
       if (c.kind === 'y') return fever ? 5 : 3;
       const owner = players.find((p) => p.color === c.kind);
       if (owner && isMarked(owner, now)) return 4;

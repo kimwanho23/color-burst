@@ -41,6 +41,10 @@ export const RULES = {
   rankReach: [20, 10],
   /** 일시정지 (멀티): 사람마다 한 게임 perGame번, 한 번에 최대 maxMs, 풀 때 resumeMs 카운트다운 (혼자 하기는 카운트다운만) */
   pause: { perGame: 3, maxMs: 30_000, resumeMs: 3_000 },
+  /** 팀전: 한 팀 인원 */
+  team: { size: 2 },
+  /** 서바이벌: 클래식 탈락 간격, 탈락 경고, 최소 인원 */
+  survival: { everyMs: 30_000, warnMs: 3_000, minPlayers: 3 },
   /** 클릭 판정 여유(필드 단위) */
   hitPad: 12,
   /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */
@@ -245,10 +249,14 @@ export interface RoomRules {
   laserWidth: number;
   /** 원 크기 배율 (색 원·노랑·무지개) */
   circleScale: number;
+  /** 팀전 2:2: 같은 팀 색 = 내 색, 팀 점수 합으로 승패 */
+  team: boolean;
+  /** 서바이벌: 클래식은 30초마다, 아케이드는 뒤쪽 라운드마다 꼴찌 탈락 (팀전과 같이 켤 수 없음) */
+  survival: boolean;
 }
 
 /** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
-export const MODE_KEYS = ['mode', 'arcadeRoundSec'] as const;
+export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'team', 'survival'] as const;
 
 /** 각 설정에서 고를 수 있는 값. 화면의 선택지와 서버 검사에 같이 쓴다 */
 export const RULE_CHOICES = {
@@ -274,7 +282,7 @@ export const DEFAULT_RULES: RoomRules = {
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
   mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, sabotage: true, chaos: false,
-  eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, circleScale: 1,
+  eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, circleScale: 1, team: false, survival: false,
 };
 
 export const PRESETS = {
@@ -323,12 +331,17 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos', 'team', 'survival'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   // 옛 설정: 랜덤 이벤트 끄기 → 확률 0
   if ((input as { randomEvents?: unknown }).randomEvents === false) out.eventPct = 0;
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
+  // 팀전과 서바이벌은 같이 켤 수 없다: 이번에 켠 쪽이 이긴다 (둘 다 들어오면 팀전)
+  if (out.team && out.survival) {
+    if (input.survival === true && input.team !== true) out.team = false;
+    else out.survival = false;
+  }
   return out;
 }
 
@@ -359,6 +372,9 @@ export interface GameRules {
   /** 레이저 맞는 거리(중심선에서, 빔 폭의 절반) */
   laserHalf: number;
   circleScale: number;
+  /** 팀전: 같은 팀 색 = 내 색, 견제는 상대 팀만 */
+  team: boolean;
+  survival: boolean;
 }
 
 export function toGameRules(r: RoomRules): GameRules {
@@ -376,6 +392,8 @@ export function toGameRules(r: RoomRules): GameRules {
     boss: r.boss,
     missPenalty: r.missPenalty,
     arcade: r.mode === 'arcade',
+    team: r.team,
+    survival: r.survival && !r.team,
     items: r.items,
     waves: r.waves,
     laser: r.laser,
@@ -530,6 +548,8 @@ export interface PlayerState {
   pausesLeft: number;
   /** 대기실: 준비 완료 (방장·봇은 쓰지 않음) */
   ready: boolean;
+  /** 팀전: 0팀 / 1팀 */
+  team: 0 | 1;
   /** 스택형 증강: 지금 쌓인 칸 (게임 끝까지) */
   stacks: Partial<Record<StackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */
@@ -652,7 +672,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
-    pausesLeft: RULES.pause.perGame, ready: false, stacks: {}, autoAt: {},
+    pausesLeft: RULES.pause.perGame, ready: false, team: 0, stacks: {}, autoAt: {},
   };
 }
 
@@ -978,13 +998,32 @@ export function isMine(kind: CircleKind, color: ColorIndex) {
   return typeof kind === 'number' ? kind === color : kind === 'y' || kind === 'rainbow';
 }
 
+/** 내 원인지: 내 색·노랑·무지개, 팀전이면 같은 팀 사람의 색도 */
+export function ownsKind(kind: CircleKind, me: PlayerState, players: readonly PlayerState[], team: boolean) {
+  if (isMine(kind, me.color)) return true;
+  return team && typeof kind === 'number' && players.some((p) => p.id !== me.id && p.color === kind && p.team === me.team);
+}
+
+/** 팀 순위: 팀 점수 합 내림차순, 같으면 팀 최고 개인 점수 */
+export function teamRanking(players: readonly PlayerState[]) {
+  return ([0, 1] as const).map((team) => {
+    const ms = players.filter((p) => p.team === team);
+    return { team, score: ms.reduce((a, p) => a + p.score, 0), best: Math.max(0, ...ms.map((p) => p.score)), ids: ms.map((p) => p.id) };
+  }).sort((a, b) => b.score - a.score || b.best - a.best);
+}
+
 /** 넓은 손 범위 클릭으로 같이 잡히는 내 원 전부. lagMs: 지연 보정 (서버와 같게 하려면 RULES.lagWindowMs) */
+/** 내 원 판정: 색 하나(내 색·노랑·무지개) 또는 판정 함수(팀전 등) */
+export type OwnTest = ColorIndex | ((kind: CircleKind) => boolean);
+export const ownTest = (own: OwnTest) => (typeof own === 'function' ? own : (k: CircleKind) => isMine(k, own));
+
 export function rangeTargets(
-  circles: Iterable<Circle>, color: ColorIndex, x: number, y: number, t: number,
+  circles: Iterable<Circle>, own: OwnTest, x: number, y: number, t: number,
   reach: number, skip?: ReadonlySet<number>, lagMs = 0,
 ): Circle[] {
   if (reach <= 0) return [];
-  return [...circles].filter((c) => isMine(c.kind, color) && !skip?.has(c.id) && hitWithin(c, t, x, y, RULES.hitPad + reach, lagMs));
+  const mine = ownTest(own);
+  return [...circles].filter((c) => mine(c.kind) && !skip?.has(c.id) && hitWithin(c, t, x, y, RULES.hitPad + reach, lagMs));
 }
 
 /** 경과 시간에 따른 원 생성 간격(ms) */
@@ -1229,7 +1268,7 @@ export function resolveClaim(
     res.type = 'yellow'; pts = m.oneWay ? 0 : Math.max(0, P.yellow + m.yellowTaste - (m.picky ? 1 : 0)); bump();
     // 노란 맛 레전드: 피버 게이지가 내 색만큼
     res.feverStarted = gauge(L.has('yellowTaste') ? RULES.fever.own : RULES.fever.yellow);
-  } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands)) {
+  } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands) || (G.team && ownsKind(kind, claimer, players, true))) {
     // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
     res.type = 'own'; pts = own; bump();
     res.feverStarted = gauge(RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1));

@@ -3,7 +3,7 @@
  * 수치는 rules.ts의 RULES.cursor / RULES.laser / RULES.magnet에 있다.
  */
 import { modsOf } from './arcade.ts';
-import { FIELD, RULES, circlePos, debuffOn, isGuarded, isMine, isOut, type Circle, type ColorIndex, type PlayerState } from './rules.ts';
+import { FIELD, RULES, circlePos, debuffOn, isGuarded, isOut, ownTest, type Circle, type OwnTest, type PlayerState } from './rules.ts';
 
 export type Point = { x: number; y: number };
 /** 커서 효과: slow(늦게 따라옴), invert(거울 위치). 오오라만 걸리면 {} */
@@ -102,12 +102,13 @@ export const nextLaserIn = (rand = Math.random, chaos = false) => {
 
 /** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원·노란 원 (무지개·보호 구역·화면 밖·skip 제외), 가까운 순 최대 max개 */
 export function pickMagnetTargets(
-  circles: Iterable<Circle>, color: ColorIndex, cursor: Point, t: number, radius: number, max: number, skip?: ReadonlySet<number>,
+  circles: Iterable<Circle>, own: OwnTest, cursor: Point, t: number, radius: number, max: number, skip?: ReadonlySet<number>,
 ): Circle[] {
   const found: { c: Circle; d: number }[] = [];
+  const mine = ownTest(own);
   for (const c of circles) {
     // 이미 화면 밖으로 나간 원(서버는 지연 보정 때문에 잠깐 더 들고 있음)은 끌지 않는다
-    if (!isMine(c.kind, color) || c.kind === 'rainbow' || skip?.has(c.id) || isGuarded(c, t) || isOut(c, t)) continue;
+    if (!mine(c.kind) || c.kind === 'rainbow' || skip?.has(c.id) || isGuarded(c, t) || isOut(c, t)) continue;
     const p = circlePos(c, t);
     const d = Math.hypot(p.x - cursor.x, p.y - cursor.y);
     if (d <= radius) found.push({ c, d });

@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -350,13 +350,17 @@ function renderMembers(host: boolean) {
     const tag = isHostP ? '<em class="mtag host">방장</em>' : p.ready ? '<em class="mtag ok">✓ 준비</em>' : '<em class="mtag">대기</em>';
     const menu = can && memberMenu === p.id
       ? `<span class="mmenu"><button type="button" class="btn ghost small" data-host="${p.id}">방장 넘기기</button><button type="button" class="btn ghost small danger" data-kick="${p.id}">내보내기</button></span>` : '';
-    return `<div class="member${p.connected ? '' : ' off'}"><button type="button" class="mname" ${can ? `data-menu="${p.id}" aria-expanded="${memberMenu === p.id}"` : 'disabled'}>${shapeSVG(p.color, 18)}<span>${esc(p.name)}${mine ? ' (나)' : ''}</span>${tag}</button>${menu}</div>`;
+    const team = room!.rules.team ? `<em class="mtag tm t${p.team}">${p.team === 0 ? '팀 A' : '팀 B'}</em>` : '';
+    const swap = room!.rules.team && mine ? `<button type="button" class="btn ghost small" data-team="${1 - p.team}">팀 바꾸기</button>` : '';
+    return `<div class="member${p.connected ? '' : ' off'}"><button type="button" class="mname" ${can ? `data-menu="${p.id}" aria-expanded="${memberMenu === p.id}"` : 'disabled'}>${shapeSVG(p.color, 18)}<span>${esc(p.name)}${mine ? ' (나)' : ''}</span>${team}${tag}</button>${swap}${menu}</div>`;
   }).join('');
 }
 $('members').addEventListener('click', async (e) => {
   const t = e.target as HTMLElement;
   const menu = t.closest<HTMLElement>('[data-menu]')?.dataset.menu;
   if (menu) { memberMenu = memberMenu === menu ? null : menu; renderLobby(); return; }
+  const team = t.closest<HTMLElement>('[data-team]')?.dataset.team;
+  if (team) { socket.emit('lobby:team', Number(team) as 0 | 1); return; }
   const to = t.closest<HTMLElement>('[data-host]')?.dataset.host;
   if (to) { memberMenu = null; socket.emit('lobby:host', to); return; }
   const kick = t.closest<HTMLElement>('[data-kick]')?.dataset.kick;
@@ -567,7 +571,7 @@ function missSaveNear(m: PlayerState, x: number, y: number, now: number) {
   const r = modsOf(m.picks).missSave;
   if (r <= 0) return false;
   for (const c of circles.values()) {
-    if (!isMine(c.kind, m.color) || isGuarded(c, now) || pending.has(c.id) || pulls.has(c.id)) continue;
+    if (!ownsKind(c.kind, m, players, !!room?.rules.team) || isGuarded(c, now) || pending.has(c.id) || pulls.has(c.id)) continue;
     const q = circlePos(c, now);
     if (Math.hypot(q.x - x, q.y - y) - c.r <= r) return true;
   }
@@ -825,7 +829,10 @@ socket.on('game:over', (d) => {
   stopMusic();
   $('stage').classList.remove('feverOn');
   const pos = ranking.findIndex((p) => p.id === myId()) + 1;
-  $('resTitle').textContent = pos === 1 ? '1등!' : `${pos}등`;
+  const myTeam = players.find((p) => p.id === myId())?.team;
+  $('resTitle').textContent = d.teams
+    ? (d.teams[0].team === myTeam ? '우리 팀 승리!' : '아쉽게 졌어요')
+    : pos === 1 ? '1등!' : `${pos}등`;
   const r = renderResult(d, myId(), effects);
   $('rank').innerHTML = r.rank;
   $('titleList').innerHTML = r.titles;
@@ -919,7 +926,7 @@ $('cv').addEventListener('pointerdown', (e) => {
   } else {
     // 넓은 손·자석으로 잡힐 원이 있으면 빗나간 표시를 하지 않는다 (서버가 잡아서 알려 준다)
     // 넓은 손 범위로 같이 잡힐 원이 있으면 빗나간 게 아니다
-    const saved = !!m && (rangeTargets(circles.values(), m.color, x, y, now, reach, pending, RULES.lagWindowMs).length > 0 || missSaveNear(m, x, y, now));
+    const saved = !!m && (rangeTargets(circles.values(), (k) => ownsKind(k, m, players, !!room?.rules.team), x, y, now, reach, pending, RULES.lagWindowMs).length > 0 || missSaveNear(m, x, y, now));
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
     // 보스가 막 터진 직후의 빈 곳 클릭은 서버도 페널티를 주지 않으므로 가볍게만 표시
     const grace = now - bossKilledAt < RULES.boss.killGraceMs;
@@ -958,7 +965,11 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
-  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
+  // 팀전: 팀별로 묶고 팀 합계를 앞에
+  const team = !!room?.rules.team && players.length > 0;
+  const list = team ? [...players].sort((a, b) => a.team - b.team) : players;
+  const sums = team ? ([0, 1] as const).map((t) => `<div class="teamsum t${t}"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${players.filter((p) => p.team === t).reduce((a, p) => a + p.score, 0)}</span></div>`).join('') : '';
+  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
   renderChipPop();
 }
 

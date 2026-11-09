@@ -11,7 +11,12 @@ export function renderResult(d: GameOver, myId: string, finalEffects: readonly R
   const byId = new Map(d.ranking.map((p) => [p.id, p]));
   const titlesOf = (id: string) => d.titles.filter((t) => t.playerId === id);
 
-  const rank = d.ranking.map((p, i) => {
+  // 팀전: 이긴 팀과 팀 합계를 맨 위에
+  const teamName = (t: number) => (t === 0 ? '팀 A' : '팀 B');
+  const teamsHtml = d.teams ? `<div class="teamres">${d.teams.map((t, i) =>
+    `<div class="tr${i === 0 ? ' win' : ''} t${t.team}"><b>${teamName(t.team)}${i === 0 ? ' 승리' : ''}</b><span>${t.ids.map((id) => esc(byId.get(id)?.name ?? '')).join(' · ')}</span><em>${t.score}</em></div>`).join('')}</div>` : '';
+
+  const rank = teamsHtml + d.ranking.map((p, i) => {
     const w = d.wins[p.id];
     const tags = titlesOf(p.id).map((t) => `<span class="title" title="${esc(t.desc)}">${t.name}</span>`).join('');
     return `<div class="${p.id === myId ? 'me' : ''}">

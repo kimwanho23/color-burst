@@ -71,6 +71,8 @@ export interface GameOver {
   /** stepMs 간격으로 기록한 플레이어별 점수 */
   history: { stepMs: number; scores: Record<string, number[]> };
   wins: Record<string, number>;
+  /** 팀전: 팀 순위 (합 내림차순) */
+  teams?: { team: 0 | 1; score: number; best: number; ids: string[] }[];
 }
 
 export interface PlayPayload {
@@ -185,6 +187,8 @@ export interface ClientToServer {
   'lobby:ready': (on: boolean) => void;
   /** 방장 넘기기 (방장) */
   'lobby:host': (playerId: string) => void;
+  /** 팀 바꾸기 (팀전, 대기실) */
+  'lobby:team': (team: 0 | 1) => void;
   /** 내보내기 (방장, 대기실) */
   'lobby:kick': (playerId: string) => void;
   /** 방 규칙 변경(방장). preset을 주면 그 프리셋으로 덮어쓴 뒤 rules를 반영 */
