@@ -122,7 +122,7 @@ export class CoopRun {
   hitRaid(p: PlayerState, c: Circle, now: number): { dealt: number; gained: number; killed: boolean } {
     if (this.shifting || now < this.invulnUntil || p.outAt) return { dealt: 0, gained: 0, killed: false };
     const fever = this.host.feverOn(p, now);
-    const { dealt, crossed } = applyRaidDamage(c, raidDamage(p, this.cards, fever));
+    const { dealt, crossed } = applyRaidDamage(c, raidDamage(p, this.cards, fever), this.phase);
     const gained = Math.round(dealt) * RULES.boss.hit;
     if (gained) { p.score += gained; addSrc(p, 'boss', gained, { fever }); }
     if (dealt > 0) p.stats.bossHits++;
@@ -137,6 +137,7 @@ export class CoopRun {
 
   /** 사람이 나가거나 끊겼을 때: 남은 사람이 모두 투표했으면 마감 */
   recheck() {
+    if (!this.alive().length) { this.host.finish(false); return; }
     const v = this.vote;
     if (v && !this.humans().some((x) => x.connected && !v.votes.has(x.id)) && v.votes.size > 0) this.closeVote(Date.now());
   }
@@ -181,7 +182,7 @@ export class CoopRun {
     this.vote = null;
     this.cards.push(card);
     if (card === 'heal') for (const p of this.alive()) p.lives = Math.min(C.maxLives, p.lives + 1);
-    if (this.boss) this.phase = coopPhase(this.boss.hp ?? 0, this.boss.maxHp ?? 1);
+    this.phase = Math.min(3, this.phase + 1) as CoopPhase;
     this.host.emit('coop:card', { card, cards: [...this.cards] });
     this.host.emit('coop:state', this.state());
     this.host.emitPlayers();

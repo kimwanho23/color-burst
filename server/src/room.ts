@@ -566,6 +566,7 @@ export class Room {
     if (this.pendingPattern) this.pendingPattern = shiftPattern(this.pendingPattern, delta);
     if (this.nextCutAt) this.nextCutAt += delta;
     this.coop?.shift(delta);
+    if (this.coop) for (const p of this.players) if (p.outAt) p.outAt += delta;
     // 멈춘 동안 화면의 탈락 경고가 끝났을 수 있으니 다시 보낸다 (탈락 예정자는 그대로)
     this.cutWarned = false;
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
@@ -1311,13 +1312,18 @@ export class Room {
       clearLasers: () => { this.lasers = []; },
       setPattern: (p) => { if (p) this.pendingPattern = p; else this.clearPattern(); },
       pauseForVote: (now) => {
-        this.pausedAt = now; this.pausedBy = null; this.pauseUntil = 0; this.resumeAt = 0;
-        this.io.to(this.code).emit('game:pause', { by: '', until: 0, at: now });
+        this.clearPauseTimers();
+        this.pausedAt = this.pausedAt || now; this.pausedBy = null; this.pauseUntil = 0; this.resumeAt = 0;
+        this.io.to(this.code).emit('game:pause', { by: '', until: 0, at: this.pausedAt });
       },
       resumeAfterVote: () => {
         // 빠른 충전 카드: 피버 게이지 충전 배율
         if (this.coop) this.G = { ...this.G, feverGain: toGameRules(this.rules).feverGain * this.coop.feverGainMult() };
-        if (this.phase === 'play' && this.pausedAt) this.beginResume();
+        if (this.phase !== 'play' || !this.pausedAt) return;
+        // 혼자 하기에서 끊긴 채면 멈춘 상태로 둔다 (다시 들어와 풀면 이어서)
+        const away = this.solo ? this.humans.find((h) => !h.connected) : undefined;
+        if (away) { this.pausedBy = away.id; this.io.to(this.code).emit('game:pause', { by: away.id, until: 0, at: this.pausedAt }); return; }
+        this.beginResume();
       },
       eliminate: (p, now) => this.eliminate(p, now),
       finish: (win) => { if (this.phase === 'play') this.end(win); },
