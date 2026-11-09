@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TIME_ATTACK_RULES, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TIME_ATTACK_RULES, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -68,6 +68,8 @@ export class Room {
   private survivalN = 0;
   private nextCutAt = 0;
   private cutWarned = false;
+  /** 경고한 탈락 예정자 (그대로 꼴찌면 이 사람이 탈락) */
+  private cutTarget: string | null = null;
   private pausedAt = 0;
   private pausedBy: string | null = null;
   /** 30초 자동 재개 시각·타이머, 재개 카운트다운이 끝나는 시각·타이머 */
@@ -449,6 +451,8 @@ export class Room {
     if (this.pattern) this.pattern = shiftPattern(this.pattern, delta);
     if (this.pendingPattern) this.pendingPattern = shiftPattern(this.pendingPattern, delta);
     if (this.nextCutAt) this.nextCutAt += delta;
+    // 멈춘 동안 화면의 탈락 경고가 끝났을 수 있으니 다시 보낸다 (탈락 예정자는 그대로)
+    this.cutWarned = false;
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
     if (this.freezeUntil > this.pausedAt) this.freezeUntil += delta;
     for (const b of this.bots.values()) b.shift(delta);
@@ -469,13 +473,13 @@ export class Room {
   }
 
   /** 아케이드: 능력 고르기 */
-  choose(id: string, index: number, cardId?: AbilityId) {
+  choose(id: string, index: number, cardId?: AbilityId, deal?: number) {
     if (this.phase !== 'play' || this.roundPhase !== 'pick') return;
     const o = this.offers.get(id);
     const p = this.players.find((x) => x.id === id);
     const pick = o?.options[index];
     // 카드 id가 다르면(두 장 차례에 빠르게 두 번 누름 등) 무시
-    if (!o || !p || o.chosen || !pick || (cardId !== undefined && pick.id !== cardId)) return;
+    if (!o || !p || o.chosen || !pick || (cardId !== undefined && pick.id !== cardId) || (deal !== undefined && deal !== o.deal)) return;
     applyPick(p, pick);
     // 두 장 고르는 차례: 새 카드를 다시 깔아 한 장 더 (이벤트 선물·저주 배달·꼴찌 등급 보장은 첫 번째에만)
     o.need--;
@@ -483,6 +487,7 @@ export class Room {
     if (o.need > 0) {
       o.extra = { gift: false, curse: false };
       o.options = this.roll(p, o);
+      o.deal++;
     }
     if (o.need <= 0 || !o.options.length) o.chosen = true;
     else this.sendOffer(id);
@@ -498,6 +503,7 @@ export class Room {
     if (!o || o.chosen || o.rerolls <= 0) return;
     o.rerolls--;
     o.options = this.roll(p0(this.players, id), o);
+    o.deal++;
     this.sendOffer(id);
   }
 
@@ -805,12 +811,14 @@ export class Room {
     this.lastSpawn = this.startAt;
     this.nextCutAt = this.G.survival && !this.G.arcade ? this.startAt + RULES.survival.everyMs : 0;
     this.cutWarned = false;
+    this.cutTarget = null;
     // 맵 패턴: 라운드마다 확률로 최대 1번
     if (Math.random() < this.G.mapChance) {
       const at = rollPatternAt(this.startAt, this.endAt);
       if (at >= 0) this.pendingPattern = rollPattern(at);
     }
-    for (const p of this.players) startRound(p, this.startAt, this.G, this.endAt);
+    // 서바이벌에서 탈락한 사람은 라운드를 시작하지 않는다 (시작 보너스·자동 시전 없음)
+    for (const p of this.players) if (!p.outAt) startRound(p, this.startAt, this.G, this.endAt);
     this.io.to(this.code).emit('game:start', this.playPayload());
   }
 
@@ -821,10 +829,6 @@ export class Room {
   private endRound() {
     // 끌려오던 원은 끄는 사람이 잡은 것으로 마무리한 뒤 판을 비운다
     this.resolvePulls(Date.now(), true);
-    // 서바이벌(아케이드): 뒤쪽 라운드가 끝날 때마다 누적 꼴찌 탈락
-    if (this.G.survival && survivalCuts(this.survivalN, ARCADE.rounds).includes(this.round)) {
-      this.eliminate(pickOut(this.players.filter((p) => !p.outAt)), Date.now());
-    }
     this.clearPattern();
     this.roundPhase = 'pick';
     this.circles.clear();
@@ -837,6 +841,11 @@ export class Room {
   /** 능력 선택 시작: 저주 정산 → 랜덤 이벤트 → 선택지 */
   private startPick() {
     this.applyRoundCurses();
+    // 서바이벌(아케이드): 뒤쪽 라운드가 끝날 때마다, 정산(저주·특별 카드·세금)이 끝난 누적 점수로 꼴찌 탈락
+    const liveNow = this.players.filter((p) => !p.outAt);
+    if (this.G.survival && liveNow.length > 1 && survivalCuts(this.survivalN, ARCADE.rounds).includes(this.round)) {
+      this.eliminate(pickOut(liveNow), Date.now());
+    }
     this.pickEndsAt = Date.now() + ARCADE.pickSec * 1000;
 
     // 랜덤 이벤트: 꼴찌·선택지 계산 전에 점수·능력을 바꾼다
@@ -874,7 +883,7 @@ export class Room {
       const allLegend = p.legendNext;
       p.legendNext = false;
       const extra: RollExtra = { gift: ev?.giftTo === p.id, curse: ev?.curseTo === p.id };
-      const o: Offer = { options: [], rerolls: ARCADE.rerollsPerPick, need: ARCADE.picksPerRound[Math.min(k, ARCADE.picksPerRound.length - 1)], chosen: false, firstDone: false, last, comeback: p.comeback, allLegend, extra };
+      const o: Offer = { options: [], rerolls: ARCADE.rerollsPerPick, need: ARCADE.picksPerRound[Math.min(k, ARCADE.picksPerRound.length - 1)], chosen: false, firstDone: false, last, comeback: p.comeback, allLegend, extra, deal: 0 };
       o.options = this.roll(p, o);
       this.offers.set(p.id, o);
     }
@@ -949,7 +958,7 @@ export class Room {
     const o = this.offers.get(id);
     const sid = this.socketOf.get(id);
     if (!o || o.chosen || !sid) return;
-    this.io.to(sid).emit('arcade:offer', { options: o.options, rerollLeft: o.rerolls, pickEndsAt: this.pickEndsAt, lastPlace: o.last, need: o.need, comeback: o.comeback });
+    this.io.to(sid).emit('arcade:offer', { options: o.options, rerollLeft: o.rerolls, pickEndsAt: this.pickEndsAt, lastPlace: o.last, need: o.need, comeback: o.comeback, deal: o.deal });
   }
 
   private emitArcade() {
@@ -1129,14 +1138,21 @@ export class Room {
   private updateSurvival(now: number) {
     if (!this.nextCutAt) return;
     const alive = this.players.filter((p) => !p.outAt);
-    if (!this.cutWarned && now >= this.nextCutAt - RULES.survival.warnMs) {
+    // 경고한 사람이 아직 꼴찌(점수·콤보 동점 포함)면 그대로, 역전됐거나 처음이면 새로 정한다
+    const target = alive.find((p) => p.id === this.cutTarget);
+    const still = !!target && isLowest(target, alive);
+    if (now >= this.nextCutAt - RULES.survival.warnMs && (!this.cutWarned || !still)) {
+      const t = still ? target! : pickOut(alive);
+      this.cutTarget = t.id;
       this.cutWarned = true;
-      this.io.to(this.code).emit('survival:warn', { id: pickOut(alive, () => 0).id, at: this.nextCutAt });
+      this.io.to(this.code).emit('survival:warn', { id: t.id, at: this.nextCutAt });
     }
     if (now < this.nextCutAt) return;
-    this.eliminate(pickOut(alive), now);
+    const out = alive.find((p) => p.id === this.cutTarget && isLowest(p, alive)) ?? pickOut(alive);
+    this.eliminate(out, now);
     this.nextCutAt += RULES.survival.everyMs;
     this.cutWarned = false;
+    this.cutTarget = null;
     if (alive.length - 1 <= 1) this.end();
   }
 
@@ -1246,7 +1262,7 @@ export class Room {
     const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }) });
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
     // 하이에나: 1등이 잡으면 하이에나를 가진 사람이 확률로 점수를 얻는다
-    for (const g of hyenaGains(p, this.players, result.gained)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
+    for (const g of hyenaGains(p, this.players.filter((x) => !x.outAt), result.gained)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
     // 연쇄 폭발: 확률로 근처 내 원도 함께 (연쇄로 잡힌 원은 다시 연쇄하지 않음)
     // 점수가 바뀌었으니 꼴찌를 벗어난 역전 기회는 바로 끈다 (조용한 연속 획득 사이에도)
     sweepComeback(this.players);
@@ -1376,11 +1392,14 @@ export class Room {
     const top = rank[0]?.score ?? 0;
     // 팀전: 이긴 팀 사람마다 1승. 아니면 공동 1등은 모두 1승 (사람만 기록)
     const teams = this.rules.team ? teamRanking(this.players) : undefined;
-    const winners = teams ? new Set(teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
+    // 팀 합계·팀 최고 점수까지 같으면 무승부: 두 팀 모두 1승 (개인전의 공동 1등과 같은 규칙)
+    const teamDraw = !!teams && teams[0].score === teams[1].score && teams[0].best === teams[1].best;
+    const winners = teams ? new Set(teamDraw ? [...teams[0].ids, ...teams[1].ids] : teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
     for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
     this.io.to(this.code).emit('game:over', {
       ranking: rank,
       teams,
+      teamDraw,
       titles: awardTitles(this.players),
       history: { stepMs: HISTORY_STEP_MS, scores: this.history },
       wins: Object.fromEntries(this.wins),
@@ -1452,4 +1471,6 @@ interface Offer {
   /** 이 차례의 첫 카드를 골랐는지 (꼴찌 등급 보장은 첫 묶음에만) */
   firstDone: boolean;
   last: boolean; comeback: boolean; allLegend: boolean; extra: RollExtra;
+  /** 묶음 번호: 카드를 새로 깔 때마다 +1 (이전 묶음을 보고 누른 클릭을 거른다) */
+  deal: number;
 }

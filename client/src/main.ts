@@ -165,7 +165,7 @@ function chooseCard(i: number) {
   cards?.querySelectorAll('.acard')[i]?.classList.add('picked');
   sfx.pickChoose();
   holdRender(700);
-  socket.emit('arcade:choose', i, offer.options[i].id);
+  socket.emit('arcade:choose', i, offer.options[i].id, offer.deal);
 }
 function rerollCards() {
   if (eventShowing || picked || !offer?.rerollLeft || performance.now() < animUntil) return;
@@ -328,7 +328,10 @@ function renderLobby() {
   $('fillBotsRow').hidden = room.solo;
   $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
   $('hostOpts').hidden = !host;
-  $<HTMLInputElement>('fillBots').checked = room.fillBots;
+  // 팀전·서바이벌은 늘 4명이 되게 봇으로 채운다 (체크박스는 바꿀 수 없음)
+  const forceBots = room.rules.team || room.rules.survival;
+  $<HTMLInputElement>('fillBots').checked = room.fillBots || forceBots;
+  $<HTMLInputElement>('fillBots').disabled = forceBots;
   $('botLevel').innerHTML = LEVELS.map((l, i) => `<button type="button" data-l="${i}" aria-pressed="${room!.botLevel === i}">${i === 0 ? icon(UI.bot, 15) : ''}${i === 0 ? '봇 ' : ''}${l}</button>`).join('');
   $('botLevel').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
     b.onclick = () => socket.emit('lobby:options', { botLevel: Number(b.dataset.l) as BotLevel });
@@ -356,7 +359,7 @@ function renderLobby() {
   rb.textContent = meP?.ready ? '준비 취소' : '준비';
   rb.classList.toggle('ghost', !!meP?.ready);
   $('lobbyHint').textContent = room.solo ? '봇 3명과 대결해요' : host
-    ? waiting > 0 ? `${waiting}명이 아직 준비 안 했어요` : `참가자 ${humans}명${room.fillBots ? ` · 빈 자리 ${4 - humans}개는 봇` : ''}`
+    ? waiting > 0 ? `${waiting}명이 아직 준비 안 했어요` : `참가자 ${humans}명${(room.fillBots || forceBots) && humans < 4 ? ` · 빈 자리 ${4 - humans}개는 봇이 채워요` : ''}`
     : meP?.ready ? `준비 완료 · 방장이 시작하기를 기다리는 중` : `준비를 누르면 방장이 시작할 수 있어요 · 참가자 ${humans}명`;
 }
 
@@ -865,7 +868,7 @@ socket.on('game:over', (d) => {
   const pos = ranking.findIndex((p) => p.id === myId()) + 1;
   const myTeam = players.find((p) => p.id === myId())?.team;
   $('resTitle').textContent = d.teams
-    ? (d.teams[0].team === myTeam ? '우리 팀 승리!' : '아쉽게 졌어요')
+    ? (d.teamDraw ? '무승부!' : d.teams[0].team === myTeam ? '우리 팀 승리!' : '아쉽게 졌어요')
     : pos === 1 ? '1등!' : `${pos}등`;
   const r = renderResult(d, myId(), effects);
   $('rank').innerHTML = r.rank;

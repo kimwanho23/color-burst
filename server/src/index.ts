@@ -125,7 +125,7 @@ io.on('connection', (socket) => {
   });
   socket.on('game:pause', () => { const s = here(); if (s) s.room.pause(s.id); });
   socket.on('game:resume', () => { const s = here(); if (s) s.room.resume(s.id); });
-  socket.on('arcade:choose', (i, cardId) => { const s = here(); if (s && Number.isInteger(i)) s.room.choose(s.id, i, typeof cardId === 'string' ? cardId as AbilityId : undefined); });
+  socket.on('arcade:choose', (i, cardId, deal) => { const s = here(); if (s && Number.isInteger(i)) s.room.choose(s.id, i, typeof cardId === 'string' ? cardId as AbilityId : undefined, Number.isInteger(deal) ? deal : undefined); });
   socket.on('arcade:reroll', () => { const s = here(); if (s) s.room.reroll(s.id); });
   socket.on('cursor:move', (d) => {
     const s = here();

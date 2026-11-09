@@ -46,6 +46,8 @@ export interface ArcadeOffer {
   need: number;
   /** 역전 기회인지 (꼴찌 점수에 방 인원 배율) */
   comeback: boolean;
+  /** 묶음 번호 (고를 때 함께 보내 이전 묶음을 보고 누른 클릭을 거른다) */
+  deal: number;
 }
 
 export type Phase = 'lobby' | 'play';
@@ -75,6 +77,8 @@ export interface GameOver {
   wins: Record<string, number>;
   /** 팀전: 팀 순위 (합 내림차순) */
   teams?: { team: 0 | 1; score: number; best: number; ids: string[] }[];
+  /** 팀전 무승부 (합계·최고 점수까지 같음) */
+  teamDraw?: boolean;
 }
 
 export interface PlayPayload {
@@ -208,7 +212,7 @@ export interface ClientToServer {
   'game:resume': () => void;
   /** 아케이드: 선택지 중 index번째 능력 고르기 */
   /** cardId: 그 자리의 카드 id (다르면 서버가 무시) */
-  'arcade:choose': (index: number, cardId?: AbilityId) => void;
+  'arcade:choose': (index: number, cardId?: AbilityId, deal?: number) => void;
   /** 아케이드: 선택지 다시 뽑기 (고를 때마다 1번) */
   'arcade:reroll': () => void;
   /** 게임 커서 위치 (필드 좌표, 초당 약 15번) */

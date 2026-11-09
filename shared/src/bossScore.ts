@@ -105,7 +105,8 @@ export function strikeBoss(
     const zone = zoneOf(circlePos(c, now));
     for (const [id] of hits) {
       const q = players.find((x) => x.id === id);
-      if (!q || !isSolo(id)) continue;
+      // 서바이벌에서 탈락한 사람은 독식을 받지 않는다
+      if (!q || q.outAt || !isSolo(id)) continue;
       const qFever = isFever(q, now);
       const qMult = q === p ? mult : capMult((qFever ? feverMultOf(q, G) : now < q.afterUntil ? afterMultOf(q) : 1)
         * scoreBoostOf(modsOf(q.picks)) * itemMult(q, now, false) * zoneMult(zone, modsOf(q.picks)) * extraMult(q, now, players));
@@ -120,7 +121,10 @@ export function strikeBoss(
     }
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
     let best = 0;
-    for (const [pid, n] of hits) if (n > best || (n === best && pid === p.id)) { best = n; out.mvp = pid; }
+    for (const [pid, n] of hits) {
+      if (players.find((x) => x.id === pid)?.outAt) continue; // 탈락한 사람은 MVP 제외
+      if (n > best || (n === best && pid === p.id)) { best = n; out.mvp = pid; }
+    }
     const mvpP = players.find((x) => x.id === out.mvp);
     if (mvpP) { mvpP.score += B.mvp; out.mvpGained = B.mvp; addSrc(mvpP, 'boss', B.mvp); }
   }

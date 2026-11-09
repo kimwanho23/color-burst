@@ -1287,8 +1287,8 @@ export function resolveClaim(
   } else {
     steal = true;
     const owner = players.find((p) => p.color === kind);
-    if (blast) {
-      // 폭죽·필드 클리어: 남의 색도 +1만, 견제 페널티·표적·반격·강탈 없음
+    if (blast || owner?.outAt) {
+      // 폭죽·필드 클리어, 서바이벌 탈락자 색의 남은 원: +1만, 견제 페널티·표적·반격·강탈·반사 없음
       res.type = 'feverSteal'; pts = P.stealCalm;
     } else if (owner && (owner.reflectLeft > 0 || hasLegend(owner, 'reflect')) && !isMarked(owner, now)) {
       // 견제 반사: 원은 주인이 잡은 것으로, 견제한 사람은 0점·콤보 끊김·표적 (반격은 반사하지 않음). 레전드는 횟수 제한 없음
@@ -1454,6 +1454,13 @@ export function pickOut(alive: readonly PlayerState[], rand: () => number = Math
   const minCombo = Math.min(...low.map((p) => p.combo));
   const tied = low.filter((p) => p.combo === minCombo);
   return tied[Math.min(tied.length - 1, Math.floor(rand() * tied.length))];
+}
+
+/** 꼴찌인지 (점수가 가장 낮고, 같은 점수 중 콤보도 가장 낮음 — 동점이면 여럿) */
+export function isLowest(p: PlayerState, alive: readonly PlayerState[]) {
+  const min = Math.min(...alive.map((x) => x.score));
+  if (p.score !== min) return false;
+  return p.combo === Math.min(...alive.filter((x) => x.score === min).map((x) => x.combo));
 }
 
 /** 서바이벌 순위: 살아 있는 사람(점수순) 먼저, 그다음 늦게 탈락한 순 */
