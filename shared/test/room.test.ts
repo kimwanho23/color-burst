@@ -989,6 +989,7 @@ test('맵 패턴: 일시정지하면 경고·등장·끝 시각이 같이 밀림
   const { room, me } = mapRoom(100);
   t.after(() => room.destroy());
   const r = mp(room);
+  (room as unknown as { startAt: number }).startAt = Date.now() - 1000; // 게임 중 (시작 카운트다운 중이면 바로 이어 가서 밀리는 양이 다름)
   const before = r.pendingPattern!;
   room.pause(me.id);
   t.mock.timers.tick(2000);
@@ -1251,4 +1252,42 @@ test('시작 카운트다운 중·라운드 종료 연출 중에 나가도 이�
   assert.equal(b.bot, true);
   lp(room2).startPick();
   assert.ok(r.offers.has(b.id) && r.offers.has(a.id));
+});
+
+test('일시정지: 시작 카운트다운 중에 멈췄다 풀면 다시 시작 카운트다운 없이 남은 시작 카운트다운을 이어 감', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  const r = room as unknown as { startAt: number; endAt: number };
+  r.startAt = Date.now() + RULES.pause.resumeMs + 2000; // 시작까지 resumeMs보다 넉넉히 남음
+  const end = r.endAt;
+  room.pause(me.id);
+  t.mock.timers.tick(4000);
+  room.resume(me.id);
+  assert.deepEqual([ps(room).pausedAt, ps(room).resumeAt], [0, 0], '바로 이어 감');
+  assert.equal(r.startAt - Date.now(), RULES.pause.resumeMs + 2000, '남은 시작 카운트다운 그대로');
+  assert.equal(r.endAt, end + 4000);
+});
+
+test('일시정지: 시작 직전에 멈췄으면 풀 때 시작까지 최소 resumeMs는 남긴다', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  const r = room as unknown as { startAt: number };
+  r.startAt = Date.now() + 500;
+  room.pause(me.id);
+  t.mock.timers.tick(1000);
+  room.resume(me.id);
+  assert.equal(r.startAt - Date.now(), RULES.pause.resumeMs);
+});
+
+test('일시정지: 게임 정보에 멈춘 시각이 들어 있어 다시 접속해도 그 순간에 멈춘 화면', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  const at = Date.now();
+  room.pause(me.id);
+  t.mock.timers.tick(5000);
+  const payload = (room as unknown as { playPayload(): { pausedAt: number } }).playPayload();
+  assert.equal(payload.pausedAt, at);
 });
