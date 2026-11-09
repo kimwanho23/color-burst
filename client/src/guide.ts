@@ -68,8 +68,11 @@ export function guideBody(tab: GuideTab, rules: RoomRules, inRoom = true): strin
 
 let closeCurrent: (() => void) | null = null;
 
-/** 게임 방법 화면을 연다 (inRoom: 방 안이면 꺼진 요소 표시). 닫기 버튼·Esc·마지막 장의 [다 봤어요]로 닫힌다 */
-export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean) {
+/**
+ * 게임 방법 화면을 연다 (inRoom: 방 안이면 꺼진 요소 표시). 닫기 버튼·Esc·마지막 장의 [다 봤어요]로 닫힌다.
+ * onPractice: 방 밖에서 열었을 때 '기본' 마지막 장과 전체 마지막 장에 [직접 해 보기] (누르면 닫고 튜토리얼)
+ */
+export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean, onPractice?: () => void) {
   closeCurrent?.();
   const all = [...guideSlides('basic', rules, inRoom), ...guideSlides('more', rules, inRoom)];
   let at = 0;
@@ -87,13 +90,16 @@ export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean)
     <footer class="gs-foot">
       <button class="btn ghost gs-prev" type="button" data-prev>${icon(UI.prev, 20)}<span>이전</span></button>
       <div class="gs-dots"></div>
-      <button class="btn gs-next" type="button" data-next></button>
+      <div class="gs-right"><button class="btn ghost gs-practice" type="button" data-practice hidden>직접 해 보기</button>
+      <button class="btn gs-next" type="button" data-next></button></div>
     </footer>`;
   document.body.appendChild(el);
   const slide = el.querySelector<HTMLElement>('.gs-slide')!;
   const dots = el.querySelector<HTMLElement>('.gs-dots')!;
   const prev = el.querySelector<HTMLButtonElement>('[data-prev]')!;
   const next = el.querySelector<HTMLButtonElement>('[data-next]')!;
+  const practice = el.querySelector<HTMLButtonElement>('[data-practice]')!;
+  const canPractice = !!onPractice && !inRoom;
 
   const show = (i: number, dir = 0) => {
     at = Math.max(0, Math.min(all.length - 1, i));
@@ -108,6 +114,7 @@ export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean)
     prev.disabled = at === 0;
     const last = at === all.length - 1;
     const toMore = sl.tab === 'basic' && all[at + 1]?.tab === 'more';
+    practice.hidden = !(canPractice && (last || toMore));
     next.innerHTML = last ? '<span>다 봤어요</span>' : `<span>${toMore ? '심화로' : '다음'}</span>${icon(UI.next, 20)}`;
   };
   const go = (d: number) => { if (d > 0 && at === all.length - 1) { close(); return; } if (at + d >= 0 && at + d < all.length) show(at + d, d); };
@@ -128,6 +135,7 @@ export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean)
   el.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
     if (t.closest('[data-close]')) { close(); return; }
+    if (t.closest('[data-practice]')) { close(); onPractice?.(); return; }
     if (t.closest('[data-prev]')) { go(-1); return; }
     if (t.closest('[data-next]')) { go(1); return; }
     const goTo = t.closest<HTMLElement>('[data-go]')?.dataset.go;

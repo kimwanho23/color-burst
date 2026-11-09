@@ -655,3 +655,18 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .gs-dots button[aria-current="true"] { width: 26px; background: var(--yellow); }
 @media (max-width: 480px) { .gs-prev span { display: none; } .gs-title { font-size: 22px; } .gs-next { min-width: 0; } }
 .reduce-fx .guide-screen, .reduce-fx .gs-slide { animation: none !important; }
+
+/* 게임 방법: 마지막 장의 [직접 해 보기] */
+.gs-right { justify-self: end; display: flex; gap: 8px; align-items: center; }
+@media (max-width: 480px) { .gs-right { flex-direction: column-reverse; align-items: stretch; gap: 6px; } }
+
+/* 튜토리얼: 위쪽 안내 띠, 완료 창. 연습 중에는 일시정지·남은 시간·나가기 버튼을 숨긴다 */
+body.tutorial #pauseBtn, body.tutorial #timer, body.tutorial #leaveTop { display: none !important; }
+.tut-band { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 12px; max-width: calc(100% - 24px); padding: 8px 12px; border-radius: 14px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); color: var(--fg); font-size: 15px; pointer-events: auto; }
+.tut-step { font-weight: 700; color: var(--yellow); white-space: nowrap; }
+.tut-hint { color: var(--fg); }
+.tut-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tut-flash { font-weight: 700; color: var(--gain); white-space: nowrap; }
+.tut-done { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+.tut-card { display: grid; gap: 10px; width: min(360px, 100%); padding: 20px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); text-align: center; }
+.tut-card b { font-size: 22px; } .tut-card p { margin: 0; color: var(--muted); }

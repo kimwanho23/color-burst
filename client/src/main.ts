@@ -8,6 +8,7 @@ import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
 import { taVerdict } from './timeAttack.ts';
 import { closeGuide, openGuide } from './guide.ts';
+import { hideTutorial, noteTutorialCombo, showTutorialDone, showTutorialStep } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
@@ -282,7 +283,10 @@ $('codexBtn').onclick = $('codexBtn2').onclick = $('codexTop').onclick = openCod
 $('codexTop').innerHTML = `${icon(UI.codex, 16)}<span class="bt">도감</span>`;
 $('codexBtn').innerHTML = $('codexBtn2').innerHTML = `${icon(UI.codex, 16)}<span>도감</span>`;
 // 게임 방법: 방 안이면 그 방 규칙 숫자로
-$('guideBtn').onclick = $('guideBtn2').onclick = () => openGuide($('stage'), room ? rules : DEFAULT_RULES, !!room);
+/** 튜토리얼 시작 (처음 화면 [연습하기], 슬라이드의 [직접 해 보기]) */
+const startTutorial = () => { initAudio(); socket.emit('room:solo', { name: getName(), key: KEY, tutorial: true }, entered); };
+$('practiceBtn').onclick = startTutorial;
+$('guideBtn').onclick = $('guideBtn2').onclick = () => openGuide($('stage'), room ? rules : DEFAULT_RULES, !!room, startTutorial);
 $('guideBtn').innerHTML = $('guideBtn2').innerHTML = `${icon(UI.guide, 16)}<span>게임 방법</span>`;
 /** 처음 접속한 사람에게 한 번만 자동으로 (브라우저에 저장, 저장이 안 되는 환경이면 띄우지 않음) */
 function firstGuide() {
@@ -290,7 +294,7 @@ function firstGuide() {
     if (localStorage.getItem('cb-guide-seen')) return;
     localStorage.setItem('cb-guide-seen', '1');
   } catch { return; }
-  if (!room) openGuide($('stage'), DEFAULT_RULES, false);
+  if (!room) openGuide($('stage'), DEFAULT_RULES, false, startTutorial);
 }
 $('settingsClose').innerHTML = icon(UI.close, 18);
 $('soloBtn').onclick = () => { initAudio(); socket.emit('room:solo', { name: getName(), key: KEY }, entered); };
@@ -307,7 +311,8 @@ socket.on('room:state', (s) => {
   if (!playing) rules = s.rules;
   if (!playing) players = s.players;
   $('roomTag').hidden = false;
-  $('roomTag').textContent = s.timeAttack ? '타임어택' : s.solo ? '혼자 하기' : `방 ${s.code}`;
+  $('roomTag').textContent = s.tutorial ? '연습' : s.timeAttack ? '타임어택' : s.solo ? '혼자 하기' : `방 ${s.code}`;
+  document.body.classList.toggle('tutorial', s.tutorial);
   history.replaceState(null, '', s.solo ? location.pathname : `#${s.code}`);
   renderScores();
   renderLobby();
@@ -424,6 +429,8 @@ $<HTMLInputElement>('fillBots').onchange = (e) => socket.emit('lobby:options', {
 $('startBtn').onclick = () => { if (taPick) { startTimeAttack(); return; } initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
 function resetToHome(err = '') {
   closeConfirm();
+  hideTutorial();
+  document.body.classList.remove('tutorial');
   taPick = false;
   room = null; players = []; playing = false; circles.clear(); pending.clear();
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
@@ -446,6 +453,11 @@ if (pre) { $('stageBadge').textContent = pre.toUpperCase(); $('stageBadge').hidd
 }
 const leaveRoom = () => { socket.emit('room:leave'); store('cb-room', null); resetToHome(); };
 $('leaveBtn').onclick = leaveRoom;
+// 튜토리얼: 단계 안내 띠, 마지막엔 완료 창 ([혼자 하기 시작]은 나간 뒤 혼자 하기와 같은 흐름)
+socket.on('tutorial:step', (d) => {
+  if (d.done) showTutorialDone(() => { leaveRoom(); $('soloBtn').click(); }, leaveRoom);
+  else showTutorialStep(d, leaveRoom);
+});
 /** 게임 중 나가기: 확인 창 뒤 나간다 (여럿이면 봇이 이어받음, 혼자 하기는 게임 끝) */
 async function askLeave() {
   const ok = await confirmDialog($('stage'), {
@@ -696,8 +708,10 @@ socket.on('boss:escaped', ({ circleId }) => {
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => {
   const before = me()?.stacks ?? {};
+  const comboBefore = me()?.combo ?? 0;
   players = p; renderScores(); if (picking()) showPick();
   const m = me();
+  if (room?.tutorial && m) noteTutorialCombo(comboBefore, m.combo);
   // 스택형 증강: 내 칸이 오르면 한 줄 알림
   for (const id of STACK_IDS) {
     const n = m?.stacks?.[id] ?? 0;
