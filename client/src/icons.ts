@@ -10,6 +10,7 @@ import {
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
   Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
   HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
+  ChevronLeft, ChevronRight,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId, PatternId } from '@color-burst/shared';
 
@@ -51,6 +52,7 @@ export const UI = {
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,
   codex: BookOpen, leave: LogOut, close: X, special: Gem, combo: Link, guide: CircleHelp,
   obstacle: Construction, precision: Crosshair, custom: SlidersHorizontal,
+  prev: ChevronLeft, next: ChevronRight,
 } as const;
 
 /** 아이콘 SVG 문자열 */

@@ -565,8 +565,32 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .pattag { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 3; pointer-events: none; padding: 3px 12px; border-radius: 999px; border: 1px solid #ffd43b; background: rgba(20, 16, 4, .8); color: #ffd43b; font: 700 13px var(--body); font-variant-numeric: tabular-nums; }
 .pattag.danger { border-color: #ff5d73; color: #ff8095; background: rgba(36, 6, 12, .8); }
 /* 게임 방법 */
-.gd-item { padding: 10px 12px; margin: 6px 0; border-radius: 12px; background: color-mix(in srgb, var(--fg) 5%, transparent); border: 1px solid var(--line); }
-.gd-item b { display: block; font: 400 17px var(--display); margin-bottom: 2px; }
-.gd-item p { margin: 0; font-size: 13.5px; line-height: 1.5; color: color-mix(in srgb, var(--fg) 88%, var(--muted)); }
-.gd-item.off { opacity: .5; }
-.gd-item em { display: block; margin-top: 4px; font-style: normal; font-size: 12px; color: var(--muted); }
+/* 게임 방법: 화면 전체를 덮는 전용 화면 (불투명), 그림 슬라이드 */
+.guide-screen { position: fixed; inset: 0; z-index: 70; display: grid; grid-template-rows: auto 1fr auto; gap: 12px; background: var(--bg); padding: max(14px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); animation: rise .2s ease-out; }
+.guide-screen::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 70% 55% at 50% 42%, color-mix(in srgb, var(--panel) 85%, transparent), transparent 70%); }
+.gs-head, .gs-slide, .gs-foot { position: relative; width: min(760px, 100%); margin: 0 auto; }
+.gs-head { display: flex; align-items: center; gap: 12px; }
+.gs-title { font: 400 26px var(--display); margin-right: auto; }
+.gs-head .x { width: 40px; height: 40px; justify-content: center; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--fg); cursor: pointer; }
+.gs-slide { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 0; text-align: center; touch-action: pan-y; }
+.gs-slide.in-r { animation: gsInR .28s cubic-bezier(.2, .8, .3, 1); }
+.gs-slide.in-l { animation: gsInL .28s cubic-bezier(.2, .8, .3, 1); }
+@keyframes gsInR { from { opacity: 0; transform: translateX(28px); } }
+@keyframes gsInL { from { opacity: 0; transform: translateX(-28px); } }
+.gs-art { width: min(100%, 620px, calc((100dvh - 290px) * 16 / 9)); min-width: 240px; aspect-ratio: 16 / 9; border-radius: 20px; background: #0c0e24; border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0, 0, 0, .45); display: grid; place-items: center; overflow: hidden; }
+.gs-art .ga { width: 100%; height: 100%; display: block; }
+.gs-art .ga-t { font-family: var(--display); }
+.gs-art .ga-s { font-family: var(--body); font-weight: 700; }
+.gs-art.off { filter: grayscale(.85); opacity: .5; }
+.gs-slide h2 { margin: 6px 0 0; font: 400 clamp(26px, 5vw, 36px) var(--display); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; }
+.gs-slide p { margin: 0; max-width: 560px; font-size: clamp(14px, 2.4vw, 16px); line-height: 1.6; color: color-mix(in srgb, var(--fg) 88%, var(--muted)); text-wrap: balance; }
+.gs-off { font: 700 12px var(--body); font-style: normal; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.gs-foot { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; }
+.gs-foot .btn { white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 10px 16px; font-size: 18px; }
+.gs-prev { justify-self: start; } .gs-next { justify-self: end; min-width: 120px; }
+.gs-prev:disabled { visibility: hidden; }
+.gs-dots { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.gs-dots button { width: 10px; height: 10px; padding: 0; border-radius: 999px; border: 0; background: var(--line); cursor: pointer; transition: width .2s, background .2s; }
+.gs-dots button[aria-current="true"] { width: 26px; background: var(--yellow); }
+@media (max-width: 480px) { .gs-prev span { display: none; } .gs-title { font-size: 22px; } .gs-next { min-width: 0; } }
+.reduce-fx .guide-screen, .reduce-fx .gs-slide { animation: none !important; }
