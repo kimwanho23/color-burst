@@ -22,8 +22,9 @@ test('꺼진 요소는 "이 방에선 꺼져 있어요" (보스·레이저·아�
   const off = (h: string) => (h.match(/이 방에선 꺼져 있어요/g) ?? []).length;
   assert.equal(off(guideBody('basic', { ...R, missPenalty: false })), 1);
   assert.equal(off(guideBody('basic', { ...R, stealPenalty: false })), 2); // 견제·반격
-  assert.equal(off(guideBody('more', { ...R, boss: false, laser: false, items: false })), 4); // 보스 2 + 레이저 + 아이템
-  assert.equal(off(guideBody('more', { ...R, mode: 'classic' })), 1); // 아케이드
+  // 팀전·서바이벌은 기본으로 꺼져 있어 늘 +2
+  assert.equal(off(guideBody('more', { ...R, boss: false, laser: false, items: false })), 4 + 2); // 보스 2 + 레이저 + 아이템
+  assert.equal(off(guideBody('more', { ...R, mode: 'classic' })), 2 + 2); // 아케이드·성장 증강 (아케이드 전용) + 팀전·서바이벌
 });
 
 test('방 밖(처음 화면)에서는 꺼짐 표시 없음', () => {
@@ -34,7 +35,7 @@ test('방 밖(처음 화면)에서는 꺼짐 표시 없음', () => {
 test('게임 방법 슬라이드: 한 장에 규칙 하나, 모두 그림(SVG)이 있고 id가 겹치지 않음', () => {
   const all = [...guideSlides('basic', R), ...guideSlides('more', R)];
   assert.equal(guideSlides('basic', R).length, 9);
-  assert.equal(guideSlides('more', R).length, 7);
+  assert.equal(guideSlides('more', R).length, 10);
   assert.equal(new Set(all.map((s) => s.id)).size, all.length);
   for (const s of all) {
     assert.ok(s.art.startsWith('<svg') && s.art.endsWith('</svg>'), s.id);
@@ -43,4 +44,15 @@ test('게임 방법 슬라이드: 한 장에 규칙 하나, 모두 그림(SVG)�
   // 그림 속 숫자도 방 규칙을 따른다
   const fever = guideSlides('basic', { ...R, feverMult: 5, feverSec: 10 }).find((s) => s.id === 'fever')!;
   assert.ok(fever.art.includes('10초 동안 점수 ×5'));
+});
+
+test('게임 방법 새 슬라이드: 성장 증강·팀전·서바이벌, 팀전·서바이벌이 꺼진 방이면 꺼짐 표시', () => {
+  const ids = guideSlides('more', R).map((s) => s.id);
+  for (const id of ['growth', 'team', 'survival']) assert.ok(ids.includes(id), id);
+  const off = (r: typeof R) => guideSlides('more', r).filter((s) => s.off).map((s) => s.id);
+  assert.ok(off(R).includes('team') && off(R).includes('survival'));
+  assert.ok(!off({ ...R, team: true }).includes('team'));
+  assert.ok(!off({ ...R, survival: true }).includes('survival'));
+  const growth = guideSlides('more', R).find((s) => s.id === 'growth')!;
+  assert.ok(growth.text.includes('3번') && growth.text.includes('시너지'));
 });
