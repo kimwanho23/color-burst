@@ -40,7 +40,7 @@ export function guideSlides(tab: GuideTab, rules: RoomRules, inRoom = true): Gui
     ];
   }
   return [
-    s('boss', '보스', `큰 보스 원은 여럿이 함께 때려요. 깎은 체력 1마다 +${B.hit}, 막타 +${B.kill}, 가장 많이 때린 사람 +${B.mvp}. 처치될 때 체력의 ${B.solo.pct}% 이상을 깎았으면 독식 +${B.solo.points}.`, !rules.boss),
+    s('boss', '보스', `큰 보스 원은 여럿이 함께 때려요. 때릴 때마다 +${B.hit}, 막타 +${B.kill}, 가장 많이 때린 사람 +${B.mvp}. 처치될 때 체력의 ${B.solo.pct}% 이상을 깎았으면 독식 +${B.solo.points}.`, !rules.boss),
     s('bossTypes', '보스 종류', '방어형은 보호막이 있을 때 막혀요. 공격형은 붉을 때 때리면 감점. 이동형은 둘레의 고리에 커서가 끌려가요.', !rules.boss),
     s('gold', '황금 원', `가끔 나오는 작고 빠른 금빛 원. 직접 눌러야 잡히고 +${RULES.gold.points}에 배율이 붙어요.`),
     s('items', '아이템 원', '? 원을 잡으면 무작위 아이템(넓은 손, 자석, 점수 2배, 시간 정지 등)이 바로 발동해요.', !rules.items),

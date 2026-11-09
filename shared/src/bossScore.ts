@@ -88,7 +88,8 @@ export function strikeBoss(
     * zoneMult(zoneOf(circlePos(c, now)), m) * extraMult(p, now, players));
   out.jackpot = rollJackpot(p, m, rand);
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
-  out.gained = Math.round((info.hit * dmg * vanguard + bonus) * mult * out.jackpot);
+  // 타격 점수는 클릭 한 번당 (피해와 곱하지 않음: 파쇄·막타 독식의 피해는 처치·막타·독식 경쟁에만)
+  out.gained = Math.round((info.hit * vanguard + bonus) * mult * out.jackpot);
   p.score += out.gained;
   addSrc(p, 'boss', out.gained, { fever, jackpot: out.jackpot });
 

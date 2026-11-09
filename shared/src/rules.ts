@@ -1285,7 +1285,7 @@ export function ragePenalty(p: PlayerState) {
   return RULES.boss.ragePenaltyStep * p.rageHits;
 }
 
-/** 보스를 한 번 때렸을 때: 피해, 타격 점수(피해 1당, 배율 전), 막타 점수(배율 전). 점수 계산은 strikeBoss (bossScore.ts) */
+/** 보스를 한 번 때렸을 때: 피해, 타격 점수(한 번당, 배율 전), 막타 점수(배율 전). 점수 계산은 strikeBoss (bossScore.ts) */
 export function bossHitInfo(p: PlayerState, rand = Math.random) {
   const m = modsOf(p.picks);
   // 막타 독식: 피해·막타 점수 ×2
