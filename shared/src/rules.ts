@@ -45,6 +45,49 @@ export const RULES = {
   team: { size: 2 },
   /** 서바이벌: 클래식 탈락 간격, 탈락 경고 (인원은 늘 4명이 되게 봇으로 채움) */
   survival: { everyMs: 30_000, warnMs: 3_000 },
+  /**
+   * 협력전: 모두 같은 편, 개인 생명으로 180초 안에 3단계 레이드 보스를 잡는다.
+   * 난이도(levels)는 보스 공격 세기만 바꾼다. 생명·시간·보스 체력은 공통
+   */
+  coop: {
+    timeSec: 180, lives: 3, maxLives: 5, immuneMs: 2_000, toughMs: 1_000,
+    /** 단계 경계 (체력 비율) */
+    phaseAt: [0.67, 0.33],
+    /** 단계가 넘어가는 순간 보스 무적, 그 뒤 투표(초), 결과 표시 */
+    phaseInvulnMs: 1_000, voteSec: 30, voteResultMs: 1_000,
+    /** 레이드 보스: 반지름, 높이(y), 좌우 한 번 왕복 시간, 체력 = hpBase × (사람 + 봇 × botWeight) */
+    bossR: 145, bossY: 190, swingMs: 9_000, hpBase: 300, botWeight: 0.5,
+    /** 피해: 피버 ×feverDmg(+달아오름마다 heatStep), 콤보 comboStep마다 +comboPer (상한 comboCap + 연속 공격마다 chainCap) */
+    feverDmg: 2, heatStep: 0.5, comboStep: 10, comboPer: 0.1, comboCap: 0.5, chainCap: 0.25,
+    powerPct: 0.25, chargePct: 0.3, slowPct: 0.25,
+    threatR: 30, threatPoints: 3,
+    /** 별: 살아남은 사람 비율 ≥ alive 이고 남은 시간 ≥ leftSec */
+    stars: { three: { alive: 1, leftSec: 60 }, two: { alive: 0.5, leftSec: 0 } },
+    cards: {
+      power: { name: '강타', desc: '보스 피해 +25%' },
+      heat: { name: '달아오름', desc: '피버 중 보스 피해 배율 +0.5' },
+      chain: { name: '연속 공격', desc: '콤보 보너스 상한 +25%' },
+      charge: { name: '빠른 충전', desc: '피버 게이지 충전 +30%' },
+      heal: { name: '응급 처치', desc: '살아 있는 사람 생명 +1 (최대 5)' },
+      slow: { name: '느린 공격 원', desc: '공격 원 속도 −25%' },
+      tough: { name: '단단한 몸', desc: '맞은 뒤 무적 +1초' },
+    },
+    /** 난이도: laserWidth는 화면 높이 %(RoomRules.laserWidth와 같은 단위), 간격은 ms, 3단계는 간격 × phase3Mult */
+    levels: {
+      easy: {
+        laserEvery: [9_000, 12_000], laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
+        threatEvery: 6_000, threatCount: 2, threatSpeed: 160, hazardEvery: 20_000, hazards: ['spikes'], phase3Mult: 0.85,
+      },
+      normal: {
+        laserEvery: [7_000, 10_000], laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
+        threatEvery: 5_000, threatCount: 3, threatSpeed: 200, hazardEvery: 16_000, hazards: ['spikes', 'ring'], phase3Mult: 0.75,
+      },
+      hard: {
+        laserEvery: [5_000, 7_500], laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
+        threatEvery: 4_000, threatCount: 4, threatSpeed: 250, hazardEvery: 12_000, hazards: ['spikes', 'ring'], phase3Mult: 0.65,
+      },
+    },
+  },
   /** 클릭 판정 여유(필드 단위) */
   hitPad: 12,
   /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */
@@ -274,10 +317,19 @@ export interface RoomRules {
   team: boolean;
   /** 서바이벌: 클래식은 30초마다, 아케이드는 뒤쪽 라운드마다 꼴찌 탈락 (팀전과 같이 켤 수 없음) */
   survival: boolean;
+  /** 협력전: 모두 같은 편, 개인 생명으로 레이드 보스 처치 (클래식만, 팀전·서바이벌·아케이드와 같이 켤 수 없음) */
+  coop: boolean;
+  /** 협력전 난이도 (보스 공격 세기) */
+  coopLevel: CoopLevel;
 }
 
+export type CoopLevel = 'easy' | 'normal' | 'hard';
+export const COOP_LEVELS: readonly CoopLevel[] = ['easy', 'normal', 'hard'];
+export type CoopCardId = keyof typeof RULES.coop.cards;
+export const COOP_CARD_IDS = Object.keys(RULES.coop.cards) as CoopCardId[];
+
 /** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
-export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'team', 'survival'] as const;
+export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'team', 'survival', 'coop', 'coopLevel'] as const;
 
 /** 각 설정에서 고를 수 있는 값. 화면의 선택지와 서버 검사에 같이 쓴다 */
 export const RULE_CHOICES = {
@@ -304,11 +356,12 @@ export const DEFAULT_RULES: RoomRules = {
   comeback: false, boss: true, missPenalty: true,
   mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, sabotage: true, chaos: false,
   eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, circleScale: 1, team: false, survival: false,
+  coop: false, coopLevel: 'normal',
 };
 
 /** 타임어택(혼자·봇 없이 기록 도전): 기본 60초 클래식, 운이나 방해에 덜 좌우되게 보스·레이저·방해·맵 패턴·이벤트·테마를 끈다 */
 export const TIME_ATTACK_RULES: RoomRules = {
-  ...DEFAULT_RULES, mode: 'classic', roundSec: 60, boss: false, laser: false, sabotage: false, mapPct: 0, eventPct: 0, themePct: 0, team: false, survival: false,
+  ...DEFAULT_RULES, mode: 'classic', roundSec: 60, boss: false, laser: false, sabotage: false, mapPct: 0, eventPct: 0, themePct: 0, team: false, survival: false, coop: false,
 };
 
 /** 튜토리얼 방: 단계별 판만 (보스·아이템·무지개·웨이브·이벤트·레이저·패턴 없음) */
@@ -360,12 +413,19 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos', 'team', 'survival'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos', 'team', 'survival', 'coop'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
+  if (typeof input.coopLevel === 'string' && COOP_LEVELS.includes(input.coopLevel)) out.coopLevel = input.coopLevel;
   // 옛 설정: 랜덤 이벤트 끄기 → 확률 0
   if ((input as { randomEvents?: unknown }).randomEvents === false) out.eventPct = 0;
   if (input.mode === 'classic' || input.mode === 'arcade') out.mode = input.mode;
+  // 협력전: 이번에 팀전·서바이벌·아케이드를 새로 골랐으면 협력전을 끈다. 아니면 협력전이 이긴다
+  if (out.coop) {
+    const picked = input.team === true || input.survival === true || input.mode === 'arcade';
+    if (picked && input.coop !== true) out.coop = false;
+    else { out.mode = 'classic'; out.team = false; out.survival = false; }
+  }
   // 팀전과 서바이벌은 같이 켤 수 없다: 이번에 켠 쪽이 이긴다 (둘 다 들어오면 팀전)
   if (out.team && out.survival) {
     if (input.survival === true && input.team !== true) out.team = false;
@@ -404,9 +464,22 @@ export interface GameRules {
   /** 팀전: 같은 팀 색 = 내 색, 견제는 상대 팀만 */
   team: boolean;
   survival: boolean;
+  coop: boolean;
+  coopLevel: CoopLevel;
 }
 
 export function toGameRules(r: RoomRules): GameRules {
+  const G = baseGameRules(r);
+  if (!r.coop) return G;
+  // 협력전: 판 시간 고정, 견제·표적·방해·일반 보스·일반 레이저·맵 패턴·꼴찌 보정 끔, 레이저 두께는 난이도
+  return {
+    ...G, roundMs: RULES.coop.timeSec * 1000, arcade: false, team: false, survival: false, stealPenalty: false, markMs: 0,
+    sabotage: false, boss: false, laser: false, mapChance: 0, comeback: false, eventChance: 0, themeChance: 0,
+    laserHalf: (RULES.coop.levels[r.coopLevel].laserWidth / 100) * FIELD.h / 2,
+  };
+}
+
+function baseGameRules(r: RoomRules): GameRules {
   return {
     roundMs: (r.mode === 'arcade' ? r.arcadeRoundSec : r.roundSec) * 1000,
     feverMs: r.feverSec * 1000,
@@ -433,15 +506,17 @@ export function toGameRules(r: RoomRules): GameRules {
     mapChance: r.mapPct / 100,
     laserHalf: ((r.laserWidth ?? 30) / 100) * FIELD.h / 2,
     circleScale: r.circleScale ?? 1,
+    coop: !!r.coop,
+    coopLevel: r.coopLevel ?? 'normal',
   };
 }
 
 export type ColorIndex = 0 | 1 | 2 | 3;
 /** 보스 종류: 일반, 방어형(보호막), 공격형(붉어짐), 이동형(튕김) */
-export type BossType = 'normal' | 'guard' | 'rage' | 'runner';
+export type BossType = 'normal' | 'guard' | 'rage' | 'runner' | 'raid';
 /** 아케이드 라운드 테마 */
 export type ThemeId = 'goldRush' | 'bossRush' | 'reverse' | 'rainbowRain' | 'itemRush' | 'allYellow';
-export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold';
+export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold' | 'threat';
 
 export interface Circle {
   id: number;
@@ -464,6 +539,10 @@ export interface Circle {
   holds?: [from: number, ms: number][];
   /** 역발사: 가장자리에서 중앙으로 */
   rev?: boolean;
+  /** 출발점 (없으면 필드 가운데). 협력전 공격 원은 보스 자리에서 출발 */
+  from?: { x: number; y: number };
+  /** 협력전 공격 원: 놓치면 생명이 줄어드는 사람 */
+  target?: string;
 }
 
 /** 결과 화면 칭호 계산용 기록 (한 판 단위) */
@@ -483,14 +562,14 @@ export interface PlayerStats {
 }
 
 /** 점수 출처: 원(직접·넓은 손·헛손질 보정·자동 획득), 콤보 보너스, 자석, 황금 원, 보스, 견제(견제·반격·강탈) */
-export type SrcKey = 'circle' | 'combo' | 'magnet' | 'gold' | 'boss' | 'steal';
-export const SRC_KEYS: readonly SrcKey[] = ['circle', 'combo', 'magnet', 'gold', 'boss', 'steal'];
+export type SrcKey = 'circle' | 'combo' | 'magnet' | 'gold' | 'boss' | 'steal' | 'threat';
+export const SRC_KEYS: readonly SrcKey[] = ['circle', 'combo', 'magnet', 'gold', 'boss', 'steal', 'threat'];
 /** lost: 남에게 빼앗기거나 감점된 점수. fever·jackpot: 참고값(피버 중 얻은 점수, 잭팟으로 더 얻은 점수, 위 출처와 겹침) */
 export interface ScoreSrc extends Record<SrcKey, number> { lost: number; fever: number; jackpot: number }
 
 export const emptyStats = (): PlayerStats => ({
   hits: 0, misses: 0, steals: 0, counters: 0, fevers: 0, maxCombo: 0, bossHits: 0, bossKills: 0,
-  src: { circle: 0, combo: 0, magnet: 0, gold: 0, boss: 0, steal: 0, lost: 0, fever: 0, jackpot: 0 },
+  src: { circle: 0, combo: 0, magnet: 0, gold: 0, boss: 0, steal: 0, threat: 0, lost: 0, fever: 0, jackpot: 0 },
 });
 
 /** 점수 출처 기록. fever: 피버 중이면 참고값에도, jackpot(>1): 잭팟으로 더 얻은 몫을 참고값에 */
@@ -582,6 +661,9 @@ export interface PlayerState {
   /** 서바이벌: 탈락한 서버 시각 (0 = 살아 있음), 최종 순위 (0 = 아직) */
   outAt: number;
   outRank: number;
+  /** 협력전: 남은 생명, 맞은 뒤 무적이 끝나는 서버 시각 */
+  lives: number;
+  immuneUntil: number;
   /** 스택형 증강: 지금 쌓인 칸 (게임 끝까지) */
   stacks: Partial<Record<StackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */
@@ -616,7 +698,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number) {
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'blurUntil', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil'] as const) if (p[k] > since) p[k] += delta;
   // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
   if (p.roundBegin + headStartMsOf(p) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
@@ -704,7 +786,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
-    pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, stacks: {}, autoAt: {},
+    pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, lives: 0, immuneUntil: 0, stacks: {}, autoAt: {},
   };
 }
 
@@ -713,7 +795,7 @@ export function resetForRound(p: PlayerState) {
   p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false; p.rankReach = 0;
   p.pausesLeft = RULES.pause.perGame;
   p.stacks = {}; p.autoAt = {};
-  p.outAt = 0; p.outRank = 0;
+  p.outAt = 0; p.outRank = 0; p.lives = 0; p.immuneUntil = 0;
 }
 
 /** 능력(또는 저주)을 고른 직후 처리 */
@@ -966,6 +1048,16 @@ export const isMarked = (p: PlayerState, now: number) => now < p.markedUntil;
 
 /** 원의 위치는 발사 정보와 시각만으로 결정된다. 그래서 서버는 생성 정보만 보내면 된다. */
 export function circlePos(c: Circle, t: number) {
+  // 레이드 보스: 위쪽에 머물며 좌우로 왕복
+  if (c.boss === 'raid') {
+    const C = RULES.coop;
+    const el = (traveledMs(c, t) / C.swingMs) * 2 * Math.PI;
+    return { x: FIELD.w / 2 + Math.sin(el) * (FIELD.w / 2 - C.bossR - 20), y: C.bossY };
+  }
+  if (c.from) {
+    const d = traveled(c, t);
+    return { x: c.from.x + Math.cos(c.angle) * d, y: c.from.y + Math.sin(c.angle) * d };
+  }
   // 역발사: 같은 방향의 화면 가장자리에서 출발해 중앙으로
   const d = c.rev ? edgeDist(c) - traveled(c, t) : traveled(c, t);
   const x = FIELD.w / 2 + Math.cos(c.angle) * d, y = FIELD.h / 2 + Math.sin(c.angle) * d;
@@ -983,10 +1075,15 @@ function fold(v: number, lo: number, hi: number) {
 
 /** 출발 후 움직인 거리 */
 function traveled(c: Circle, t: number) {
+  return (c.speed * traveledMs(c, t)) / 1000;
+}
+
+/** 출발 후 움직인 시간 (시간 정지 구간 제외) */
+function traveledMs(c: Circle, t: number) {
   let el = Math.max(0, t - c.born);
   // 시간 정지: 멈춘 구간과 겹친 시간만큼 덜 움직인다
   for (const [from, ms] of c.holds ?? []) el -= Math.max(0, Math.min(t, from + ms) - Math.max(c.born, from));
-  return (c.speed * Math.max(0, el)) / 1000;
+  return Math.max(0, el);
 }
 
 /** 중앙에서 그 방향으로 원이 화면 밖에 완전히 나가는 거리 */
@@ -996,6 +1093,7 @@ function edgeDist(c: Circle) {
 }
 
 export function isOut(c: Circle, t: number) {
+  if (c.boss === 'raid') return false;
   // 역발사 원은 중앙에 닿으면 사라진다
   if (c.rev) return traveled(c, t) >= edgeDist(c);
   // 이동형 보스는 튕기므로 화면 밖으로 안 나간다: 정해진 시간만큼 움직이면 도망
@@ -1008,6 +1106,7 @@ export function isOut(c: Circle, t: number) {
 
 /** 발사 보호 구역 안에 있는지 (잡을 수 없는 상태) */
 export function isGuarded(c: Circle, t: number) {
+  if (c.kind === 'threat' || c.boss === 'raid') return false;
   const p = circlePos(c, t);
   return Math.hypot(p.x - FIELD.w / 2, p.y - FIELD.h / 2) < RULES.spawnGuardR;
 }
@@ -1067,7 +1166,7 @@ export function spawnInterval(elapsedMs: number, G: GameRules) {
   const prog = Math.min(1, elapsedMs / G.roundMs);
   const S = RULES.spawn;
   let iv = Math.max(S.gapMin, S.gapStart - prog * S.gapDrop);
-  if (elapsedMs > G.roundMs - RULES.finalRushMs) iv *= 0.75;
+  if (!G.coop && elapsedMs > G.roundMs - RULES.finalRushMs) iv *= 0.75;
   return iv / G.density;
 }
 

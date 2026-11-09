@@ -605,7 +605,7 @@ document.addEventListener('visibilitychange', () => {
   // 다시 시작 카운트다운 중이어도 다시 멈춘다 (서버가 카운트다운을 취소)
   if (document.hidden && playing && room?.solo && (!pausedView || resumeAt)) socket.emit('game:pause');
 });
-const BOSS_NAME = { normal: '보스', guard: '방어형 보스', rage: '공격형 보스', runner: '이동형 보스' } as const;
+const BOSS_NAME = { normal: '보스', guard: '방어형 보스', rage: '공격형 보스', runner: '이동형 보스', raid: '레이드 보스' } as const;
 /** 같은 틱에 여러 마리가 나오면 알림을 한 번만 */
 let bossAnnouncedAt = 0;
 socket.on('circle:spawn', (c) => {

@@ -19,6 +19,7 @@ const BOSS_BODY: Record<BossType, [string, string, string]> = {
   guard: ['#e8f4ff', '#6fa8dc', '#2b5c8a'],
   rage: ['#fff0d6', '#ff9f43', '#b35400'],
   runner: ['#d6fff6', '#2ec4b6', '#0b6e66'],
+  raid: ['#f3e0ff', '#9b5de5', '#4a1d7a'],
 };
 const RAGE_BODY: [string, string, string] = ['#ffd0d0', '#ff4d4d', '#8a0000'];
 
@@ -43,7 +44,7 @@ const SCORE_TIER: Record<ScoreTier, { col: string; size: number }> = {
 /** 보스 처치 배너 높이: 판 중앙에서 220 위 (화면 문구와 안 겹치게) */
 const BANNER_Y = FIELD.h / 2 - 220, BANNER_LIFE = 1.2;
 
-type BasicKind = Exclude<CircleKind, 'boss' | 'item'>;
+type BasicKind = Exclude<CircleKind, 'boss' | 'item' | 'threat'>;
 const GOLD_TRAIL = [40, 80, 120];
 
 type Fx =
@@ -100,6 +101,9 @@ export interface DrawState {
   popped?: ReadonlySet<number>;
   /** 내 커서가 갇힌 소용돌이 번호 (없으면 −1) */
   trapped?: number;
+  /** 협력전: 사람 id → 색 (공격 원 표적 테두리), 내 id */
+  colorOf?: ReadonlyMap<string, ColorIndex>;
+  meId?: string;
 }
 
 export class Renderer {
@@ -309,6 +313,7 @@ export class Renderer {
       fade(c);
       if (c.kind === 'gold' && !this.warp) this.drawGoldTrail(c, s.now);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
+      else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, now, s);
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
     ctx.globalAlpha = base;
@@ -703,6 +708,26 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** 협력전 공격 원: 어두운 가시 원 + 표적 색 테두리 (내가 표적이면 굵게) */
+  private drawThreat(c: Circle, x: number, y: number, r: number, frameNow: number, s: DrawState) {
+    const ctx = this.ctx;
+    const col = c.target ? s.colorOf?.get(c.target) : undefined;
+    const mine = !!c.target && c.target === s.meId;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(frameNow / 300 + c.id);
+    ctx.fillStyle = '#2b1838';
+    ctx.beginPath();
+    const n = 8;
+    for (let i = 0; i < n * 2; i++) {
+      const a = (i / (n * 2)) * Math.PI * 2, k = i % 2 ? r * 0.72 : r * 1.12;
+      if (i) ctx.lineTo(Math.cos(a) * k, Math.sin(a) * k); else ctx.moveTo(k, 0);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth = mine ? 6 : 3;
+    ctx.strokeStyle = col !== undefined ? COLORS[col].hex : '#c9b8d8';
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
   /** 멈춘 원 위의 시계 바늘 */
   private drawClock(p: { x: number; y: number }, r: number, frameNow: number) {
     const ctx = this.ctx, a = frameNow / 400;
@@ -772,7 +797,7 @@ export class Renderer {
 }
 
 /** 점수판, 버튼 등에 쓰는 작은 SVG 아이콘 */
-export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold'>, size = 22) {
+export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat'>, size = 22) {
   const s = size, h = s / 2;
   if (color === 'boss') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h - 1}" fill="#ffc23a" stroke="#fff" stroke-width="1.5"/><path d="M${s * .28} ${s * .62}V${s * .36}L${s * .39} ${s * .5}L${h} ${s * .3}L${s * .61} ${s * .5}L${s * .72} ${s * .36}V${s * .62}Z" fill="#502d00" fill-opacity=".6"/></svg>`;
   if (color === 'rainbow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><defs><linearGradient id="rg${s}" x1="0" x2="1"><stop offset="0" stop-color="#ff5d73"/><stop offset=".5" stop-color="#ffd43b"/><stop offset="1" stop-color="#4dabf7"/></linearGradient></defs><circle cx="${h}" cy="${h}" r="${h - 1}" fill="url(#rg${s})"/></svg>`;
