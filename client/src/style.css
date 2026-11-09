@@ -153,6 +153,30 @@ td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align:
 .mopt[aria-pressed="true"] { border-color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); }
 .mopt:disabled { cursor: default; }
 .coop-levels .mopt { min-width: 110px; }
+/* 협력전 */
+.coophud { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); width: min(520px, 80%); z-index: 3; pointer-events: none; font: 600 12px var(--body); color: var(--fg); }
+.coophud .ch-top { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; text-shadow: 0 1px 2px #000; }
+.coophud .ch-top span { color: var(--muted); }
+.coophud .ch-top em { margin-left: auto; font-style: normal; }
+.coophud .ch-bar { position: relative; height: 10px; border-radius: 6px; background: rgba(0,0,0,.45); overflow: hidden; border: 1px solid rgba(255,255,255,.25); }
+.coophud .ch-bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #7b2cbf, #c77dff); transition: width .15s; }
+.coophud .ch-bar s { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,.7); }
+.coophud .ch-cards { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; pointer-events: auto; }
+.coophud .ch-card { padding: 1px 7px; border-radius: 8px; background: rgba(199,125,255,.25); border: 1px solid rgba(199,125,255,.6); font-size: 11px; }
+.coopvote .cv-cards { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 12px; }
+.coopvote .cv-card { width: 170px; min-height: 120px; display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); color: var(--fg); cursor: pointer; font: 600 15px var(--body); text-align: left; }
+.coopvote .cv-card span { color: var(--muted); font-size: 12px; font-weight: 500; }
+.coopvote .cv-card[aria-pressed="true"] { border-color: #c77dff; box-shadow: inset 0 0 0 1px #c77dff; }
+.coopvote .cv-card[data-win] { border-color: var(--yellow); box-shadow: 0 0 0 2px var(--yellow); }
+.coopvote .cv-card:disabled { cursor: default; }
+.coopvote .cv-who { display: flex; gap: 4px; margin-top: auto; }
+.coopvote .cv-who i { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #fff; }
+.chip .hearts { display: inline-flex; gap: 1px; color: #ff5d73; font-size: 11px; align-items: center; }
+.coopres { text-align: center; margin-bottom: 10px; }
+.coopres .cr-stars { font-size: 28px; letter-spacing: 4px; color: rgba(255,255,255,.2); }
+.coopres .cr-stars .on { color: var(--yellow); }
+.coopres p { margin: 4px 0; color: var(--muted); }
+.coopline { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
 .coop-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .mtag.tm.t0, .teamsum.t0 { color: #ff8fa0; border-color: #ff8fa0; }
 .mtag.tm.t1, .teamsum.t1 { color: #7fc8ff; border-color: #7fc8ff; }

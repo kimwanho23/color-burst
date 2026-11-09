@@ -3,11 +3,13 @@ import { COLORS, type GameOver, type PlayerState, type RoundEffect } from '@colo
 import { shapeSVG } from './render.ts';
 import { buildTiles, effectItems } from './arcadeUI.ts';
 import { sourcesHtml } from './sources.ts';
+import { coopLine } from './coopUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 /** finalEffects: 아케이드 마지막 라운드 끝에 적용된 저주·세금 결과 (점수가 왜 바뀌었는지 보여 준다) */
-export function renderResult(d: GameOver, myId: string, finalEffects: readonly RoundEffect[] = []) {
+/** startAt: 판 시작 시각 (협력전 탈락 시각 표시) */
+export function renderResult(d: GameOver, myId: string, finalEffects: readonly RoundEffect[] = [], startAt = 0) {
   const byId = new Map(d.ranking.map((p) => [p.id, p]));
   const titlesOf = (id: string) => d.titles.filter((t) => t.playerId === id);
 
@@ -21,7 +23,7 @@ export function renderResult(d: GameOver, myId: string, finalEffects: readonly R
     const tags = titlesOf(p.id).map((t) => `<span class="title" title="${esc(t.desc)}">${t.name}</span>`).join('');
     return `<div class="${p.id === myId ? 'me' : ''}">
       <span class="pos">${i + 1}</span>${shapeSVG(p.color, 24)}
-      <span class="who"><span>${esc(p.name)}${p.id === myId ? ' (나)' : ''}${w ? ` <em>${w}승</em>` : ''}</span>${tags ? `<span class="tags">${tags}</span>` : ''}${buildTiles(p.picks ?? [], 15)}</span>
+      <span class="who"><span>${esc(p.name)}${p.id === myId ? ' (나)' : ''}${w ? ` <em>${w}승</em>` : ''}</span>${tags ? `<span class="tags">${tags}</span>` : ''}${d.coop ? coopLine(p, startAt) : ''}${buildTiles(p.picks ?? [], 15)}</span>
       <span class="v">${p.score}</span></div>`;
   }).join('');
 

@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type CoopVote, type CoopCardId, coopPhase, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
@@ -12,6 +12,7 @@ import { hideTutorial, noteTutorialCombo, showTutorialDone, showTutorialStep } f
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
+import { coopResultHtml, heartsHtml, renderCoopHud, renderVote, tickVote } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, abilityIcon, icon, itemIcon } from './icons.ts';
 import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
@@ -101,6 +102,14 @@ let blast = { x: CX, y: CY, R: CORNER };
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
 /** 지금 판(또는 대기실)의 방 규칙 */
 let rules: RoomRules = DEFAULT_RULES;
+/** 협력전: 진행 상태, 열린 투표, 방금 뽑힌 카드(투표 창 강조) */
+let coopState: CoopState | null = null;
+let coopVote: CoopVote | null = null;
+let coopChosen: CoopCardId | null = null;
+function renderCoop() {
+  renderCoopHud($('stage'), playing ? coopState : null);
+  renderVote($('stage'), playing ? coopVote : null, players, myId(), (c) => socket.emit('coop:pick', c), coopChosen);
+}
 /** 일시정지 중이면 멈춘 순간의 서버 시각. 화면은 이 시각에 멈춰 있다 */
 let pausedView = 0;
 const viewNow = () => (pausedView || serverNow());
@@ -436,6 +445,7 @@ function resetToHome(err = '') {
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
   pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;
   arcade = null; offer = null;
+  coopState = null; coopVote = null; coopChosen = null; renderCoop();
   $('pauseOv').hidden = true; $('pickOv').hidden = true; $('roundEnd').hidden = true;
   resetComboNotice();
   closeChipPop();
@@ -511,11 +521,15 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   setLasers(d.lasers ?? []);
   mapPattern = d.pattern ?? null;
   popped = new Set(d.popped ?? []);
+  coopState = d.coop ?? null;
+  coopVote = coopState?.voting ?? null;
+  if (!coopVote) coopChosen = null;
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
   playing = true;
   show(null);
   renderScores();
+  renderCoop();
   initAudio();
   if (picking()) { stopMusic(); showPick(); return; }
   // 고른 카드 연출이 끝난 뒤에 선택 화면을 닫는다 (카운트다운 3초 동안이라 게임에는 영향 없음)
@@ -525,9 +539,50 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
 }
 socket.on('game:start', (d) => { hideTip(); applyPlay(d, true); });
 socket.on('game:sync', (d) => applyPlay(d, false));
-socket.on('game:pause', ({ by, until, at }) => setPaused(by, until, 0, at));
+socket.on('game:pause', ({ by, until, at }) => {
+  if (!by) { pausedView = at || serverNow(); stopMusic(); return; }
+  setPaused(by, until, 0, at);
+});
 // 일시정지가 풀림: 일시정지 화면을 닫고 at까지 카운트다운 (게임은 그때까지 멈춰 있음)
-socket.on('game:resuming', ({ at }) => { resumeAt = at; lastCount = -1; $('pauseOv').hidden = true; });
+socket.on('game:resuming', ({ at }) => { resumeAt = at; lastCount = -1; $('pauseOv').hidden = true; coopVote = null; coopChosen = null; renderCoop(); });
+// 협력전
+socket.on('coop:state', (s) => {
+  // 단계 경계에 닿았으면(전환 중) 레이저·공격 원·장판을 지운다 (서버도 지움)
+  if (coopPhase(s.hp, s.maxHp) !== s.phase && !s.voting) {
+    setLasers([]); mapPattern = null;
+    for (const [id, c] of circles) if (c.kind === 'threat') circles.delete(id);
+    if (!coopState || coopState.hp !== s.hp || coopState.phase === s.phase) renderer.banner('보스 분노!', '#c77dff');
+  }
+  coopState = s; renderCoop();
+});
+socket.on('coop:vote', (v) => { coopVote = v; coopChosen = null; renderCoop(); sfx.patternWarn(); });
+socket.on('coop:votes', (votes) => { if (coopVote) { coopVote = { ...coopVote, votes }; renderCoop(); } });
+socket.on('coop:card', ({ card, cards }) => {
+  coopChosen = card;
+  if (coopState) coopState = { ...coopState, cards };
+  renderCoop();
+  sfx.legend();
+});
+socket.on('coop:hit', ({ playerId, by, lives, circleId }) => {
+  const p = players.find((x) => x.id === playerId);
+  if (p) { p.lives = lives; renderScores(); }
+  if (circleId !== undefined) circles.delete(circleId);
+  const what = by === 'laser' ? '레이저' : by === 'hazard' ? '장판' : '공격 원';
+  if (playerId === myId()) {
+    const c = gameCursor.pos ?? { x: CX, y: CY };
+    renderer.text(c.x, c.y - 70, lives > 0 ? `생명 −1 (${lives}개 남음)` : '생명이 다 떨어졌어요', '#ff5d73', 1.2);
+    renderer.shakeFor(0.25, 8);
+    if (by === 'threat') sfx.comboBroken();
+  } else if (p) pushFeed($('feed'), icon(UI.heart, 18), `${p.name}: ${what}에 맞아 생명 −1`, COLORS[p.color].hex);
+});
+socket.on('threat:popped', ({ circleId, by, gained }) => {
+  const c = circles.get(circleId);
+  circles.delete(circleId); pending.delete(circleId);
+  if (!c) return;
+  const q = circlePos(c, serverNow());
+  renderer.burst(q.x, q.y, '#c77dff', by === myId());
+  if (by === myId()) { sfx.hit(2); renderer.scoreText(q.x, q.y, `+${gained} 막음!`, scoreTier({})); }
+});
 
 /** at: 서버가 멈춘 시각. 화면을 그 순간에 멈춰 둔다 (다시 접속해도 접속한 시각이 아니라 멈춘 순간) */
 function setPaused(by: string | null, until = 0, resuming = 0, at = 0) {
@@ -652,6 +707,7 @@ const scoreTier = (o: { jackpot?: number; fever?: boolean; special?: boolean; ki
 socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged, feverStarted, comboBonus }) => {
   const c = circles.get(circleId);
   if (c) c.hp = hp;
+  if (coopState && circleId === coopState.bossId) { coopState = { ...coopState, hp }; renderCoopHud($('stage'), coopState); }
   if (by === myId() && c && (blocked || enraged)) {
     const p = circlePos(c, serverNow());
     // 방어형 보호막에 막힘 / 붉은 공격형을 때려 감점
@@ -901,16 +957,19 @@ socket.on('game:over', (d) => {
   $('stage').classList.remove('feverOn');
   const pos = ranking.findIndex((p) => p.id === myId()) + 1;
   const myTeam = players.find((p) => p.id === myId())?.team;
-  $('resTitle').textContent = d.teams
+  $('resTitle').textContent = d.coop
+    ? (d.coop.win ? '보스 처치!' : '아쉽게 실패했어요')
+    : d.teams
     ? (d.teamDraw ? '무승부!' : d.teams[0].team === myTeam ? '우리 팀 승리!' : '아쉽게 졌어요')
     : pos === 1 ? '1등!' : `${pos}등`;
-  const r = renderResult(d, myId(), effects);
-  $('rank').innerHTML = r.rank;
+  const r = renderResult(d, myId(), effects, startAt);
+  $('rank').innerHTML = (d.coop ? coopResultHtml(d.coop) : '') + r.rank;
+  coopState = null; coopVote = null; coopChosen = null; renderCoop();
   $('titleList').innerHTML = r.titles;
   $('graphBox').innerHTML = r.graph;
   $('srcBox').innerHTML = r.sources;
   if (room) room.wins = d.wins;
-  (pos === 1 ? sfx.win : sfx.lose)();
+  ((d.coop ? d.coop.win : pos === 1) ? sfx.win : sfx.lose)();
   const again = isHost();
   $<HTMLButtonElement>('rematchBtn').hidden = !again;
   $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
@@ -1051,7 +1110,7 @@ function renderScores() {
   const list = team ? [...players].sort((a, b) => a.team - b.team) : players;
   const sums = team ? ([0, 1] as const).map((t) => `<div class="teamsum t${t}"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${players.filter((p) => p.team === t).reduce((a, p) => a + p.score, 0)}</span></div>`).join('') : '';
   const warnId = outWarn && serverNow() < outWarn.at ? outWarn.id : null;
-  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}${p.outAt ? ' out' : ''}${p.id === warnId ? ' danger' : ''}" data-id="${p.id}"${p.outAt ? ` data-rank="${p.outRank}등"` : ''}>${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
+  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}${p.outAt ? ' out' : ''}${p.id === warnId ? ' danger' : ''}" data-id="${p.id}"${p.outAt ? ` data-rank="${p.outRank}등"` : ''}>${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${playing && rules.coop ? heartsHtml(p) : ''}${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
   renderChipPop();
 }
 
@@ -1165,6 +1224,9 @@ function frame() {
   vortexWarnHeard = vw;
   if (aura) gameCursor.pull(aura, RULES.aura.pullSpeed * dt);
   updateHud(now);
+  if (coopVote) tickVote(serverNow());
+  // 협력전: 맞은 뒤 무적 동안 내 커서가 깜빡인다
+  const blink = !!m && rules.coop && now < m.immuneUntil && Math.floor(now / 120) % 2 === 0;
   renderer.draw({
     circles: circles.values(),
     hidden: pending,
@@ -1175,7 +1237,7 @@ function frame() {
     blurred: !!m && now < m.blurUntil,
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
-    cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView
+    cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView && !blink
       ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now, gameCursor.pos) : 0 }
       : null,
     lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),
@@ -1184,6 +1246,8 @@ function frame() {
     pattern: mapPattern,
     popped,
     trapped: gameCursor.trapped,
+    colorOf: rules.coop ? new Map(players.map((p) => [p.id, p.color])) : undefined,
+    meId: myId(),
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),
   });
   requestAnimationFrame(frame);

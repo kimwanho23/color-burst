@@ -17,6 +17,9 @@ const BOSSES: [string, string][] = [
   ['방어형', '주기적으로 보호막을 두른다. 보호막 중에는 때려도 막힘(0점)'],
   ['공격형', '주기적으로 붉어진다. 붉을 때 때리면 감점(라운드 안에서 때린 횟수만큼 커짐)'],
   ['이동형', `작고 빠르며 벽에서 튕긴다. 둘레의 보랏빛 오오라에 커서가 들어가면 보스 쪽으로 끌리고 ${RULES.aura.tickMs / 1000}초마다 피버 게이지 −${RULES.aura.feverLoss}, 콤보 ${100 - RULES.aura.comboKeepPct}% 감소 (피버 중이면 들어갈 때 남은 피버 시간 절반)`],
+  ['레이드 보스 (협력전)', `화면 위쪽에서 좌우로 움직이는 거대 보스. 체력 ${Math.round(RULES.coop.phaseAt[0] * 100)}%·${Math.round(RULES.coop.phaseAt[1] * 100)}%에서 단계가 바뀌고 공격이 늘어나요 (1단계 레이저 → 2단계 공격 원 → 3단계 장판). 피버 중 피해 ×${RULES.coop.feverDmg}, 콤보 ${RULES.coop.comboStep}마다 +${RULES.coop.comboPer * 100}% (최대 +${RULES.coop.comboCap * 100}%)`],
+  ['공격 원 (협력전)', `보스가 뿌리는 가시 원. 테두리 색 사람이 표적이고, 화면 밖으로 놓치면 그 사람 생명 −1. 누구나 터뜨릴 수 있고 +${RULES.coop.threatPoints}`],
+  ...(Object.values(RULES.coop.cards).map((c) => [`카드: ${c.name}`, `협력전 단계 카드. ${c.desc}`] as [string, string])),
   ['황금 원 (보스 아님)', `작고 아주 빠르게 벽에서 튕기는 금빛 원. 한 판에 1~3번, 5초 뒤 사라짐. 직접 클릭으로 잡으면 +${RULES.gold.points}에 일반 원과 같은 배율(피버·점수 구역·아이템·잭팟 등)`],
 ];
 

@@ -270,6 +270,13 @@ export const ART: Record<string, (n: ArtNums) => string> = {
     + label(160, 150, '30초마다 꼴찌 탈락', '#ff5d73', 18),
   ),
 
+  coop: () => svg(
+    `<circle cx="160" cy="54" r="34" fill="#9b5de5" stroke="#f3e0ff" stroke-width="3"/><rect x="70" y="10" width="180" height="8" rx="4" fill="#2b1838"/><rect x="70" y="10" width="110" height="8" rx="4" fill="#c77dff"/>`
+    + [0, 1, 2, 3].map((i) => ball(52 + i * 72, 118, 13, i as 0)).join('')
+    + [0, 1, 2].map((i) => `<path d="M${132 + i * 28} 92l6 10 6-10" fill="none" stroke="#ff5d73" stroke-width="3" stroke-linecap="round"/>`).join('')
+    + small(160, 150, '다 같이 보스를 잡아요 · 사람마다 생명 3개', '#f1f2ff'),
+  ),
+
   arcade: (n) => {
     const card = (x: number, col: string, name: string, prism = false) =>
       `<rect x="${x}" y="30" width="62" height="88" rx="10" fill="#1e2247" stroke="${prism ? 'url(#pr)' : col}" stroke-width="3"/>`

@@ -10,6 +10,7 @@ const PARTS: readonly { key: Part; name: string; color: string }[] = [
   { key: 'gold', name: '황금 원', color: '#ffd43b' },
   { key: 'boss', name: '보스', color: '#ff8787' },
   { key: 'steal', name: '견제', color: '#ffa94d' },
+  { key: 'threat', name: '공격 원 막기', color: '#c77dff' },
   { key: 'other', name: '기타', color: '#868e96' },
 ];
 

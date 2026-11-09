@@ -49,6 +49,7 @@ export function guideSlides(tab: GuideTab, rules: RoomRules, inRoom = true): Gui
     s('growth', '성장 증강 · 시너지 · 진화', `아케이드에서 성장 증강은 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 남아요. 같은 분류의 서로 다른 증강을 모으면 시너지 보너스, 같은 증강을 ${EVOLVE.count}번 고르면 진화해서 레전드 효과를 얻어요.`, rules.mode !== 'arcade'),
     s('team', '팀전 2:2', '두 명씩 팀을 나눠요. 같은 팀 색 원은 내 색처럼 잡고, 견제는 상대 팀에게만 돼요. 두 사람 점수의 합으로 이겨요.', !rules.team),
     s('survival', '서바이벌', `${rules.mode === 'arcade' ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌가 탈락해요. 탈락하면 구경만 할 수 있고, 마지막까지 남은 사람이 이겨요.`, !rules.survival),
+    s('coop', '협력전', `모두 같은 편이 되어 ${RULES.coop.timeSec}초 안에 레이드 보스를 잡아요. 사람마다 생명 ${RULES.coop.lives}개. 레이저·장판에 맞거나 내 색 테두리의 공격 원을 놓치면 −1이고, 맞은 뒤 ${RULES.coop.immuneMs / 1000}초는 무적이에요. 피버 중에는 보스 피해 ×${RULES.coop.feverDmg}. 보스 체력 단계마다 다 같이 카드 하나를 골라요.`, !rules.coop),
     s('arcade', '아케이드', `${ARCADE.rounds}라운드를 이어서 해요. 라운드가 끝날 때마다 증강을 골라요(노말·레어·에픽·레전드). 정해진 증강을 모으면 조합 보너스, 가끔 큰 보상과 대가가 붙은 저주 카드도 나와요. 꼴찌에게는 역전 기회가 있어요.`, rules.mode !== 'arcade'),
   ];
 }
