@@ -536,6 +536,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   const wait = Math.max(0, animUntil - performance.now());
   setTimeout(() => { if (!picking()) { $('pickOv').hidden = true; renderedSig = ''; } }, wait);
   setPaused(d.pausedBy, d.pauseUntil, d.resumeAt, d.pausedAt);
+  if (d.pausedAt && !d.pausedBy) { pausedView = d.pausedAt; resumeAt = d.resumeAt; stopMusic(); }
 }
 socket.on('game:start', (d) => { hideTip(); applyPlay(d, true); });
 socket.on('game:sync', (d) => applyPlay(d, false));
@@ -544,7 +545,10 @@ socket.on('game:pause', ({ by, until, at }) => {
   setPaused(by, until, 0, at);
 });
 // 일시정지가 풀림: 일시정지 화면을 닫고 at까지 카운트다운 (게임은 그때까지 멈춰 있음)
-socket.on('game:resuming', ({ at }) => { resumeAt = at; lastCount = -1; $('pauseOv').hidden = true; coopVote = null; coopChosen = null; renderCoop(); });
+socket.on('game:resuming', ({ at }) => {
+  resumeAt = at; lastCount = -1; $('pauseOv').hidden = true;
+  if (coopVote || coopChosen) { coopVote = null; coopChosen = null; renderCoop(); if (room?.solo && document.hidden) socket.emit('game:pause'); }
+});
 // 협력전
 socket.on('coop:state', (s) => {
   // 단계 경계에 닿았으면(전환 중) 레이저·공격 원·장판을 지운다 (서버도 지움)
@@ -1053,7 +1057,8 @@ $('cv').addEventListener('pointerdown', (e) => {
   // 위에 그려진(나중에 나온) 원부터, 보스는 맨 마지막에 판정
   const list = [...circles.values()].reverse();
   // 자석에 끌려가는 원은 누를 수 없다
-  const hit = list.find((c) => c.kind !== 'boss' && !pending.has(c.id) && !pulls.has(c.id) && isHit(c, now, x, y))
+  const foreign = (c: Circle) => rules.coop && !!m && typeof c.kind === 'number' && !ownsKind(c.kind, m, players, false);
+  const hit = list.find((c) => c.kind !== 'boss' && !foreign(c) && !pending.has(c.id) && !pulls.has(c.id) && isHit(c, now, x, y))
     ?? list.find((c) => c.kind === 'boss' && isHit(c, now, x, y));
   if (hit?.kind === 'boss') {
     // 보호막·붉은 상태면 서버 응답(막힘·감점)으로만 연출한다
