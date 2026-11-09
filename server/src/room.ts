@@ -327,6 +327,12 @@ export class Room {
 
   private beginResume() {
     this.clearPauseTimers();
+    // 시작 카운트다운 중에 멈췄으면 다시 시작 카운트다운을 따로 보이지 않고 바로 이어 간다
+    // (남은 시작 카운트다운이 그 역할을 한다. 너무 짧게 남았으면 resumeMs만큼은 남게 늘림)
+    if (this.pausedAt < this.startAt) {
+      this.finishResume(Math.max(0, RULES.pause.resumeMs - (this.startAt - this.pausedAt)));
+      return;
+    }
     this.resumeAt = Date.now() + RULES.pause.resumeMs;
     this.io.to(this.code).emit('game:resuming', { at: this.resumeAt });
     this.resumeTimer = setTimeout(() => this.finishResume(), RULES.pause.resumeMs);
@@ -337,7 +343,7 @@ export class Room {
     this.clearPauseTimers();
     this.resumeAt = 0;
     this.pausedBy = id;
-    this.io.to(this.code).emit('game:pause', { by: id, until: 0 });
+    this.io.to(this.code).emit('game:pause', { by: id, until: 0, at: this.pausedAt });
   }
 
   private clearPauseTimers() {
@@ -346,11 +352,11 @@ export class Room {
     this.pauseTimer = this.resumeTimer = null;
   }
 
-  /** 카운트다운이 끝남: 멈춰 있던 시간(카운트다운 포함)만큼 모든 시각을 밀고 다시 시작 */
-  private finishResume() {
+  /** 카운트다운이 끝남: 멈춰 있던 시간(카운트다운 포함, extra만큼 더)만큼 모든 시각을 밀고 다시 시작 */
+  private finishResume(extra = 0) {
     this.resumeTimer = null;
     if (this.phase !== 'play' || !this.pausedAt) { this.resumeAt = 0; return; }
-    const delta = Date.now() - this.pausedAt;
+    const delta = Date.now() - this.pausedAt + extra;
     // 멈춰 있던 시간만큼 모든 시각을 뒤로 민다
     this.startAt += delta; this.endAt += delta; this.lastSpawn += delta;
     // 원의 정지 구간도 출발 시각과 같이 민다 (상대 위치가 그대로여야 한다)
@@ -377,7 +383,7 @@ export class Room {
     // 멀티: maxMs가 지나면 저절로 풀린다 (멈춘 사람이 나가도 그대로)
     this.pauseUntil = this.solo ? 0 : this.pausedAt + RULES.pause.maxMs;
     if (this.pauseUntil) this.pauseTimer = setTimeout(() => { this.pauseTimer = null; if (this.pausedAt && !this.resumeAt) this.beginResume(); }, RULES.pause.maxMs);
-    this.io.to(this.code).emit('game:pause', { by: id, until: this.pauseUntil });
+    this.io.to(this.code).emit('game:pause', { by: id, until: this.pauseUntil, at: this.pausedAt });
   }
 
   /** 아케이드: 능력 고르기 */
@@ -666,7 +672,7 @@ export class Room {
   private playPayload() {
     return {
       startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
-      rules: this.rules, pausedBy: this.pausedBy, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
+      rules: this.rules, pausedBy: this.pausedBy, pausedAt: this.pausedAt, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
       pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
       pattern: this.pattern, popped: [...this.popped],
     };

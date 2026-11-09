@@ -102,7 +102,6 @@ let rules: RoomRules = DEFAULT_RULES;
 /** 일시정지 중이면 멈춘 순간의 서버 시각. 화면은 이 시각에 멈춰 있다 */
 let pausedView = 0;
 const viewNow = () => (pausedView || serverNow());
-/** 혼자 하기는 본인, 멀티는 방장만 일시정지 가능 */
 /** 한 판 더·규칙 바꾸기 권한: 혼자 하기는 본인, 멀티는 방장 */
 const isHost = () => !!room && (room.solo || room.hostId === myId());
 /** 일시정지: 혼자 하기는 언제나, 멀티는 남은 횟수가 있을 때 */
@@ -400,24 +399,25 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   // 고른 카드 연출이 끝난 뒤에 선택 화면을 닫는다 (카운트다운 3초 동안이라 게임에는 영향 없음)
   const wait = Math.max(0, animUntil - performance.now());
   setTimeout(() => { if (!picking()) { $('pickOv').hidden = true; renderedSig = ''; } }, wait);
-  setPaused(d.pausedBy, d.pauseUntil, d.resumeAt);
+  setPaused(d.pausedBy, d.pauseUntil, d.resumeAt, d.pausedAt);
 }
 socket.on('game:start', (d) => { hideTip(); applyPlay(d, true); });
 socket.on('game:sync', (d) => applyPlay(d, false));
-socket.on('game:pause', ({ by, until }) => setPaused(by, until, 0));
+socket.on('game:pause', ({ by, until, at }) => setPaused(by, until, 0, at));
 // 일시정지가 풀림: 일시정지 화면을 닫고 at까지 카운트다운 (게임은 그때까지 멈춰 있음)
 socket.on('game:resuming', ({ at }) => { resumeAt = at; lastCount = -1; $('pauseOv').hidden = true; });
 
-function setPaused(by: string | null, until = 0, resuming = 0) {
+/** at: 서버가 멈춘 시각. 화면을 그 순간에 멈춰 둔다 (다시 접속해도 접속한 시각이 아니라 멈춘 순간) */
+function setPaused(by: string | null, until = 0, resuming = 0, at = 0) {
   pauseUntil = by ? until : 0;
   resumeAt = by ? resuming : 0;
   if (by) {
     // 멈춰 있는 동안 레이저 발사음이 나지 않게 (다시 시작하면 game:sync로 다시 예약)
     laserFireTimers.forEach(clearTimeout); laserFireTimers = [];
-    if (!pausedView) pausedView = serverNow();
+    pausedView = at || pausedView || serverNow();
     stopMusic();
     const who = players.find((p) => p.id === by);
-    $('pauseWho').textContent = room?.solo ? '' : `${by === myId() ? '내가' : `${who?.name ?? '방장'}님이`} 멈췄어요`;
+    $('pauseWho').textContent = room?.solo ? '' : by === myId() ? '내가 멈췄어요' : who ? `${who.name}님이 멈췄어요` : '게임이 멈췄어요';
     // 멀티는 누구나 풀 수 있다
     $<HTMLButtonElement>('resumeBtn').hidden = !room;
     $('pauseOv').hidden = !!resumeAt;
@@ -435,11 +435,16 @@ function renderPauseLeft() {
   el.hidden = !pauseUntil;
   if (pauseUntil) el.textContent = `${sec}초 뒤 자동으로 다시 시작해요`;
 }
+let noPauseAt = -Infinity;
 function togglePause() {
   if (!playing || picking()) return;
   if (pausedView) { if (!resumeAt) socket.emit('game:resume'); return; }
   if (canPause()) socket.emit('game:pause');
-  else if (room && !room.solo) pushFeed($('feed'), icon(UI.pause, 18), '남은 일시정지가 없어요', '#ff5d73');
+  else if (room && !room.solo && performance.now() - noPauseAt > 2000) {
+    // 같은 알림을 연달아 쌓지 않는다
+    noPauseAt = performance.now();
+    pushFeed($('feed'), icon(UI.pause, 18), '남은 일시정지가 없어요', '#ff5d73');
+  }
 }
 /** 맵 패턴이 나와 있는 동안 위쪽 작은 띠: "가시 공 6" */
 function renderPatternTag(now: number) {
@@ -469,6 +474,8 @@ $('pauseBtn').onclick = togglePause;
 $('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('settingsPanel').hidden) return; // Esc는 설정 창 닫기가 먼저
+  // 꾹 눌러 반복되는 키는 무시하고, 도감·확인 창·게임 방법이 열려 있으면 P로 멈추거나 풀지 않는다
+  if (e.repeat || document.querySelector('.codex, .confirm, .guide-screen')) return;
   if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && !isTyping(e)) togglePause();
 });
 // 혼자 하기: 다른 탭으로 가면 자동으로 멈춤
@@ -970,7 +977,8 @@ function updateHud(now: number) {
 
   // 시작 카운트다운, 일시정지가 풀린 뒤 다시 시작 카운트다운
   const cd = resumeAt ? Math.ceil((resumeAt - serverNow()) / 1000) : Math.ceil((startAt - now) / 1000);
-  const showCd = playing && !picking() && cd > 0;
+  // 멈춰 있는 동안(다시 시작 카운트다운 전)은 숫자를 감춘다
+  const showCd = playing && !picking() && cd > 0 && (!pausedView || !!resumeAt);
   if (pausedView && pauseUntil && !resumeAt) renderPauseLeft();
   $('countdown').hidden = !showCd;
   if (showCd && cd !== lastCount) { $('countdown').textContent = String(cd); sfx.tick(); lastCount = cd; }
