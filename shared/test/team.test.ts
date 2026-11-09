@@ -117,3 +117,15 @@ test('팀전: 방해 아이템·1등 저격·방해 전파는 같은 팀에게 �
   assert.equal(c.blurUntil, 0, '팀원은 흐려지지 않음');
   assert.ok(b.blurUntil > 2000);
 });
+
+test('팀전: 팀 점수·최고 점수까지 같으면 무승부 (두 팀 모두 1승)', () => {
+  const { room, ids, P } = teamRoom();
+  assert.equal(room.start(ids[0]), null);
+  for (const p of room.players) p.score = 10;
+  (room as unknown as { end(): void }).end();
+  const over = lastOver as { teamDraw?: boolean; wins: Record<string, number> };
+  assert.equal(over.teamDraw, true);
+  for (const id of ids) assert.equal(over.wins[id], 1);
+  void P;
+  room.destroy();
+});

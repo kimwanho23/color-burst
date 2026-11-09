@@ -677,10 +677,11 @@ test('특별 카드를 고른 뒤 다시 뽑아도 특별 카드는 다시 안 �
 test('카드 id가 다르면 고르지 않음 (겹친 클릭)', () => {
   const { room, me, r } = arcadeRoom();
   openPick(r, 3);
-  const o = r.offers.get(me.id)!;
-  const first = o.options[0].id;
-  room.choose(me.id, 0, first);
-  room.choose(me.id, 0, first); // 같은 클릭이 한 번 더 — 그 자리는 이제 다른 카드
+  const o = r.offers.get(me.id)! as unknown as { options: Pick[]; deal: number };
+  const first = o.options[0].id, deal = o.deal;
+  // 화면은 카드 id와 묶음 번호를 함께 보낸다
+  room.choose(me.id, 0, first, deal);
+  room.choose(me.id, 0, first, deal); // 같은 클릭이 한 번 더 — 그 자리는 이제 다른 묶음
   assert.equal(me.picks.length, 1);
   room.destroy();
 });
@@ -1331,5 +1332,20 @@ test('자동 시전(방): 보호막 발생기는 보호막 버프, 자기장은 
   assert.ok((me.buffs.guard ?? 0) > now && (me.buffs.magnet ?? 0) > now);
   assert.ok((bot.buffs.guard ?? 0) > now);
   assert.equal(bot.buffs.magnet, undefined);
+  room.destroy();
+});
+
+// ---------- 리뷰 후속 ----------
+test('두 장 차례: 새로 깔린 카드가 같은 자리에 같은 증강이어도, 이전 묶음의 클릭은 무시 (묶음 번호)', () => {
+  const { room, me, r } = arcadeRoom();
+  openPick(r, 3);
+  const o = r.offers.get(me.id)! as unknown as { options: Pick[]; deal: number };
+  const first = o.options[0].id, deal = o.deal;
+  room.choose(me.id, 0, first, deal);
+  o.options[0] = { id: first, tier: 0 }; // 새 묶음에 우연히 같은 카드
+  room.choose(me.id, 0, first, deal); // 같은 클릭이 한 번 더 (이전 묶음 번호)
+  assert.equal(me.picks.length, 1);
+  room.choose(me.id, 0, first, o.deal); // 새 묶음 번호면 고름
+  assert.equal(me.picks.length, 2);
   room.destroy();
 });
