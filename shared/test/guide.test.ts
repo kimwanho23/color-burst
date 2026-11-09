@@ -22,9 +22,9 @@ test('꺼진 요소는 "이 방에선 꺼져 있어요" (보스·레이저·아�
   const off = (h: string) => (h.match(/이 방에선 꺼져 있어요/g) ?? []).length;
   assert.equal(off(guideBody('basic', { ...R, missPenalty: false })), 1);
   assert.equal(off(guideBody('basic', { ...R, stealPenalty: false })), 2); // 견제·반격
-  // 팀전·서바이벌은 기본으로 꺼져 있어 늘 +2
-  assert.equal(off(guideBody('more', { ...R, boss: false, laser: false, items: false })), 4 + 2); // 보스 2 + 레이저 + 아이템
-  assert.equal(off(guideBody('more', { ...R, mode: 'classic' })), 2 + 2); // 아케이드·성장 증강 (아케이드 전용) + 팀전·서바이벌
+  // 팀전·서바이벌·협력전은 기본으로 꺼져 있어 늘 +3
+  assert.equal(off(guideBody('more', { ...R, boss: false, laser: false, items: false })), 4 + 3); // 보스 2 + 레이저 + 아이템
+  assert.equal(off(guideBody('more', { ...R, mode: 'classic' })), 2 + 3); // 아케이드·성장 증강 (아케이드 전용) + 팀전·서바이벌·협력전
 });
 
 test('방 밖(처음 화면)에서는 꺼짐 표시 없음', () => {
@@ -35,7 +35,7 @@ test('방 밖(처음 화면)에서는 꺼짐 표시 없음', () => {
 test('게임 방법 슬라이드: 한 장에 규칙 하나, 모두 그림(SVG)이 있고 id가 겹치지 않음', () => {
   const all = [...guideSlides('basic', R), ...guideSlides('more', R)];
   assert.equal(guideSlides('basic', R).length, 9);
-  assert.equal(guideSlides('more', R).length, 10);
+  assert.equal(guideSlides('more', R).length, 11);
   assert.equal(new Set(all.map((s) => s.id)).size, all.length);
   for (const s of all) {
     assert.ok(s.art.startsWith('<svg') && s.art.endsWith('</svg>'), s.id);
