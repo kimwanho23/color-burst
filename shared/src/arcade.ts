@@ -43,7 +43,14 @@ export const LEGEND = {
   jammerSlowMs: 2_000, wideHandMult: 1.5, magnetPerSec: 2, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
   collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1, counterFever: 20,
   pickyFeverMult: 2, frenzyComboMult: 2, vanguardMult: 2, rainbowFeverMult: 2,
+  autoCharge: 15, autoGuardMs: 3_000, autoMagnetAdd: 1, luckHighMult: 2,
 } as const;
+
+/**
+ * 성장 증강 수치. 스택형: 한 칸 효과 (drillEvery콤보마다 단련 한 칸). 자동 시전형: 효과 시간·양
+ * (발동 간격은 60초 ÷ 등급 수치)
+ */
+export const GROWTH = { drillEvery: 10, drillPts: 1, crownFever: 0.2, luckPct: 1, autoMs: { autoMagnet: 2_000, autoGuard: 2_000 }, autoCharge: 10 } as const;
 
 /** 증강 조합 보너스 수치 */
 export const COMBO = {
@@ -96,15 +103,23 @@ export type AbilityId =
   | 'thickSkin' | 'plunder' | 'counterPro' | 'jammer'
   | 'jackpot' | 'wideHand' | 'magnet' | 'reflect' | 'edge'
   | 'missSave' | 'rebound' | 'rapid' | 'laserProof' | 'collector' | 'chainCombo' | 'centerKing' | 'ignite' | 'vanguard' | 'taunt'
+  | StackId | AutoId
   | CurseId | SpecialId;
 
 export type SpecialId =
   | 'comebackBoost' | 'flip' | 'focusFire' | 'hyena' | 'chaser' | 'momentum'
   | 'allHands' | 'fortress' | 'chainBlast' | 'bossFeast' | 'lastFlame' | 'itemHunter';
 
+/** 스택형 증강 (조건마다 한 칸, 게임 끝까지) */
+export type StackId = 'drill' | 'crownMark' | 'luckStack';
+/** 자동 시전형 증강 (1분에 등급 수치만큼 저절로) */
+export type AutoId = 'autoMagnet' | 'autoCharge' | 'autoGuard';
+export const STACK_IDS: readonly StackId[] = ['drill', 'crownMark', 'luckStack'];
+export const AUTO_IDS: readonly AutoId[] = ['autoMagnet', 'autoCharge', 'autoGuard'];
+
 export type CurseId = 'glassCannon' | 'gambler' | 'berserker' | 'oneWay' | 'vampire' | 'timeBomb' | 'selfTarget' | 'devilPact';
 
-export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '보조' | '저주' | '특별';
+export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '보조' | '성장' | '저주' | '특별';
 
 export interface AbilityDef {
   id: AbilityId;
@@ -167,10 +182,17 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'magnet', name: '자석', cat: '보조', values: [45, 65, 90, 180], cap: 180, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (무지개 제외, 점수 ${AUG.magnetPointPct}%만)` },
   { id: 'missSave', name: '헛손질 보정', cat: '보조', values: [40, 60, 80, 120], cap: 160, desc: (v) => `빈 곳을 클릭하면 반경 ${v} 안의 가장 가까운 내 원을 대신 잡음` },
   { id: 'collector', name: '수집가', cat: '보조', values: [20, 40, 60, 100], cap: 200, desc: (v) => `아이템 효과 시간 +${v}%` },
+  { id: 'autoMagnet', name: '자기장', cat: '보조', values: [3, 4, 6, 10], cap: 15, desc: (v) => `1분에 ${v}번 저절로 자석 ${sec(GROWTH.autoMs.autoMagnet)}` },
+  { id: 'autoCharge', name: '충전기', cat: '보조', values: [4, 6, 8, 12], cap: 20, desc: (v) => `1분에 ${v}번 저절로 피버 게이지 +${GROWTH.autoCharge}` },
+  { id: 'autoGuard', name: '보호막 발생기', cat: '보조', values: [3, 4, 6, 10], cap: 15, desc: (v) => `1분에 ${v}번 저절로 보호막 ${sec(GROWTH.autoMs.autoGuard)} (견제당해도 페널티 없음)` },
+  // 성장: 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 (수치 = 최대 칸)
+  { id: 'drill', name: '단련', cat: '성장', values: [2, 3, 5, 8], cap: 12, desc: (v) => `${GROWTH.drillEvery}콤보마다 내 색 +${GROWTH.drillPts}점이 쌓임 (최대 ${v}칸)` },
+  { id: 'crownMark', name: '왕의 증표', cat: '성장', values: [1, 2, 3, 5], cap: 8, desc: (v) => `보스 막타마다 피버 배율 +${GROWTH.crownFever}이 쌓임 (최대 ${v}칸)` },
+  { id: 'luckStack', name: '행운 축적', cat: '성장', values: [3, 5, 7, 10], cap: 15, desc: (v) => `잭팟이 터질 때마다 잭팟 확률 +${GROWTH.luckPct}%가 쌓임 (최대 ${v}칸)` },
 ];
 
 /** 봇은 고르지 않는 능력 (봇은 원을 정확히 눌러서 효과가 없음) */
-export const ASSIST_ABILITIES: readonly AbilityId[] = ['wideHand', 'magnet', 'missSave'];
+export const ASSIST_ABILITIES: readonly AbilityId[] = ['wideHand', 'magnet', 'missSave', 'autoMagnet'];
 
 /** 레전드 전용 효과 문장 (그 능력을 레전드로 한 번이라도 고르면 붙는다) */
 const L_ = LEGEND;
@@ -193,6 +215,8 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   laserProof: `레이저·위험 패턴에 닿으면 피버 게이지 +${L_.laserFever}`,
   collector: `아이템 원을 잡으면 ${pct(L_.collectorUp)} 확률로 한 등급 위`, chainCombo: `${L_.chainEvery}콤보마다`,
   centerKing: `중앙에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
+  drill: '한 칸 쌓일 때 콤보 보너스도 받음', crownMark: '보스 독식에도 한 칸', luckStack: `잭팟 배율 ×3 이상 확률 ${L_.luckHighMult}배`,
+  autoMagnet: `발동 중 자석으로 1초에 ${L_.autoMagnetAdd}개 더`, autoCharge: `피버 게이지 +${GROWTH.autoCharge} → +${L_.autoCharge}`, autoGuard: `보호막 ${sec(GROWTH.autoMs.autoGuard)} → ${sec(L_.autoGuardMs)}`,
   ignite: '화면의 내 원 전부', vanguard: `보스 등장 후 ${sec(AUG.vanguardMs)} 동안 주는 피해 ${L_.vanguardMult}배`,
   taunt: `피버 중인 상대를 견제하면 그 피버가 ${sec(L_.tauntMs)} 짧아짐`,
 };

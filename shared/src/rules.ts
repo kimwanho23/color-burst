@@ -1,4 +1,4 @@
-import { ABILITY, ARCADE, AUG, COMBO, CURSE, LEGEND, SPECIAL, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type Mods, type Pick, type RoundEffect } from './arcade.ts';
+import { ABILITY, ARCADE, AUG, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -530,6 +530,10 @@ export interface PlayerState {
   pausesLeft: number;
   /** 대기실: 준비 완료 (방장·봇은 쓰지 않음) */
   ready: boolean;
+  /** 스택형 증강: 지금 쌓인 칸 (게임 끝까지) */
+  stacks: Partial<Record<StackId, number>>;
+  /** 자동 시전형 증강: 다음 발동 서버 시각 */
+  autoAt: Partial<Record<AutoId, number>>;
   /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
   lastClaimAt: number;
   rapidStreak: number;
@@ -565,6 +569,28 @@ export function shiftTimes(p: PlayerState, since: number, delta: number) {
   if (p.roundBegin + headStartMsOf(p) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.buffs) as BuffId[]) if (p.buffs[k]! > since) p.buffs[k]! += delta;
   for (const k of Object.keys(p.debuffs) as DebuffId[]) if (p.debuffs[k]! > since) p.debuffs[k]! += delta;
+  for (const k of Object.keys(p.autoAt) as AutoId[]) if (p.autoAt[k]! > since) p.autoAt[k]! += delta;
+}
+
+/** 스택형 증강 한 칸 쌓기 (최대 칸 = 고른 등급 수치 합, cap). 올랐으면 true */
+export function addStack(p: PlayerState, id: StackId): boolean {
+  const max = modsOf(p.picks)[id];
+  const cur = p.stacks[id] ?? 0;
+  if (cur >= max) return false;
+  p.stacks[id] = cur + 1;
+  return true;
+}
+
+/** 쌓인 칸의 효과: 내 색 점수 +, 피버 배율 +, 잭팟 확률(%) + */
+export function stackBonus(p: PlayerState) {
+  const s = p.stacks ?? {};
+  return { own: (s.drill ?? 0) * GROWTH.drillPts, feverMult: (s.crownMark ?? 0) * GROWTH.crownFever, jackpot: (s.luckStack ?? 0) * GROWTH.luckPct };
+}
+
+/** 자동 시전 간격(ms): 60초 ÷ 1분 발동 수. 없으면 Infinity */
+export function autoEveryMs(p: PlayerState, id: AutoId) {
+  const n = modsOf(p.picks)[id];
+  return n > 0 ? 60_000 / n : Infinity;
 }
 
 /** 넓은 손 범위: 능력 + 아이템, 능력 상한 */
@@ -626,7 +652,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
-    pausesLeft: RULES.pause.perGame, ready: false,
+    pausesLeft: RULES.pause.perGame, ready: false, stacks: {}, autoAt: {},
   };
 }
 
@@ -634,6 +660,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
 export function resetForRound(p: PlayerState) {
   p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false; p.rankReach = 0;
   p.pausesLeft = RULES.pause.perGame;
+  p.stacks = {}; p.autoAt = {};
 }
 
 /** 능력(또는 저주)을 고른 직후 처리 */

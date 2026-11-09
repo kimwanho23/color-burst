@@ -10,7 +10,7 @@ import {
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
   Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
   HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Dumbbell, Clover, Orbit, BatteryFull, ShieldPlus, Sprout,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId, PatternId } from '@color-burst/shared';
 
@@ -27,10 +27,11 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
   vampire: Droplet, timeBomb: Bomb, selfTarget: Target, devilPact: Skull,
   comebackBoost: Rocket, flip: FlipVertical2, focusFire: Siren, hyena: Dog, chaser: Footprints, momentum: Activity,
   allHands: HandMetal, fortress: Castle, chainBlast: Radiation, bossFeast: Medal, lastFlame: Sunrise, itemHunter: PackageSearch,
+  drill: Dumbbell, crownMark: Crown, luckStack: Clover, autoMagnet: Orbit, autoCharge: BatteryFull, autoGuard: ShieldPlus,
 };
 
 const CATEGORY_ICON: Record<AbilityCategory, IconNode> = {
-  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 저주: Skull, 특별: Gem,
+  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 성장: Sprout, 저주: Skull, 특별: Gem,
 };
 
 export const ITEM_ICON: Record<ItemId, IconNode> = {
