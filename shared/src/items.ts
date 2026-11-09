@@ -43,7 +43,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   markClear: { name: '표적 해제', tier: 0, desc: '내 표적 상태가 바로 풀림' },
   feverCharge: { name: '피버 충전', tier: 0, desc: `피버 게이지 +${RULES.items.feverCharge}%` },
   instantFever: { name: '즉시 피버', tier: 1, desc: '바로 피버 (피버 중이면 시간 연장)' },
-  goldHand: { name: '황금 손', tier: 1, desc: `다음에 잡는 원 ${RULES.items.goldCount}개 점수 2배` },
+  goldHand: { name: '황금 손', tier: 1, desc: `다음에 잡는 원 ${RULES.items.goldCount}개 점수 2배 (자석으로 잡은 원 제외)` },
   double: { name: '점수 2배', tier: 1, buff: 'double', desc: `${S(M.double)}간 점수 2배` },
   paint: { name: '물들이기', tier: 1, buff: 'paint', desc: `${S(M.paint)}간 노란 원을 내 색 점수로` },
   rain: { name: '내 색 비', tier: 1, desc: `${S(M.rain)}간 내 색 원만 쏟아짐` },

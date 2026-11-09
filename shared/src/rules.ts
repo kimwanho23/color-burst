@@ -1509,7 +1509,7 @@ export function resolveClaim(
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준). 점수 구역 배율도 곱한다
   const rebound = now < claimer.reboundUntil ? 1 + m.rebound / 100 : 1;
   const viaLegend = (via === 'range' && L.has('wideHand')) ? LEGEND.wideHandMult : (via === 'save' && L.has('missSave')) ? LEGEND.missSaveMult : 1;
-  const mult = capMult((fever ? feverMultOf(claimer, G) : after ? afterMultOf(claimer) : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && pts > 0)
+  const mult = capMult((fever ? feverMultOf(claimer, G) : after ? afterMultOf(claimer) : 1) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && !magnet && pts > 0)
     * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend);
   // 잭팟은 맨 마지막에 곱한다 (블라스트·자석은 없음). 속사 레전드면 이번 잭팟 확정
   if (!blast && !magnet) {
