@@ -778,7 +778,34 @@ socket.on('game:over', (d) => {
 // 게임 커서: 진짜 마우스 위치에서 정한다 (반대는 거울 위치, 감도 감소는 늦게 따라옴)
 /** 지금 커서 효과: 감도 감소·반대, 오오라 안이면 끌려간 만큼 유지되도록 상대 이동 */
 let cursorMode: CursorMode | null = null;
+// 마우스 감도: 1.0이 아니면 게임 중 마우스를 잠그고(포인터 잠금) 이동량 × 감도로 움직인다.
+// 잠그지 않으면 게임 커서가 진짜 마우스 위치를 따라가서 감도를 줄 수 없다. 1.0이면 잠그지 않는다 (예전과 같음)
+const cv = $<HTMLCanvasElement>('cv');
+const aimLive = () => playing && !picking() && !roundOver && !pausedView;
+const wantLock = () => settings.sens !== 1;
+const locked = () => document.pointerLockElement === cv;
+/** 잠긴 동안의 가상 마우스 위치 (필드 좌표, 판 안) */
+let lockPos = { x: CX, y: CY };
+const inField = (p: { x: number; y: number }) => ({ x: Math.max(0, Math.min(FIELD.w, p.x)), y: Math.max(0, Math.min(FIELD.h, p.y)) });
+function requestLock(from: { x: number; y: number }) {
+  lockPos = inField(from);
+  try { Promise.resolve(cv.requestPointerLock()).catch(() => {}); } catch { /* 지원하지 않는 환경 */ }
+}
+document.addEventListener('pointerlockchange', () => {
+  if (locked() || !aimLive() || !wantLock()) return;
+  // 게임 중에 잠금이 풀림(Esc 등): 혼자 하기는 멈추고, 여럿이면 다시 잠그는 법을 알린다
+  if (room?.solo) socket.emit('game:pause');
+  else pushFeed($('feed'), icon(UI.pause, 18), '마우스 잠금이 풀렸어요. 판을 클릭하면 다시 잠가요', '#9ca2d6');
+});
 const moveCursor = (e: PointerEvent) => {
+  if (locked()) {
+    const o = renderer.toField(0, 0), u = renderer.toField(e.movementX, e.movementY);
+    const next = inField({ x: lockPos.x + (u.x - o.x) * settings.sens, y: lockPos.y + (u.y - o.y) * settings.sens });
+    const d = { x: next.x - lockPos.x, y: next.y - lockPos.y };
+    lockPos = next;
+    gameCursor.move(next, d);
+    return;
+  }
   const real = renderer.toField(e.clientX, e.clientY);
   const prev = renderer.toField(e.clientX - e.movementX, e.clientY - e.movementY);
   gameCursor.move(real, { x: real.x - prev.x, y: real.y - prev.y });
@@ -795,13 +822,15 @@ $('cv').addEventListener('pointerdown', (e) => {
   // 고정한 빌드 카드가 열려 있으면 이 클릭은 닫기만 한다 (빈 곳 감점이 되지 않게)
   if (popPinned) { closeChipPop(); return; }
   if (!playing || pausedView || picking() || roundOver) return;
+  // 감도가 1.0이 아니면 이 클릭으로 마우스를 잠근다 (클릭은 그대로 판정)
+  if (wantLock() && !locked() && e.pointerType === 'mouse') requestLock(gameCursor.pos ?? renderer.toField(e.clientX, e.clientY));
   ensureMusic();
   const now = serverNow();
   if (now < startAt) return;
   // 클릭은 게임 커서 위치로 판정한다 (터치는 누른 자리로 커서를 옮긴 뒤)
   moveCursor(e);
   gameCursor.snap(cursorMode);
-  const { x, y } = gameCursor.pos ?? renderer.toField(e.clientX, e.clientY);
+  const { x, y } = gameCursor.pos ?? (locked() ? lockPos : renderer.toField(e.clientX, e.clientY));
   lastClick = { x, y };
   const meNow = me();
   if (meNow && isStunned(meNow, now)) { renderer.miss(x, y, true); return; }
@@ -952,6 +981,8 @@ function frame() {
   $('codexTop').hidden = playing && !picking() && !pausedView && !roundOver;
   // 게임 중에는 진짜 마우스 커서를 숨기고 게임 커서를 그린다
   $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView);
+  // 게임이 멈추거나(일시정지·증강 선택·라운드 끝·게임 끝) 감도를 1.0으로 되돌리면 잠금을 푼다
+  if (locked() && (!aimLive() || !wantLock())) document.exitPointerLock();
   // 자석에 끌려오는 원은 화면 밖으로 나가도 잡힐 때까지 그린다
   for (const [id, c] of circles) if (isOut(c, now) && !pulls.has(id)) { circles.delete(id); pending.delete(id); }
   const m = me();

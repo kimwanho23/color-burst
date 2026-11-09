@@ -1,4 +1,4 @@
-/** 내 화면에만 적용되는 설정: 음량, 효과 줄이기, 핑 표시. 브라우저에 저장된다 */
+/** 내 화면에만 적용되는 설정: 음량, 효과 줄이기, 핑 표시, 마우스 감도. 브라우저에 저장된다 */
 import { setVolume } from './audio.ts';
 import { setReduceFx } from './render.ts';
 import { UI, icon } from './icons.ts';
@@ -9,7 +9,11 @@ export interface Settings {
   muted: boolean;
   reduceFx: boolean;
   showPing: boolean;
+  /** 마우스 감도 배율 (SENS.min~max). 1이 아니면 게임 중 마우스를 잠그고 이동량에 곱한다 */
+  sens: number;
 }
+
+export const SENS = { min: 0.3, max: 3, step: 0.1 } as const;
 
 const KEY = 'cb-settings';
 
@@ -18,10 +22,18 @@ export function isTyping(e: KeyboardEvent) {
   const t = e.target;
   return (t instanceof HTMLInputElement && (t.type === 'text' || t.type === 'search')) || t instanceof HTMLTextAreaElement;
 }
-const DEFAULTS: Settings = { music: 0.6, sfx: 0.8, muted: false, reduceFx: false, showPing: false };
+const DEFAULTS: Settings = { music: 0.6, sfx: 0.8, muted: false, reduceFx: false, showPing: false, sens: 1 };
+
+const clampSens = (v: unknown) => {
+  const n = typeof v === 'number' && Number.isFinite(v) ? v : 1;
+  return Math.round(Math.max(SENS.min, Math.min(SENS.max, n)) * 10) / 10;
+};
 
 export const settings: Settings = (() => {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; } catch { return { ...DEFAULTS }; }
+  let s: Settings;
+  try { s = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; } catch { s = { ...DEFAULTS }; }
+  s.sens = clampSens(s.sens);
+  return s;
 })();
 
 const listeners: (() => void)[] = [];
@@ -29,6 +41,7 @@ export const onSettingsChange = (fn: () => void) => listeners.push(fn);
 
 export function update(patch: Partial<Settings>) {
   Object.assign(settings, patch);
+  settings.sens = clampSens(settings.sens);
   try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch {}
   apply();
 }
@@ -45,6 +58,8 @@ export function initSettingsPanel() {
   const panel = $('settingsPanel');
   const music = $<HTMLInputElement>('setMusic'), sfx = $<HTMLInputElement>('setSfx');
   const mute = $<HTMLInputElement>('setMute'), fx = $<HTMLInputElement>('setFx'), ping = $<HTMLInputElement>('setPing');
+  const sens = $<HTMLInputElement>('setSens');
+  sens.min = String(SENS.min); sens.max = String(SENS.max); sens.step = String(SENS.step);
 
   const sync = () => {
     music.value = String(Math.round(settings.music * 100));
@@ -52,6 +67,8 @@ export function initSettingsPanel() {
     mute.checked = settings.muted; fx.checked = settings.reduceFx; ping.checked = settings.showPing;
     $('setMusicVal').textContent = `${music.value}%`;
     $('setSfxVal').textContent = `${sfx.value}%`;
+    sens.value = String(settings.sens);
+    $('setSensVal').textContent = `×${settings.sens.toFixed(1)}`;
     $('settingsBtn').innerHTML = `${icon(UI.settings, 16)}<span class="bt">${settings.muted ? '음소거' : '설정'}</span>`;
     document.documentElement.classList.toggle('reduce-fx', settings.reduceFx);
   };
@@ -64,6 +81,8 @@ export function initSettingsPanel() {
   mute.onchange = () => update({ muted: mute.checked });
   fx.onchange = () => update({ reduceFx: fx.checked });
   ping.onchange = () => update({ showPing: ping.checked });
+  sens.oninput = () => update({ sens: Number(sens.value) });
+  $('setSensReset').onclick = () => update({ sens: 1 });
 
   const fsBtn = $<HTMLButtonElement>('setFullscreen');
   const fsLabel = () => { fsBtn.textContent = document.fullscreenElement ? '전체 화면 끄기' : '전체 화면'; };

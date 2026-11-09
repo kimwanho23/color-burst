@@ -141,6 +141,8 @@ td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align:
 .set-row:not(.check) { grid-template-columns: 70px 1fr 40px; }
 .set-row input[type="range"] { width: 100%; accent-color: var(--yellow); }
 .set-row em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.set-note { margin: -4px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--yellow); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; }
 .set-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--yellow); }
 kbd { font: 700 11px var(--body); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
 .btn.small { font-size: 15px; padding: 9px 12px; }
