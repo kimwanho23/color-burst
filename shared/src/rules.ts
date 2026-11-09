@@ -155,7 +155,7 @@ export const RULES = {
     /** 가장 많이 때린 사람 */
     mvp: 5,
     /** 피해가 들어간 타격마다 피버 게이지 (콤보도 +1) */
-    feverGain: 4,
+    feverGain: 2,
     /** 독식: 처치된 보스 최대 체력의 pct% 이상을 깎았으면 +points (배율 적용), 그 사람이 막타면 막타 점수 ×killMult */
     solo: { pct: 50, points: 60, killMult: 2 },
     /** 체력 = 참가 인원 × 이 값 */

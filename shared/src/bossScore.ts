@@ -5,7 +5,7 @@
 import { AUG, COMBO, LEGEND, combosOf, hasLegend, modsOf } from './arcade.ts';
 import {
   RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
-  addStack, drillCheck, ragePenalty, rollJackpot, settleFever, zoneMult, zoneOf, type Circle, type GameRules, type PlayerState,
+  addStack, drillCheck, ragePenalty, rollJackpot, settleFever, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 
 export interface BossStrike {
@@ -85,7 +85,7 @@ export function strikeBoss(
   if (addFever(p, B.feverGain, now, G, players)) out.feverStarted = true;
 
   const mult = capMult((fever ? bossFeverMult(p, G) : after ? afterMultOf(p) : 1) * info.boost * itemMult(p, now, true)
-    * zoneMult(zoneOf(circlePos(c, now)), m) * extraMult(p, now, players));
+    * extraMult(p, now, players)); // 점수 구역 배율은 보스에 곱하지 않는다 (큰 보스가 가장자리 ×3을 너무 쉽게 받음)
   out.jackpot = rollJackpot(p, m, rand);
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
   // 타격 점수는 클릭 한 번당 (피해와 곱하지 않음: 파쇄·막타 독식의 피해는 처치·막타·독식 경쟁에만)
@@ -106,14 +106,13 @@ export function strikeBoss(
     p.score += out.killGained;
     addSrc(p, 'boss', out.killGained, { fever, jackpot: out.killJackpot });
     // 독식: 막타와 따로, 절반 이상 깎은 사람마다 그 사람 배율로 (막타 친 사람은 이번 타격 배율). 보스 헌터 조합이면 피버 게이지
-    const zone = zoneOf(circlePos(c, now));
     for (const [id] of hits) {
       const q = players.find((x) => x.id === id);
       // 서바이벌에서 탈락한 사람은 독식을 받지 않는다
       if (!q || q.outAt || !isSolo(id)) continue;
       const qFever = isFever(q, now);
       const qMult = q === p ? mult : capMult((qFever ? bossFeverMult(q, G) : now < q.afterUntil ? afterMultOf(q) : 1)
-        * scoreBoostOf(modsOf(q.picks)) * itemMult(q, now, false) * zoneMult(zone, modsOf(q.picks)) * extraMult(q, now, players));
+        * scoreBoostOf(modsOf(q.picks)) * itemMult(q, now, false) * extraMult(q, now, players));
       const gained = Math.round(S.points * qMult);
       q.score += gained;
       addSrc(q, 'boss', gained, { fever: q === p ? fever : qFever });
