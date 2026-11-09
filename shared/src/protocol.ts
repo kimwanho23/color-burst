@@ -3,7 +3,16 @@
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
-import type { TutorialStep } from './rules.ts';
+import type { TutorialStep, CoopCardId, CoopLevel } from './rules.ts';
+import type { CoopPhase } from './coop.ts';
+
+/** 협력전 투표: 카드 3장, 마감 시각(서버), 지금까지의 표 (사람 id → 카드) */
+export interface CoopVote { options: CoopCardId[]; until: number; votes: Record<string, CoopCardId> }
+/** 협력전 진행 상태 */
+export interface CoopState { level: CoopLevel; phase: CoopPhase; bossId: number; hp: number; maxHp: number; cards: CoopCardId[]; voting: CoopVote | null }
+/** 협력전 결과 */
+export interface CoopResult { win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase; cards: CoopCardId[] }
+export type CoopHitBy = 'laser' | 'hazard' | 'threat';
 import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
@@ -84,6 +93,8 @@ export interface GameOver {
   teams?: { team: 0 | 1; score: number; best: number; ids: string[] }[];
   /** 팀전 무승부 (합계·최고 점수까지 같음) */
   teamDraw?: boolean;
+  /** 협력전 결과 */
+  coop?: CoopResult;
 }
 
 export interface PlayPayload {
@@ -113,6 +124,8 @@ export interface PlayPayload {
   popped: number[];
   /** 이번 라운드 테마 (아케이드 랜덤 이벤트) */
   theme: ThemeId | null;
+  /** 협력전 진행 상태 (협력전이 아니면 없음) */
+  coop?: CoopState | null;
 }
 
 export type Ack<T = {}> = (r: ({ ok: true } & T) | { ok: false; error: string }) => void;
@@ -188,6 +201,18 @@ export interface ServerToClient {
   'game:over': (d: GameOver) => void;
   /** 튜토리얼: 단계가 바뀔 때·진행 수가 오를 때·마지막(done) */
   'tutorial:step': (d: TutorialStatus) => void;
+  /** 협력전: 단계·체력·카드가 바뀜 */
+  'coop:state': (d: CoopState) => void;
+  /** 협력전: 누가 무엇에 맞아 생명이 줄었는지 (circleId: 놓친 공격 원) */
+  'coop:hit': (d: { playerId: string; by: CoopHitBy; lives: number; immuneUntil: number; circleId?: number }) => void;
+  /** 협력전: 투표 시작 */
+  'coop:vote': (d: CoopVote) => void;
+  /** 협력전: 투표 현황 */
+  'coop:votes': (d: Record<string, CoopCardId>) => void;
+  /** 협력전: 뽑힌 카드, 지금까지 받은 카드 */
+  'coop:card': (d: { card: CoopCardId; cards: CoopCardId[] }) => void;
+  /** 협력전: 공격 원을 터뜨림 */
+  'threat:popped': (d: { circleId: number; by: string; gained: number }) => void;
 }
 
 export interface ClientToServer {
@@ -226,6 +251,8 @@ export interface ClientToServer {
   'cursor:move': (d: { x: number; y: number }) => void;
   /** circleId가 null이면 빈 공간 클릭. x, y는 필드 좌표 */
   'game:click': (d: { circleId: number | null; x: number; y: number }) => void;
+  /** 협력전: 투표할 카드 (다시 고르면 표가 옮겨 간다) */
+  'coop:pick': (card: CoopCardId) => void;
   /** 서버 시각 맞추기 */
   'time:ping': (ack: (serverNow: number) => void) => void;
 }
