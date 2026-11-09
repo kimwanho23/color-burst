@@ -198,7 +198,28 @@ export const RULES = {
     sweepDeg: 60,
     sweepGapMs: 100,
   },
+  /**
+   * 튜토리얼: 단계 순서, 단계별 목표(fever는 피버 시작 1회), 피버 단계 시작 게이지, 목표 달성 뒤 다음 단계까지 대기.
+   * spawn: 단계마다 원 생성 간격(ms)·판에 동시에 있는 최대 수·속도 배율
+   */
+  tutorial: {
+    steps: ['own', 'combo', 'fever', 'steal'],
+    goal: { own: 3, combo: 5, fever: 1, steal: 1 },
+    feverStart: 50,
+    nextMs: 1000,
+    /** 견제 단계 봇의 시작 콤보 (끊을 콤보가 있어야 견제가 보인다) */
+    botCombo: 5,
+    spawn: {
+      own: { gapMs: 1200, max: 3, speed: 0.5 },
+      combo: { gapMs: 450, max: 7, speed: 0.7 },
+      fever: { gapMs: 450, max: 7, speed: 0.7 },
+      steal: { gapMs: 700, max: 5, speed: 0.7 },
+    },
+  },
 } as const;
+
+/** 튜토리얼 단계 */
+export type TutorialStep = (typeof RULES.tutorial.steps)[number];
 
 // ---------- 방 규칙 (방장이 대기실에서 설정) ----------
 
@@ -289,6 +310,9 @@ export const DEFAULT_RULES: RoomRules = {
 export const TIME_ATTACK_RULES: RoomRules = {
   ...DEFAULT_RULES, mode: 'classic', roundSec: 60, boss: false, laser: false, sabotage: false, mapPct: 0, eventPct: 0, themePct: 0, team: false, survival: false,
 };
+
+/** 튜토리얼 방: 단계별 판만 (보스·아이템·무지개·웨이브·이벤트·레이저·패턴 없음) */
+export const TUTORIAL_RULES: RoomRules = { ...TIME_ATTACK_RULES, rainbowPct: 0, items: false, waves: false, chaos: false, comeback: false };
 
 export const PRESETS = {
   basic: { name: '기본', desc: '표준 규칙', rules: DEFAULT_RULES },
