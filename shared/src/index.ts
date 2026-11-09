@@ -7,3 +7,4 @@ export * from './waves.ts';
 export * from './cursor.ts';
 export * from './patterns.ts';
 export * from './bossScore.ts';
+export * from './coop.ts';

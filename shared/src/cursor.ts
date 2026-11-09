@@ -65,8 +65,9 @@ const lineThrough = (c: Point, ang: number): LaserLine => {
  * 중심은 판 안쪽(가로·세로 15%~85%)
  */
 /** half: 맞는 거리 (방 규칙 레이저 두께). 평행 두 줄 사이 빈 틈이 늘 safeGap이 되게 */
-export function rollVolley(rand = Math.random, half: number = RULES.laser.width): { kind: VolleyKind; lines: LaserLine[] } {
-  const odds = Object.entries(RULES.laser.volleyOdds) as [VolleyKind, number][];
+/** oddsBy: 모양 확률(%) 덮어쓰기 (협력전 난이도) */
+export function rollVolley(rand = Math.random, half: number = RULES.laser.width, oddsBy: Readonly<Record<VolleyKind, number>> = RULES.laser.volleyOdds): { kind: VolleyKind; lines: LaserLine[] } {
+  const odds = (Object.entries(oddsBy) as [VolleyKind, number][]).filter(([, w]) => w > 0);
   let r = rand() * odds.reduce((s, [, w]) => s + w, 0);
   let kind: VolleyKind = odds[odds.length - 1][0];
   for (const [k, w] of odds) { r -= w; if (r < 0) { kind = k; break; } }
