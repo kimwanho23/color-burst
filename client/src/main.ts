@@ -337,7 +337,7 @@ function renderLobby() {
   $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
   $('hostOpts').hidden = !host;
   // 팀전·서바이벌은 늘 4명이 되게 봇으로 채운다 (체크박스는 바꿀 수 없음)
-  const forceBots = room.rules.team || room.rules.survival;
+  const forceBots = room.rules.team || room.rules.survival || room.rules.coop;
   $<HTMLInputElement>('fillBots').checked = room.fillBots || forceBots;
   $<HTMLInputElement>('fillBots').disabled = forceBots;
   $('botLevel').innerHTML = LEVELS.map((l, i) => `<button type="button" data-l="${i}" aria-pressed="${room!.botLevel === i}">${i === 0 ? icon(UI.bot, 15) : ''}${i === 0 ? '봇 ' : ''}${l}</button>`).join('');

@@ -1,5 +1,5 @@
 /** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 (점수표는 도감 '규칙' 탭) */
-import { ARCADE, MODE_KEYS, PRESETS, RULES, RULE_CHOICES, matchPreset, type PresetId, type RoomRules } from '@color-burst/shared';
+import { ARCADE, COOP_LEVELS, MODE_KEYS, PRESETS, RULES, RULE_CHOICES, matchPreset, type CoopLevel, type PresetId, type RoomRules } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
 import { UI, icon } from './icons.ts';
 
@@ -36,6 +36,13 @@ const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'laser', label: '레이저 (맞으면 스턴)' },
   { key: 'sabotage', label: '방해 아이템 (감도·반대·시야·저격)' },
 ];
+/** 협력전에서 쓰지 않는 설정 (고급 설정에서 숨김) */
+const COOP_OFF = new Set<string>(['roundSec', 'markSec', 'mapPct', 'laserWidth', 'boss', 'stealPenalty', 'comeback', 'laser', 'sabotage']);
+const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string]> = {
+  easy: ['이지', '레이저가 얇고 공격이 느려요'],
+  normal: ['노말', '보통 세기의 공격'],
+  hard: ['하드', '굵은 레이저와 빠른 공격 원'],
+};
 /** 커스텀 규칙: 방장 브라우저에만 저장 (모드 설정은 빼고) */
 const CUSTOM_KEY = 'cb-custom-rules';
 function loadCustom(): Partial<RoomRules> | null {
@@ -93,14 +100,21 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     bind(el, rules, on);
     return;
   }
-  const solo = !rules.team && !rules.survival;
+  const solo = !rules.team && !rules.survival && !rules.coop;
+  const coop = !!rules.coop;
   el.innerHTML = `${modes}
     <div class="lbl">인원 모드${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="modeopts">
       <button type="button" class="mopt" data-o="solo" aria-pressed="${solo}" ${dis}>${icon(UI.solo, 22, 'mi')}<b>개인전</b><span>모두가 각자 경쟁, 점수가 가장 높은 사람이 승리</span></button>
       <button type="button" class="mopt" data-o="team" aria-pressed="${rules.team}" ${dis}>${icon(UI.team, 22, 'mi')}<b>팀전 2:2</b><span>같은 팀 색은 내 색, 팀 점수 합으로 승부</span></button>
       <button type="button" class="mopt" data-o="survival" aria-pressed="${rules.survival}" ${dis}>${icon(UI.survival, 22, 'mi')}<b>서바이벌</b><span>${arcade ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌 탈락, 마지막 1명이 승리</span></button>
+      <button type="button" class="mopt" data-o="coop" aria-pressed="${coop}" ${dis}>${icon(UI.coop, 22, 'mi')}<b>협력전</b><span>다 같이 거대 보스를 잡아요, 생명 ${RULES.coop.lives}개 · ${RULES.coop.timeSec}초 (클래식)</span></button>
     </div>
+    ${coop ? `<div class="lbl">협력전 난이도${editable ? '' : ' (방장이 정해요)'}</div>
+    <div class="modeopts coop-levels">
+      ${COOP_LEVELS.map((l) => `<button type="button" class="mopt" data-lv="${l}" aria-pressed="${rules.coopLevel === l}" ${dis}><b>${COOP_LEVEL_LABEL[l][0]}</b><span>${COOP_LEVEL_LABEL[l][1]}</span></button>`).join('')}
+    </div>
+    <p class="coop-note">협력전에서는 견제·표적·보스 원·레이저 설정·방해 아이템·맵 패턴·꼴찌 보정을 쓰지 않아요. 보스가 직접 레이저·공격 원·장판으로 공격해요.</p>` : ''}
     ${arcade ? `<label class="adv-row" for="rule-arcadeRoundSec"><span>라운드 시간</span>
       <select id="rule-arcadeRoundSec" data-k="arcadeRoundSec" ${dis}>
         ${RULE_CHOICES.arcadeRoundSec.map((v) => `<option value="${v}" ${rules.arcadeRoundSec === v ? 'selected' : ''}>${v}초</option>`).join('')}
@@ -114,13 +128,13 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <details class="adv">
       <summary>고급 설정</summary>
       <div class="adv-grid">
-        ${[...NUM_FIELDS.filter((f) => !(arcade && f.key === 'roundSec')), ...(arcade ? ARCADE_NUM_FIELDS : [])].map((f) => `
+        ${[...NUM_FIELDS.filter((f) => !(arcade && f.key === 'roundSec') && !(coop && COOP_OFF.has(f.key))), ...(arcade ? ARCADE_NUM_FIELDS : [])].map((f) => `
           <label class="adv-row" for="rule-${f.key}"><span>${f.label}</span>
             <select id="rule-${f.key}" data-k="${f.key}" ${dis}>
               ${RULE_CHOICES[f.key].map((v) => `<option value="${v}" ${rules[f.key] === v ? 'selected' : ''}>${f.fmt(v)}</option>`).join('')}
             </select>
           </label>`).join('')}
-        ${BOOL_FIELDS.map((f) => `
+        ${BOOL_FIELDS.filter((f) => !(coop && COOP_OFF.has(f.key))).map((f) => `
           <label class="adv-row check" for="rule-${f.key}"><span>${f.label}</span>
             <input type="checkbox" id="rule-${f.key}" data-b="${f.key}" ${rules[f.key] ? 'checked' : ''} ${dis}>
           </label>`).join('')}
@@ -131,10 +145,11 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen;
   bind(el, rules, on);
   // 인원 모드: 셋 중 하나 (개인전 = 팀전·서바이벌 모두 끔)
-  el.querySelectorAll<HTMLButtonElement>('.mopt').forEach((b) => {
-    const o = b.dataset.o as 'solo' | 'team' | 'survival';
-    b.onclick = () => on.change({ team: o === 'team', survival: o === 'survival' });
+  el.querySelectorAll<HTMLButtonElement>('.mopt[data-o]').forEach((b) => {
+    const o = b.dataset.o as 'solo' | 'team' | 'survival' | 'coop';
+    b.onclick = () => on.change({ team: o === 'team', survival: o === 'survival', coop: o === 'coop' });
   });
+  el.querySelectorAll<HTMLButtonElement>('.mopt[data-lv]').forEach((b) => { b.onclick = () => on.change({ coopLevel: b.dataset.lv as CoopLevel }); });
   el.querySelectorAll<HTMLButtonElement>('.preset[data-p]').forEach((b) => { b.onclick = () => on.preset(b.dataset.p as PresetId); });
   // 커스텀: 저장해 둔 규칙을 불러오고 고급 설정을 펼친다
   el.querySelector<HTMLButtonElement>('.preset.custom')!.onclick = () => {
