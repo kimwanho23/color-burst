@@ -649,7 +649,8 @@ export class Room {
       if (!c || !this.hitWithLag(c, now, d.x, d.y) || (pulled && pulled.by !== id)) this.rejectTo(id, d.circleId);
       else {
         got = true;
-        if (c.boss === 'raid') this.hitRaid(p, c, now);
+        if (this.G.coop && typeof c.kind === 'number' && !this.owns(c.kind, p)) { got = false; this.rejectTo(id, c.id); }
+        else if (c.boss === 'raid') this.hitRaid(p, c, now);
         else if (c.kind === 'threat') this.popThreat(p, c, now);
         else if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
@@ -1175,7 +1176,7 @@ export class Room {
       if (this.phase !== 'play') return;
       const bot = this.bots.get(p.id);
       if (!bot || p.outAt) continue;
-      const target = bot.think(p, this.botCandidates(), this.players, now, this.rules.team);
+      const target = bot.think(p, this.botCandidates(), this.players, now, this.rules.team, this.G.coop);
       if (!target) continue;
       if (target.boss === 'raid') this.hitRaid(p, target, now);
       else if (target.kind === 'threat') this.popThreat(p, target, now);
