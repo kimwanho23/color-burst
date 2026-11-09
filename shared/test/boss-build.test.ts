@@ -17,11 +17,16 @@ const boss = (d: number, hp = 24, type: BossType = 'normal', bornAgo = 100_000):
   ({ id: 1, kind: 'boss', boss: type, angle: 0, speed: d / (bornAgo / 1000), r: 90, born: NOW - bornAgo, hp, maxHp: 24 });
 const no = () => 0.99;
 
-test('보스 점수에 피버 배율 전부(상한 없음)와 점수 구역 배율', () => {
+test('보스 점수의 피버 배율은 방 규칙 피버 배율까지(증강으로 올린 몫 제외), 점수 구역 배율은 그대로', () => {
   const p = pl('p', 0);
-  p.feverUntil = NOW + 5000; p.feverBonus = 3; // 피버 ×6
+  p.feverUntil = NOW + 5000; p.feverBonus = 3; // 피버 ×6 → 보스에는 방 규칙 배율(기본 ×3)
   const r = strikeBoss(p, boss(500), new Map(), [p], NOW, G, no); // 가장자리 ×3
-  assert.equal(r.gained, 1 * 6 * 3);
+  assert.equal(r.gained, 1 * G.feverMult * 3);
+  // 방 규칙 피버 배율이 높으면(파티 ×5) 그만큼은 받는다
+  const q = pl('q', 1);
+  q.feverUntil = NOW + 5000; q.feverBonus = 3;
+  const G5 = { ...G, feverMult: 5 };
+  assert.equal(strikeBoss(q, boss(500), new Map(), [q], NOW, G5, no).gained, 1 * 5 * 3);
 });
 
 test('보스 타격: 콤보 +1, 피버 게이지 +4, 문턱 넘으면 콤보 보너스. 보호막·공격형은 없음', () => {
@@ -98,8 +103,9 @@ test('보스 헌터: 붉은 공격형도 감점 없이 피해·점수', () => {
 
 test('배율 쌓임 상한은 보스에도 적용, 잭팟은 그 위', () => {
   const p = pl('p', 0, P('jackpot', 3));
-  p.feverUntil = NOW + 5000; p.feverBonus = 17; // 피버 ×20 × 가장자리 ×3 → ×20
-  const r = strikeBoss(p, boss(500), new Map(), [p], NOW, G, () => 0); // 잭팟 터짐, 레전드 첫 배율 ×2
+  p.feverUntil = NOW + 5000;
+  const G9 = { ...G, feverMult: 9 }; // 피버 ×9 × 가장자리 ×3 = ×27 → ×20
+  const r = strikeBoss(p, boss(500), new Map(), [p], NOW, G9, () => 0); // 잭팟 터짐, 레전드 첫 배율 ×2
   assert.deepEqual([r.jackpot, r.gained], [2, 1 * 20 * 2]);
 });
 
