@@ -1,9 +1,10 @@
 import type { Server } from 'socket.io';
+import { enterStep as enterTutorialStep, progress as tutorialProgress, spawnKinds as tutorialKinds } from './tutorial.ts';
 import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TIME_ATTACK_RULES, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TIME_ATTACK_RULES, TUTORIAL_RULES, type TutorialStep, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -134,9 +135,104 @@ export class Room {
   private spawnQueue: Circle[] = [];
 
   /** timeAttack: 혼자·봇 없이 기록 도전 (규칙 고정) */
-  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly timeAttack = false) {
+  /** tutorial: 혼자 단계별 연습 (단계별 판만, 결과·기록 없음) */
+  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly timeAttack = false, readonly tutorial = false) {
     if (solo) this.fillBots = true;
     if (timeAttack) { this.fillBots = false; this.rules = { ...TIME_ATTACK_RULES }; }
+    if (tutorial) { this.fillBots = false; this.rules = { ...TUTORIAL_RULES }; }
+  }
+
+  // ---------- 튜토리얼 ----------
+  /** i: 단계 번호, count: 진행 수, advancing: 목표 달성 뒤 넘김 대기 중 */
+  private tut: { i: number; count: number; advancing: boolean; done: boolean; timer: ReturnType<typeof setTimeout> | null } | null = null;
+  private tutLastSpawn = 0;
+
+  private tutStep(): TutorialStep { return RULES.tutorial.steps[this.tut!.i]; }
+  private tutMe() { return this.players.find((p) => !p.bot)!; }
+  private tutBot() { return this.players.find((p) => p.bot) ?? null; }
+
+  private emitTutorial(done = false) {
+    const t = this.tut!, step = this.tutStep();
+    this.io.to(this.code).emit('tutorial:step', { step, index: t.i, total: RULES.tutorial.steps.length, count: t.count, goal: RULES.tutorial.goal[step], done });
+  }
+
+  private startTutorial(now: number) {
+    this.tut = { i: 0, count: 0, advancing: false, done: false, timer: null };
+    this.tutLastSpawn = now;
+    enterTutorialStep(this.tutStep(), this.tutMe());
+    this.emitTutorial();
+  }
+
+  /** 원을 잡은 뒤: 진행 수를 올리고, 목표에 닿으면 잠시 뒤 다음 단계 */
+  private tutorialClaimed(p: PlayerState, kind: CircleKind, feverStarted: boolean) {
+    const t = this.tut;
+    if (!t || t.advancing || p.bot) return;
+    const step = this.tutStep();
+    const next = tutorialProgress(step, { kind: 'claim', circleKind: kind, feverStarted }, p, this.tutBot(), t.count);
+    if (next === t.count) return;
+    t.count = next;
+    this.emitTutorial();
+    if (t.count < RULES.tutorial.goal[step]) return;
+    t.advancing = true;
+    t.timer = setTimeout(() => this.advanceTutorial(), RULES.tutorial.nextMs);
+  }
+
+  /** 콤보 단계에서 헛클릭으로 콤보가 끊기면 진행 수도 0 */
+  private tutorialComboBroken() {
+    const t = this.tut;
+    if (!t || t.advancing || this.tutStep() !== 'combo' || t.count === 0) return;
+    t.count = 0;
+    this.emitTutorial();
+  }
+
+  private advanceTutorial() {
+    const t = this.tut;
+    if (!t) return;
+    t.timer = null;
+    // 멈춘 동안에는 넘기지 않고, 다시 시작할 때(finishResume) 다시 잰다
+    if (this.pausedAt) return;
+    if (t.i >= RULES.tutorial.steps.length - 1) {
+      t.done = true;
+      this.emitTutorial(true);
+      this.stop();
+      return;
+    }
+    t.i++; t.count = 0; t.advancing = false;
+    this.circles.clear();
+    const step = this.tutStep();
+    if (step === 'steal' && !this.tutBot()) {
+      const c = this.freeColor();
+      if (c !== null) {
+        // 클릭하지 않는 봇 (bots에 넣지 않음). 견제로 끊을 콤보가 보이게 시작 콤보를 준다
+        const bot = newPlayer('bot-1', '봇 A', c, true);
+        bot.combo = RULES.tutorial.botCombo;
+        this.players.push(bot);
+      }
+    }
+    const now = Date.now();
+    enterTutorialStep(step, this.tutMe());
+    this.tutLastSpawn = now;
+    this.io.to(this.code).emit('game:sync', this.playPayload());
+    this.emitPlayers();
+    this.emitTutorial();
+  }
+
+  /** 튜토리얼 틱: 단계별 원 생성과 판 밖 원 정리만 (보스·황금·웨이브·레이저·패턴·봇 없음, 판 시간 없음) */
+  private tickTutorial(now: number) {
+    if (!this.tut || this.tut.advancing) return;
+    const S = RULES.tutorial.spawn[this.tutStep()];
+    for (const [id, c] of this.circles) if (isOut(c, now - LAG_WINDOW_MS)) this.circles.delete(id);
+    if (settleFever(this.tutMe(), now)) this.emitPlayers();
+    const kinds = tutorialKinds(this.tutStep(), this.tutMe(), this.tutBot());
+    while (now - this.tutLastSpawn >= S.gapMs) {
+      this.tutLastSpawn += S.gapMs;
+      if (this.circles.size >= S.max) continue;
+      const kind = kinds[Math.floor(Math.random() * kinds.length)];
+      const c = makeCircle(this.nextCircleId++, this.tutLastSpawn, 0, [], this.G, Math.random, { itemChance: 0, rainbowChance: 0, forceKind: kind });
+      c.speed *= S.speed;
+      this.circles.set(c.id, c);
+      this.io.to(this.code).emit('circle:spawn', c);
+    }
   }
 
   get humans() { return this.players.filter((p) => !p.bot); }
@@ -153,6 +249,11 @@ export class Room {
       if (this.phase === 'play') {
         this.io.to(socketId).emit('game:sync', this.playPayload());
         if (this.roundPhase === 'pick') this.sendOffer(p.id);
+      }
+      // 튜토리얼: 다시 접속하면 지금 단계 안내(완료 뒤면 done)를 다시 보낸다
+      if (this.tut) {
+        const step = this.tutStep();
+        this.io.to(socketId).emit('tutorial:step', { step, index: this.tut.i, total: RULES.tutorial.steps.length, count: this.tut.count, goal: RULES.tutorial.goal[step], done: this.tut.done });
       }
       this.broadcastState();
       return { id: p.id };
@@ -356,7 +457,7 @@ export class Room {
         n++;
       }
     }
-    if (this.players.length < 2 && !this.timeAttack) {
+    if (this.players.length < 2 && !this.timeAttack && !this.tutorial) {
       this.players = this.players.filter((p) => !p.bot);
       this.bots.clear();
       return '혼자서는 시작할 수 없어요. 친구를 부르거나 봇 채우기를 켜 주세요.';
@@ -378,6 +479,7 @@ export class Room {
     this.roundPhase = 'play';
     this.phase = 'play';
     this.beginRound();
+    if (this.tutorial) this.startTutorial(this.startAt);
     this.broadcastState();
     this.loop = setInterval(() => this.tick(), TICK_MS);
     return null;
@@ -393,6 +495,7 @@ export class Room {
   canResume(id: string) { return this.players.some((p) => p.id === id && !p.bot); }
 
   pause(id: string) {
+    if (this.tut?.done) return; // 튜토리얼 완료 뒤에는 멈출 판이 없다
     // 혼자 하기: 다시 시작 카운트다운 중에 다시 멈추면(탭 숨김 등) 카운트다운을 취소
     if (this.solo && this.phase === 'play' && this.pausedAt && this.resumeAt && this.canPause(id)) { this.cancelResume(id); return; }
     // 능력 선택 중에는 제한 시간이 있어서 멈출 수 없다. 멀티는 다시 시작 카운트다운 중에도 안 됨
@@ -441,7 +544,9 @@ export class Room {
     if (this.phase !== 'play' || !this.pausedAt) { this.resumeAt = 0; return; }
     const delta = Date.now() - this.pausedAt + extra;
     // 멈춰 있던 시간만큼 모든 시각을 뒤로 민다
-    this.startAt += delta; this.endAt += delta; this.lastSpawn += delta;
+    this.startAt += delta; this.endAt += delta; this.lastSpawn += delta; this.tutLastSpawn += delta;
+    // 튜토리얼: 목표를 채운 채 멈췄으면 다시 시작한 뒤 단계 넘김을 다시 잰다
+    if (this.tut?.advancing && !this.tut.timer) this.tut.timer = setTimeout(() => this.advanceTutorial(), RULES.tutorial.nextMs);
     // 원의 정지 구간도 출발 시각과 같이 민다 (상대 위치가 그대로여야 한다)
     for (const c of [...this.circles.values(), ...this.spawnQueue]) { c.born += delta; for (const h of c.holds ?? []) h[0] += delta; }
     for (const p of this.players) shiftTimes(p, this.pausedAt, delta);
@@ -508,6 +613,7 @@ export class Room {
   }
 
   click(id: string, d: { circleId: number | null; x: number; y: number }) {
+    if (this.tut?.done) return; // 튜토리얼 완료 뒤 남은 원은 무시
     const now = Date.now();
     if (this.phase !== 'play' || this.roundPhase !== 'play' || this.pausedAt || now < this.startAt) return;
     const p = this.players.find((x) => x.id === id);
@@ -558,6 +664,8 @@ export class Room {
     }
     if (!got && d.circleId === null) {
       // 이동형 보스 오오라를 눌렀으면 아무 일 없음 (헛클릭도 아님, 닿아 있는 동안의 벌은 updateAura)
+      // 튜토리얼: 감점·피버 감소 없이 콤보만 끊는다
+      if (this.tutorial) { p.combo = 0; this.tutorialComboBroken(); this.emitPlayers(); return; }
       if (!this.auraUnder(d, now) && now - this.bossKilledAt >= RULES.boss.killGraceMs) {
         resolveMiss(p, now, this.G, this.players);
         this.emitPlayers();
@@ -654,11 +762,13 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, wins: Object.fromEntries(this.wins) };
+    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, tutorial: this.tutorial, wins: Object.fromEntries(this.wins) };
   }
 
   destroy() {
     this.stop();
+    if (this.tut?.timer) clearTimeout(this.tut.timer);
+    this.tut = null;
     this.clearPickTimers();
     for (const t of this.dropTimers.values()) clearTimeout(t);
     if (this.emptyTimer) clearTimeout(this.emptyTimer);
@@ -977,6 +1087,7 @@ export class Room {
     if (this.pausedAt || this.roundPhase === 'pick') return;
     const now = Date.now();
     if (now < this.startAt) return;
+    if (this.tutorial) return this.tickTutorial(now);
     // 서바이벌(클래식): 탈락 판정이 판 끝 판정보다 먼저 (마지막 탈락이 곧 판 끝)
     if (this.nextCutAt) { this.updateSurvival(now); if (this.phase !== 'play') return; }
     if (now >= this.endAt) return this.G.arcade && this.round < ARCADE.rounds ? this.endRound() : this.end();
@@ -1266,6 +1377,7 @@ export class Room {
     // 연쇄 폭발: 확률로 근처 내 원도 함께 (연쇄로 잡힌 원은 다시 연쇄하지 않음)
     // 점수가 바뀌었으니 꼴찌를 벗어난 역전 기회는 바로 끈다 (조용한 연속 획득 사이에도)
     sweepComeback(this.players);
+    if (this.tutorial) this.tutorialClaimed(p, c.kind, !!result.feverStarted);
     if (via !== 'blast') {
       const m = modsOf(p.picks);
       // 연쇄 콤보: 10콤보(레전드 5)를 넘을 때마다 근처 내 원 자동 획득 (콤보가 오른 획득만)
