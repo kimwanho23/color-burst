@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -62,6 +62,10 @@ export class Room {
   /** 점수 그래프용 기록 */
   private history: Record<string, number[]> = {};
   private nextSample = 0;
+  /** 서바이벌: 시작 인원, 클래식 다음 탈락 시각(0 = 없음), 이번 탈락 경고를 보냈는지 */
+  private survivalN = 0;
+  private nextCutAt = 0;
+  private cutWarned = false;
   private pausedAt = 0;
   private pausedBy: string | null = null;
   /** 30초 자동 재개 시각·타이머, 재개 카운트다운이 끝나는 시각·타이머 */
@@ -331,8 +335,8 @@ export class Room {
     for (const p of this.humans.filter((h) => !h.connected)) this.remove(p.id, false);
     this.players = this.players.filter((p) => !p.bot);
     this.bots.clear();
-    // 팀전은 늘 4명이 되게 봇으로 채운다
-    if (this.fillBots || this.rules.team) {
+    // 팀전·서바이벌은 늘 4명이 되게 봇으로 채운다
+    if (this.fillBots || this.rules.team || this.rules.survival) {
       let n = 1;
       for (let c = this.freeColor(); c !== null && this.players.length < MAX_PLAYERS; c = this.freeColor()) {
         const bot = newPlayer(`bot-${n}`, `봇 ${String.fromCharCode(64 + n)}`, c, true);
@@ -350,6 +354,9 @@ export class Room {
 
     this.players.forEach(resetForRound);
     this.G = toGameRules(this.rules);
+    // 서바이벌: 클래식 판 시간은 마지막 1명이 남을 때까지
+    this.survivalN = this.players.length;
+    if (this.G.survival && !this.G.arcade) this.G = { ...this.G, roundMs: survivalRoundMs(this.survivalN) };
     this.history = Object.fromEntries(this.players.map((p) => [p.id, [0]]));
     this.round = 1;
     this.eventsUsed = 0;
@@ -433,6 +440,7 @@ export class Room {
     for (const pl of this.pulls.values()) pl.at += delta;
     if (this.pattern) this.pattern = shiftPattern(this.pattern, delta);
     if (this.pendingPattern) this.pendingPattern = shiftPattern(this.pendingPattern, delta);
+    if (this.nextCutAt) this.nextCutAt += delta;
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
     if (this.freezeUntil > this.pausedAt) this.freezeUntil += delta;
     for (const b of this.bots.values()) b.shift(delta);
@@ -489,7 +497,7 @@ export class Room {
     const now = Date.now();
     if (this.phase !== 'play' || this.roundPhase !== 'play' || this.pausedAt || now < this.startAt) return;
     const p = this.players.find((x) => x.id === id);
-    if (!p) return;
+    if (!p || p.outAt) return;
     // 스턴 중이면 클릭 무시 (빈 곳 페널티도 없음)
     if (isStunned(p, now) || !this.allowClick(id, now)) {
       if (d.circleId !== null) this.rejectTo(id, d.circleId);
@@ -738,7 +746,7 @@ export class Room {
   private playPayload() {
     return {
       startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
-      rules: this.rules, pausedBy: this.pausedBy, pausedAt: this.pausedAt, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
+      rules: this.rules, pausedBy: this.pausedBy, pausedAt: this.pausedAt, nextCutAt: this.nextCutAt, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
       pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
       pattern: this.pattern, popped: [...this.popped],
     };
@@ -787,6 +795,8 @@ export class Room {
     this.startAt = now + RULES.countdownMs;
     this.endAt = this.startAt + this.G.roundMs;
     this.lastSpawn = this.startAt;
+    this.nextCutAt = this.G.survival && !this.G.arcade ? this.startAt + RULES.survival.everyMs : 0;
+    this.cutWarned = false;
     // 맵 패턴: 라운드마다 확률로 최대 1번
     if (Math.random() < this.G.mapChance) {
       const at = rollPatternAt(this.startAt, this.endAt);
@@ -803,6 +813,10 @@ export class Room {
   private endRound() {
     // 끌려오던 원은 끄는 사람이 잡은 것으로 마무리한 뒤 판을 비운다
     this.resolvePulls(Date.now(), true);
+    // 서바이벌(아케이드): 뒤쪽 라운드가 끝날 때마다 누적 꼴찌 탈락
+    if (this.G.survival && survivalCuts(this.survivalN, ARCADE.rounds).includes(this.round)) {
+      this.eliminate(pickOut(this.players.filter((p) => !p.outAt)), Date.now());
+    }
     this.clearPattern();
     this.roundPhase = 'pick';
     this.circles.clear();
@@ -835,15 +849,17 @@ export class Room {
     // 점수 그래프: 저주·랜덤 이벤트까지 반영한 라운드 끝 점수
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
 
-    const scores = this.players.map((p) => p.score);
+    const alive = this.players.filter((p) => !p.outAt);
+    const scores = alive.map((p) => p.score);
     const min = Math.min(...scores);
     const tied = scores.every((v) => v === min);
     // 역전 기회: 2라운드 끝부터 판정 (그 전에는 모두 꺼짐)
     const k = this.round - 1;
-    const cb = k >= ARCADE.comeback.from ? judgeComeback(this.players) : new Set<string>();
+    const cb = k >= ARCADE.comeback.from ? judgeComeback(alive) : new Set<string>();
     for (const p of this.players) p.comeback = cb.has(p.id);
     this.offers.clear();
-    for (const p of this.players) {
+    // 서바이벌에서 탈락한 사람은 고르지 않는다
+    for (const p of alive) {
       const last = !tied && p.score === min;
       const allLegend = p.legendNext;
       p.legendNext = false;
@@ -854,7 +870,7 @@ export class Room {
     }
     this.emitArcade();
     if (ev) { this.io.to(this.code).emit('arcade:event', ev); this.emitPlayers(); }
-    for (const p of this.players) {
+    for (const p of alive) {
       if (!p.bot) { this.sendOffer(p.id); continue; }
       // 봇은 1~3초 고민하다가 고른다 (두 장 고르는 차례면 한 장씩 차례로)
       const botPick = (wait: number) => this.botPickTimers.push(setTimeout(() => {
@@ -941,13 +957,15 @@ export class Room {
     if (this.pausedAt || this.roundPhase === 'pick') return;
     const now = Date.now();
     if (now < this.startAt) return;
+    // 서바이벌(클래식): 탈락 판정이 판 끝 판정보다 먼저 (마지막 탈락이 곧 판 끝)
+    if (this.nextCutAt) { this.updateSurvival(now); if (this.phase !== 'play') return; }
     if (now >= this.endAt) return this.G.arcade && this.round < ARCADE.rounds ? this.endRound() : this.end();
     while (now - this.startAt >= this.nextSample) {
       for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
       this.nextSample += HISTORY_STEP_MS;
     }
 
-    const kinds = this.players.map((p) => p.color);
+    const kinds = this.spawnKinds();
     // 시간 정지 중에는 새 원이 나오지 않는다
     if (now < this.freezeUntil) this.lastSpawn = Math.max(this.lastSpawn, now);
     while (now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt, this.G)) {
@@ -989,7 +1007,7 @@ export class Room {
     let zoned = false;
     for (const z of this.zones) {
       const owner = this.players.find((p) => p.id === z.by);
-      if (!owner) continue;
+      if (!owner || owner.outAt) continue;
       for (const c of [...this.circles.values()]) {
         if (!this.owns(c.kind, owner) || isGuarded(c, now)) continue;
         const q = circlePos(c, now);
@@ -1000,7 +1018,7 @@ export class Room {
 
     for (const p of this.players) {
       const bot = this.bots.get(p.id);
-      if (!bot) continue;
+      if (!bot || p.outAt) continue;
       const target = bot.think(p, this.botCandidates(), this.players, now, this.rules.team);
       if (!target) continue;
       if (target.kind === 'boss') this.hitBoss(p, target, now);
@@ -1048,6 +1066,7 @@ export class Room {
 
   /** 게임 커서 위치 (필드 안으로 자름) */
   cursor(id: string, p: Point) {
+    if (this.players.find((x) => x.id === id)?.outAt) return;
     this.cursors.set(id, { x: Math.max(0, Math.min(FIELD.w, p.x)), y: Math.max(0, Math.min(FIELD.h, p.y)), at: Date.now() });
   }
 
@@ -1092,9 +1111,39 @@ export class Room {
   }
 
   /** 자동 시전 증강: 때가 된 것을 발동하고 다음 시각을 정한다 (자기장은 봇에게 없음) */
+  /** 원 색: 탈락하지 않은 사람의 색 */
+  private spawnKinds() { return this.players.filter((p) => !p.outAt).map((p) => p.color); }
+
+  /** 서바이벌(클래식): warnMs 전에 지금 꼴찌를 경고하고, 때가 되면 꼴찌 탈락. 1명 남으면 게임 끝 */
+  private updateSurvival(now: number) {
+    if (!this.nextCutAt) return;
+    const alive = this.players.filter((p) => !p.outAt);
+    if (!this.cutWarned && now >= this.nextCutAt - RULES.survival.warnMs) {
+      this.cutWarned = true;
+      this.io.to(this.code).emit('survival:warn', { id: pickOut(alive, () => 0).id, at: this.nextCutAt });
+    }
+    if (now < this.nextCutAt) return;
+    this.eliminate(pickOut(alive), now);
+    this.nextCutAt += RULES.survival.everyMs;
+    this.cutWarned = false;
+    if (alive.length - 1 <= 1) this.end();
+  }
+
+  /** 탈락: 순위 = 탈락 직전 살아 있던 수. 끌던 원·커서를 지운다 */
+  private eliminate(p: PlayerState, now: number) {
+    const alive = this.players.filter((x) => !x.outAt).length;
+    p.outAt = now;
+    p.outRank = alive;
+    for (const [cid, pl] of this.pulls) if (pl.by === p.id) this.pulls.delete(cid);
+    this.cursors.delete(p.id);
+    this.io.to(this.code).emit('player:out', { id: p.id, rank: alive });
+    this.emitPlayers();
+  }
+
   private updateAuto(now: number) {
     let changed = false;
     for (const p of this.players) {
+      if (p.outAt) continue;
       for (const id of AUTO_IDS) {
         const at = p.autoAt[id];
         if (at === undefined || now < at) continue;
@@ -1125,7 +1174,7 @@ export class Room {
     for (const p of order) {
       const cur = this.freshCursor(p.id, now);
       const radius = magnetOf(p, now, cur);
-      if (p.bot || !cur || radius <= 0 || isStunned(p, now)) continue;
+      if (p.bot || p.outAt || !cur || radius <= 0 || isStunned(p, now)) continue;
       const log = (this.pullLog.get(p.id) ?? []).filter((t) => now - t < 1000);
       this.pullLog.set(p.id, log);
       // 자석 레전드: 1초에 LEGEND.magnetPerSec개
@@ -1310,11 +1359,11 @@ export class Room {
     this.offers.clear();
     this.roundPhase = 'play';
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
-    const rank = ranking(this.players);
+    const rank = this.G.survival ? survivalRanking(this.players) : ranking(this.players);
     const top = rank[0]?.score ?? 0;
     // 팀전: 이긴 팀 사람마다 1승. 아니면 공동 1등은 모두 1승 (사람만 기록)
     const teams = this.rules.team ? teamRanking(this.players) : undefined;
-    const winners = teams ? new Set(teams[0].ids) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
+    const winners = teams ? new Set(teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
     for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
     this.io.to(this.code).emit('game:over', {
       ranking: rank,

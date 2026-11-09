@@ -415,6 +415,16 @@ socket.on('auto:fire', ({ playerId, id }) => {
   if (playerId !== myId() || !gameCursor.pos) return;
   renderer.text(gameCursor.pos.x, gameCursor.pos.y - 42, ABILITY[id].name, '#7fd3ff', 0.9);
 });
+// 서바이벌: 탈락 현수막·효과음, 탈락 경고(꼴찌 칩 깜빡임)
+let outWarn: { id: string; at: number } | null = null;
+socket.on('survival:warn', (d) => { outWarn = d; renderScores(); });
+socket.on('player:out', ({ id }) => {
+  outWarn = null;
+  const p = players.find((x) => x.id === id);
+  sfx.out();
+  renderer.text(CX, CY - 60, `${p?.name ?? ''} 탈락!`, '#ff5d73', 1.6);
+  if (id === myId()) pushFeed($('feed'), icon(UI.leave, 18), '탈락했어요. 끝날 때까지 구경해요', '#ff5d73');
+});
 socket.on('player:left', ({ name }) => pushFeed($('feed'), icon(UI.leave, 18), `${name}님이 나갔어요. 봇이 이어받아요.`, '#9ca2d6'));
 $('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
 $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
@@ -854,7 +864,7 @@ let cursorMode: CursorMode | null = null;
 // 마우스 감도: 1.0이 아니면 게임 중 마우스를 잠그고(포인터 잠금) 이동량 × 감도로 움직인다.
 // 잠그지 않으면 게임 커서가 진짜 마우스 위치를 따라가서 감도를 줄 수 없다. 1.0이면 잠그지 않는다 (예전과 같음)
 const cv = $<HTMLCanvasElement>('cv');
-const aimLive = () => playing && !picking() && !roundOver && !pausedView;
+const aimLive = () => playing && !picking() && !roundOver && !pausedView && !me()?.outAt;
 const wantLock = () => settings.sens !== 1;
 const locked = () => document.pointerLockElement === cv;
 /** 잠긴 동안의 가상 마우스 위치 (필드 좌표, 판 안) */
@@ -969,7 +979,8 @@ function renderScores() {
   const team = !!room?.rules.team && players.length > 0;
   const list = team ? [...players].sort((a, b) => a.team - b.team) : players;
   const sums = team ? ([0, 1] as const).map((t) => `<div class="teamsum t${t}"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${players.filter((p) => p.team === t).reduce((a, p) => a + p.score, 0)}</span></div>`).join('') : '';
-  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
+  const warnId = outWarn && serverNow() < outWarn.at ? outWarn.id : null;
+  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}${p.outAt ? ' out' : ''}${p.id === warnId ? ' danger' : ''}" data-id="${p.id}"${p.outAt ? ` data-rank="${p.outRank}등"` : ''}>${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
   renderChipPop();
 }
 
@@ -1058,7 +1069,9 @@ function frame() {
   // 위쪽 도감 버튼: 게임이 실제로 진행 중일 때만 숨김 (증강 선택·일시정지·대기실에서는 열 수 있음)
   $('codexTop').hidden = playing && !picking() && !pausedView && !roundOver;
   // 게임 중에는 진짜 마우스 커서를 숨기고 게임 커서를 그린다
-  $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView);
+  const out = playing && !!me()?.outAt;
+  $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView && !out);
+  $('outBanner').hidden = !out;
   // 게임이 멈추거나(일시정지·증강 선택·라운드 끝·게임 끝) 감도를 1.0으로 되돌리면 잠금을 푼다
   if (locked() && (!aimLive() || !wantLock())) document.exitPointerLock();
   // 자석에 끌려오는 원은 화면 밖으로 나가도 잡힐 때까지 그린다

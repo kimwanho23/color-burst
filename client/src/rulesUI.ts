@@ -67,6 +67,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     </div>
     <div class="modeopts">
       <button type="button" class="mopt" data-o="team" aria-pressed="${rules.team}" ${dis}><b>팀전 2:2</b><span>같은 팀 색은 내 색, 팀 점수 합으로 승부</span></button>
+      <button type="button" class="mopt" data-o="survival" aria-pressed="${rules.survival}" ${dis}><b>서바이벌</b><span>${arcade ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌 탈락, 마지막 1명이 승리</span></button>
     </div>
     ${arcade ? `<label class="adv-row" for="rule-arcadeRoundSec"><span>라운드 시간</span>
       <select id="rule-arcadeRoundSec" data-k="arcadeRoundSec" ${dis}>

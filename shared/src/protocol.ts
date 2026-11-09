@@ -83,6 +83,8 @@ export interface PlayPayload {
   rules: RoomRules;
   /** 일시정지 중이면 멈춘 사람 id */
   pausedBy: string | null;
+  /** 서바이벌(클래식): 다음 탈락 시각 (아니면 0) */
+  nextCutAt: number;
   /** 일시정지 중이면 멈춘 순간의 서버 시각 (화면을 그 순간에 멈춰 둔다, 아니면 0) */
   pausedAt: number;
   /** 일시정지가 저절로 풀리기 시작하는 시각 (혼자 하기·멈추지 않았으면 0) */
@@ -164,6 +166,10 @@ export interface ServerToClient {
   'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number; solo: string[]; soloFever: string[]; feverStarted: boolean; comboBonus: boolean }) => void;
   'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
+  /** 서바이벌: 탈락 (rank = 최종 순위) */
+  'player:out': (d: { id: string; rank: number }) => void;
+  /** 서바이벌: at에 탈락할 지금 꼴찌 (경고) */
+  'survival:warn': (d: { id: string; at: number }) => void;
   /** 자동 시전 증강이 발동함 */
   'auto:fire': (d: { playerId: string; id: AutoId }) => void;
   /** 방장이 나를 내보냄 */

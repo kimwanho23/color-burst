@@ -148,6 +148,8 @@ export const sfx = {
   eventTick: () => tone(1400, 0.025, 'square', 0.04),
   eventResult: () => { tone(988, 0.1, 'triangle', 0.1); tone(1319, 0.18, 'triangle', 0.09, 0.08); },
   win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
+  /** 서바이벌 탈락 */
+  out: () => [523, 392, 262, 196].forEach((f, i) => tone(f, 0.18, 'sawtooth', 0.07, i * 0.09, 0.8)),
   lose: () => [392, 349, 330].forEach((f, i) => tone(f, 0.2, 'square', 0.07, i * 0.12)),
 };
 

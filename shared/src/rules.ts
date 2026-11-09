@@ -550,6 +550,9 @@ export interface PlayerState {
   ready: boolean;
   /** 팀전: 0팀 / 1팀 */
   team: 0 | 1;
+  /** 서바이벌: 탈락한 서버 시각 (0 = 살아 있음), 최종 순위 (0 = 아직) */
+  outAt: number;
+  outRank: number;
   /** 스택형 증강: 지금 쌓인 칸 (게임 끝까지) */
   stacks: Partial<Record<StackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */
@@ -672,7 +675,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
-    pausesLeft: RULES.pause.perGame, ready: false, team: 0, stacks: {}, autoAt: {},
+    pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, stacks: {}, autoAt: {},
   };
 }
 
@@ -681,6 +684,7 @@ export function resetForRound(p: PlayerState) {
   p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false; p.rankReach = 0;
   p.pausesLeft = RULES.pause.perGame;
   p.stacks = {}; p.autoAt = {};
+  p.outAt = 0; p.outRank = 0;
 }
 
 /** 능력(또는 저주)을 고른 직후 처리 */
@@ -1422,6 +1426,31 @@ export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: 
 
 export function ranking(players: PlayerState[]) {
   return [...players].sort((a, b) => b.score - a.score);
+}
+
+// ---------- 서바이벌 ----------
+
+/** 클래식 서바이벌 판 시간: 마지막 1명이 남을 때까지 (n − 1)번 탈락 */
+export const survivalRoundMs = (n: number) => Math.max(1, n - 1) * RULES.survival.everyMs;
+
+/** 아케이드 서바이벌: 끝나고 꼴찌가 탈락하는 라운드 번호 (마지막 라운드가 1:1이 되게 뒤쪽부터) */
+export function survivalCuts(n: number, rounds: number): number[] {
+  const k = Math.max(0, n - 2);
+  return Array.from({ length: k }, (_, i) => rounds - k + i);
+}
+
+/** 탈락할 사람: 최저 점수, 같으면 낮은 콤보, 그래도 같으면 무작위 */
+export function pickOut(alive: readonly PlayerState[], rand: () => number = Math.random): PlayerState {
+  const min = Math.min(...alive.map((p) => p.score));
+  const low = alive.filter((p) => p.score === min);
+  const minCombo = Math.min(...low.map((p) => p.combo));
+  const tied = low.filter((p) => p.combo === minCombo);
+  return tied[Math.min(tied.length - 1, Math.floor(rand() * tied.length))];
+}
+
+/** 서바이벌 순위: 살아 있는 사람(점수순) 먼저, 그다음 늦게 탈락한 순 */
+export function survivalRanking(players: readonly PlayerState[]) {
+  return [...players].sort((a, b) => (a.outAt === 0 ? 0 : 1) - (b.outAt === 0 ? 0 : 1) || (a.outAt === 0 ? b.score - a.score : b.outAt - a.outAt));
 }
 
 // ---------- 결과 화면 칭호 ----------
