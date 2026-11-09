@@ -44,16 +44,22 @@ test('보스 타격: 콤보 +1, 피버 게이지 +4, 문턱 넘으면 콤보 보
   assert.deepEqual([re.enraged, e.combo, e.fever, e.score < 50], [true, 3, 0, true]);
 });
 
-test('타격 점수는 피해 비례: 파쇄 3타면 3배, 남은 체력보다 큰 피해는 남은 만큼만', () => {
+test('타격 점수는 피해와 상관없이 한 번당: 파쇄 3타여도 +1, 남은 체력보다 큰 피해는 남은 만큼만 깎음', () => {
   const p = pl('p', 0, P('crusher', 2)); // 3타
   const c = boss(0);
   const r = strikeBoss(p, c, new Map(), [p], NOW, G, no);
-  assert.deepEqual([r.damage, r.gained, c.hp], [3, 3, 21]);
+  assert.deepEqual([r.damage, r.gained, c.hp], [3, 1, 21]);
+  // 해머가 있으면 한 번당 (1 + 해머)점 × 보스 시너지 1.2 (파쇄·해머 2종), 피해 3이어도 곱하지 않는다
+  const h = pl('h', 0, P('crusher', 2), P('hammer', 2));
+  const ch = boss(0);
+  const rh = strikeBoss(h, ch, new Map(), [h], NOW, G, no);
+  assert.deepEqual([rh.damage, rh.gained], [3, Math.round((1 + 3) * 1.2)]);
   const q = pl('q', 0, P('crusher', 2));
   const c2 = boss(0, 2);
   const hits = new Map([['x', 22]]);
   const r2 = strikeBoss(q, c2, hits, [q], NOW, G, no);
-  assert.deepEqual([r2.damage, r2.gained, hits.get('q'), r2.killed], [2, 2, 2, true]);
+  // 막타 타격: 타격 +1에 막타 점수는 따로 (killGained)
+  assert.deepEqual([r2.damage, r2.gained, hits.get('q'), r2.killed], [2, 1, 2, true]);
 });
 
 test('독식: 최대 체력 50% 이상이면 +60×배율, 49%면 없음', () => {
