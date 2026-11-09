@@ -7,7 +7,7 @@ import {
   RULES, BLIND_KINDS, addBuff, addDebuff, addFever, isFever, isLast, startFever,
   type BuffId, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
-import { SPECIAL, modsOf } from './arcade.ts';
+import { SPECIAL, SYN, modsOf, synergiesOf } from './arcade.ts';
 
 export type ItemId =
   | 'wideHand' | 'magnet' | 'missGuard' | 'comboLock' | 'guard' | 'markClear' | 'feverCharge'
@@ -82,7 +82,8 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
     // 꼴찌 보정 ×1.5, 아이템 사냥꾼 ×2
     // 수집가 +v%
     const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1) * (modsOf(p.picks).itemHunter ? SPECIAL.hunterDur : 1) * (1 + modsOf(p.picks).collector / 100);
-    addBuff(p, def.buff, ms, now);
+    // 보조 시너지: +1초
+    addBuff(p, def.buff, ms + (synergiesOf(p.picks).has('보조') ? SYN.buffAddMs : 0), now);
     return null;
   }
   const m = modsOf(p.picks);

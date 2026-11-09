@@ -1,9 +1,9 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
-  COMBOS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, combosOf,
+  COMBOS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, SYNERGY, combosOf, synergiesOf,
   type BuffId, type PatternId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
-import { UI, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
+import { UI, categoryIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
 import { comboTip } from './arcadeUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -14,13 +14,14 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
  */
 export function renderComboBar(el: HTMLElement, p: PlayerState | undefined) {
   const ids = p ? [...combosOf(p.picks)] : [];
-  const sig = ids.join(',');
+  const syn = p ? [...synergiesOf(p.picks)] : [];
+  const sig = [...ids, ...syn].join(',');
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   el.innerHTML = ids.map((id) => {
     const c = COMBOS.find((x) => x.id === id)!;
     return `<span class="cbchip" data-c="${id}" data-tip="${esc(comboTip(id, p!.picks))}">${icon(UI.combo, 13)}<b>${esc(c.name)}</b><span>${esc(c.text)}</span></span>`;
-  }).join('');
+  }).join('') + syn.map((cat) => `<span class="cbchip syn" data-tip="${esc(`<div class="tip-h"><b>${cat} 시너지</b></div><p>${SYNERGY[cat].text}</p>`)}">${categoryIcon(cat, 13)}<b>${cat}</b><span>${esc(SYNERGY[cat].text)}</span></span>`).join('');
 }
 
 /** 조합 효과가 발동하면 그 칩을 잠깐 반짝인다 (그 조합이 없으면 아무것도 안 함) */

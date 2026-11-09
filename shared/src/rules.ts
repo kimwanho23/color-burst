@@ -1,4 +1,4 @@
-import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
+import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, synergiesOf, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -885,7 +885,9 @@ function breakCombo(p: PlayerState, m: Mods, now: number, byOther = false) {
   // 보험만큼 남기고, 철옹성 조합이면 적어도 80%는 남긴다 (더 많이 남는 쪽 하나만)
   const before = p.combo;
   const iron = combosOf(p.picks).has('ironWall') ? Math.floor((before * COMBO.ironKeepPct) / 100) : 0;
-  p.combo = Math.max(Math.floor((before * m.insurance) / 100), iron);
+  // 유지 시너지: 절반은 남김
+  const syn = synergiesOf(p.picks).has('유지') ? Math.floor((before * SYN.keepPct) / 100) : 0;
+  p.combo = Math.max(Math.floor((before * m.insurance) / 100), iron, syn);
   // 리바운드: 끊긴 뒤 잠깐 점수 보너스 (레전드는 끊긴 콤보 절반을 되찾을 수 있음)
   if (byOther && p.combo < before && m.rebound > 0) { p.reboundUntil = now + AUG.reboundMs; p.reboundLost = before - p.combo; p.reboundUsed = false; }
   return p.combo < before;
@@ -1121,7 +1123,7 @@ export function bossHitInfo(p: PlayerState, rand = Math.random) {
   if (hunter) dmg += COMBO.bossDmgAdd;
   // 보스 헌터 조합: 타격 점수 ×1.5, 막타 점수 ×2
   return {
-    damage: dmg * feast, hit: (RULES.boss.hit + m.hammer) * (hunter ? COMBO.bossHitMult : 1),
+    damage: dmg * feast, hit: (RULES.boss.hit + m.hammer) * (hunter ? COMBO.bossHitMult : 1) * (synergiesOf(p.picks).has('보스') ? SYN.bossHit : 1),
     kill: (RULES.boss.kill + m.hunter) * feast * (hunter ? COMBO.bossKillMult : 1), boost: scoreBoostOf(m),
   };
 }
@@ -1141,7 +1143,8 @@ export function addFever(p: PlayerState, amt: number, now: number, G: GameRules,
   const m = modsOf(p.picks);
   // 보험 레전드: 피버 게이지가 깎이지 않음
   if (amt < 0 && hasLegend(p, 'insurance')) return false;
-  if (amt > 0 && !raw) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1) / (m.berserker ? CURSE.berserker.gainDiv : 1);
+  if (amt > 0 && !raw) amt *= G.feverGain * (1 + m.overcharge / 100) * (G.comeback && isLast(p, players) ? RULES.comebackGain : 1) / (m.berserker ? CURSE.berserker.gainDiv : 1)
+    * (synergiesOf(p.picks).has('피버') ? SYN.feverGain : 1);
   p.fever = Math.max(0, Math.min(100, p.fever + amt));
   if (p.fever >= 100) {
     burstFever(p, now, G, m, players);
@@ -1206,7 +1209,8 @@ export function resolveClaim(
   const gauge = (amt: number, raw = false) => !magnet && addFever(claimer, amt, now, G, players, raw);
 
   // 외길: 내 색 ×3, 노란색·무지개 0점
-  const own = (P.own + m.picky + stackBonus(claimer).own) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
+  const SY = synergiesOf(claimer.picks);
+  const own = (P.own + m.picky + stackBonus(claimer).own + (SY.has('점수') ? SYN.ownAdd : 0)) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
   if (kind === 'rainbow') {
     res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; bump();
     // 무지개 사냥 레전드: 피버 게이지 2배
@@ -1297,6 +1301,8 @@ export function resolveClaim(
 
   // 견제왕 조합: 견제·반격 점수 ×3 (폭죽·필드 클리어 제외)
   if (steal && !blast && K.has('stealKing')) pts *= COMBO.stealMult;
+  // 견제 시너지: 견제·반격 점수 + (폭죽·필드 클리어 제외)
+  if (steal && !blast && SY.has('견제')) pts += SYN.stealAdd;
   res.zone = opts.zone ?? 0;
   if (!steal && !magnet) {
     // 찰나의 순간·중앙의 왕 레전드: 그 구역에서 잡으면 콤보 +1 더

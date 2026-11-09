@@ -1,5 +1,5 @@
 /** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, COMBOS, CURSES, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, comboProgress, type AbilityCategory, type Pick, type RoomRules } from '@color-burst/shared';
+import { ABILITIES, ABILITY, COMBOS, CURSES, EVOLVE, SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, comboProgress, type AbilityCategory, type Pick, type RoomRules } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, icon, itemIcon } from './icons.ts';
 import { scoreTable } from './rulesUI.ts';
 
@@ -22,7 +22,10 @@ const BOSSES: [string, string][] = [
 
 function abilityTab() {
   const cats = [...new Set(ABILITIES.map((a) => a.cat))] as AbilityCategory[];
-  return cats.map((cat) => `<h3>${categoryIcon(cat, 16)} ${cat}</h3><ul class="cx-list">${ABILITIES.filter((a) => a.cat === cat).map((a) => `
+  const syn = (Object.keys(SYNERGY) as (keyof typeof SYNERGY)[]).map((c) => `<li><b>${c} ${SYNERGY[c].need}종</b> · ${esc(SYNERGY[c].text)}</li>`).join('');
+  const rules = `<p class="hint">같은 증강을 ${EVOLVE.count}번 고르면 <b>진화</b>: 레전드 효과를 얻고 중첩 상한이 ${EVOLVE.capMult}배가 돼요. 성장 증강은 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 남아요.</p>
+    <h3>시너지 (같은 분류의 서로 다른 증강)</h3><ul class="cx-syn">${syn}</ul>`;
+  return rules + cats.map((cat) => `<h3>${categoryIcon(cat, 16)} ${cat}</h3><ul class="cx-list">${ABILITIES.filter((a) => a.cat === cat).map((a) => `
     <li><span class="cx-ic">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b>${a.cap !== undefined ? `<em class="cx-cap">중첩 상한 ${a.cap}</em>` : ''}
       <ol class="cx-tiers">${a.values.map((v, t) => `<li class="t${t}"><span>${TIERS[t].name}</span>${esc(a.desc(v))}</li>`).join('')}</ol>
       ${LEGEND_TEXT[a.id] ? `<p class="cx-legend">레전드 효과: ${esc(LEGEND_TEXT[a.id]!)}</p>` : ''}</div></li>`).join('')}</ul>`).join('');

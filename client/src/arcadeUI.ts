@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, ARCADE, COMBOS, EVENTS, LEGEND_TEXT, THEMES, TIERS, STACK_IDS, abilityText, comboProgress, combosCompletedBy, combosOf, groupPicks, modsOf, isSpecial,
+  ABILITY, ARCADE, COMBOS, EVENTS, LEGEND_TEXT, THEMES, TIERS, EVOLVE, STACK_IDS, SYNERGY, abilityText, comboProgress, evolvedOf, synergiesOf, synergyProgress, combosCompletedBy, combosOf, groupPicks, modsOf, isSpecial,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect, type StackId,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, eventIcon, icon } from './icons.ts';
@@ -83,9 +83,10 @@ export function pickChips(picks: readonly Pick[], size = 16, stacks?: PlayerStat
 export function buildTiles(picks: readonly Pick[], size = 18, stacks?: PlayerState['stacks']) {
   if (!picks.length) return '';
   const legend = new Set(picks.filter((p) => p.tier === 3).map((p) => p.id));
+  const evolved = evolvedOf(picks);
   return `<ul class="tiles">${groupPicks(picks).map((g) => {
     const a = ABILITY[g.id];
-    const star = legend.has(g.id) && !a.curse && !a.special ? '<i>★</i>' : '';
+    const star = evolved.has(g.id) ? '<i class="evo" title="진화">진화</i>' : legend.has(g.id) && !a.curse && !a.special ? '<i>★</i>' : '';
     return `<li class="${tierClass(g)}" ${tipAttr(augTip(g.id, picks))}>${abilityIcon(g.id, size)}<span>${esc(a.name)}</span>${g.count > 1 ? `<em>×${g.count}</em>` : ''}${stackText(g.id, picks, stacks)}${star}</li>`;
   }).join('')}</ul>`;
 }
@@ -154,8 +155,22 @@ function card(o: Pick, i: number, me: PlayerState | undefined) {
     ${body}
     ${owned ? `<span class="stack">보유 ${owned} → ${emph(total)}</span>` : ''}
     ${cardCombos(o, me?.picks ?? [])}
+    ${cardGrowth(o, me?.picks ?? [])}
     <kbd>${i + 1}</kbd>
   </button>`;
+}
+
+/** 카드의 진화·시너지 배지: "진화!"(이 카드로 3번째) / "진화까지 1장", 이 카드로 완성되는 시너지 */
+function cardGrowth(o: Pick, picks: readonly Pick[]) {
+  const a = ABILITY[o.id];
+  if (a.curse || a.special) return '';
+  const tags: string[] = [];
+  const owned = picks.filter((p) => p.id === o.id).length;
+  if (owned + 1 >= EVOLVE.count && owned < EVOLVE.count) tags.push(`<span class="ctag done evo">진화!</span>`);
+  else if (owned + 2 === EVOLVE.count) tags.push(`<span class="ctag up evo">진화까지 1장 더</span>`);
+  const before = synergiesOf(picks), after = synergiesOf([...picks, o]);
+  for (const cat of after) if (!before.has(cat)) tags.push(`<span class="ctag done">시너지: ${cat} · ${esc(SYNERGY[cat].text)}</span>`);
+  return tags.length ? `<span class="ctags">${tags.join('')}</span>` : '';
 }
 
 /** 카드의 조합 배지: 이 증강이 들어가는 조합마다. 고르면 진행이 오르면 2→3/3 강조, 완성되면 "조합 완성" */
@@ -198,10 +213,12 @@ function comboList(me: PlayerState | undefined) {
   const seen = new Set(prog.map((c) => c.id));
   const rest = COMBOS.filter((c) => !seen.has(c.id)).map((c) => ({ id: c.id, name: c.name, have: 0, need: c.needs.length }));
   const pips = (have: number, need: number) => Array.from({ length: need }, (_, k) => `<i class="${k < have ? 'on' : ''}"></i>`).join('');
+  const syn = synergyProgress(picks);
   return `<div class="lbl">조합</div><ul class="synergy">${[...prog, ...rest].map((c) => {
     const cls = c.have >= c.need ? 'done' : c.have > 0 ? 'prog' : 'off';
     return `<li class="${cls}" ${tipAttr(comboTip(c.id, picks))}>${icon(UI.combo, 13)}<b>${esc(c.name)}</b><span class="pips">${pips(c.have, c.need)}</span></li>`;
-  }).join('')}</ul>`;
+  }).join('')}</ul>${syn.length ? `<div class="lbl">시너지 (같은 분류 증강)</div><ul class="synergy">${syn.map((x) =>
+    `<li class="${x.have >= x.need ? 'done' : 'prog'}" ${tipAttr(`<div class="tip-h"><b>${x.cat} 시너지</b></div><p>서로 다른 ${x.cat} 증강 ${x.need}개: ${esc(x.text)}</p>`)}>${categoryIcon(x.cat, 13)}<b>${x.cat}</b><span class="pips">${pips(Math.min(x.have, x.need), x.need)}</span></li>`).join('')}</ul>` : ''}`;
 }
 
 /** 두 장 고르는 차례: "2장 고르기" / 한 장 고른 뒤 "1장 더" */

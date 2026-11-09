@@ -141,6 +141,11 @@ td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align:
 .set-row:not(.check) { grid-template-columns: 70px 1fr 40px; }
 .set-row input[type="range"] { width: 100%; accent-color: var(--yellow); }
 .set-row em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.tiles .evo { font-style: normal; font-size: 10px; font-weight: 800; color: #1b1500; background: var(--prism); border-radius: 6px; padding: 1px 5px; }
+.ctag.evo { border-color: #b26cff; color: #d4bcff; }
+.cx-syn { margin: 0 0 6px; padding-left: 18px; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+.cx-syn b { color: var(--fg); }
+.cbchip.syn { border-color: #51cf66; }
 .pk .stk, .tiles .stk { font-style: normal; color: #51cf66; font-weight: 800; }
 .members { display: flex; flex-direction: column; gap: 6px; }
 .member { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

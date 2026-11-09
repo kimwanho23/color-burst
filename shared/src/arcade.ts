@@ -262,14 +262,19 @@ export function buildWeight(id: AbilityId, owned: readonly Pick[] | undefined) {
   const cats = new Set(owned.map((p) => ABILITY[p.id]?.cat));
   let w = cats.has(ABILITY[id].cat) ? WEIGHT.sameCat : 1;
   if (COMBOS.some((c) => !c.needs.every((n) => have.has(n)) && c.needs.some((n) => have.has(n)) && c.needs.includes(id) && !have.has(id))) w *= WEIGHT.comboPart;
+  // 진화를 노릴 수 있게: 진화 한 장 전인 증강
+  if (owned.filter((p) => p.id === id).length === EVOLVE.count - 1) w *= EVOLVE.weight;
   return w;
 }
 
 /** 레전드로 한 번이라도 고른 능력 */
 export function legendOf(picks: readonly Pick[] | undefined): Set<AbilityId> {
-  return new Set((picks ?? []).filter((p) => p.tier === 3 && !ABILITY[p.id]?.curse && !ABILITY[p.id]?.special).map((p) => p.id));
+  const out = new Set((picks ?? []).filter((p) => p.tier === 3 && !ABILITY[p.id]?.curse && !ABILITY[p.id]?.special).map((p) => p.id));
+  for (const id of evolvedOf(picks)) out.add(id);
+  return out;
 }
-export const hasLegend = (p: { picks: readonly Pick[] }, id: AbilityId) => p.picks.some((x) => x.id === id && x.tier === 3);
+/** 레전드 전용 효과가 있는지: 레전드로 고름 또는 진화 */
+export const hasLegend = (p: { picks: readonly Pick[] }, id: AbilityId) => p.picks.some((x) => x.id === id && x.tier === 3) || evolvedOf(p.picks).has(id);
 
 /** 잭팟 배율과 그 확률(%) */
 export const JACKPOT = { mults: [1.5, 2, 3], odds: [70, 25, 5] } as const;
@@ -333,16 +338,54 @@ export type Mods = Record<AbilityId, number>;
 
 const ZERO = Object.fromEntries(ALL_ABILITIES.map((a) => [a.id, 0])) as Mods;
 
-/** 고른 능력들을 합친 수치 (중첩, 상한 적용) */
+/** 고른 능력들을 합친 수치 (중첩, 상한 적용. 진화한 능력은 상한 ×EVOLVE.capMult) */
 export function modsOf(picks: readonly Pick[] | undefined): Mods {
   if (!picks?.length) return ZERO;
   const m = { ...ZERO };
+  const evolved = evolvedOf(picks);
   for (const p of picks) {
     const a = ABILITY[p.id];
     if (!a) continue;
-    m[p.id] = Math.min(a.cap ?? Infinity, m[p.id] + a.values[p.tier]);
+    const cap = (a.cap ?? Infinity) * (evolved.has(p.id) ? EVOLVE.capMult : 1);
+    m[p.id] = Math.min(cap, m[p.id] + a.values[p.tier]);
   }
   return m;
+}
+
+/** 진화: 같은 증강을 count번 고르면 레전드 전용 효과 + 중첩 상한 ×capMult. 빌드 가중치: count−1번 고른 증강 ×weight */
+export const EVOLVE = { count: 3, capMult: 1.5, weight: 2 } as const;
+
+/** 진화한 능력 (저주·특별 제외) */
+export function evolvedOf(picks: readonly Pick[] | undefined): Set<AbilityId> {
+  const n = new Map<AbilityId, number>();
+  for (const p of picks ?? []) n.set(p.id, (n.get(p.id) ?? 0) + 1);
+  return new Set([...n].filter(([id, c]) => c >= EVOLVE.count && !ABILITY[id]?.curse && !ABILITY[id]?.special).map(([id]) => id));
+}
+
+/** 시너지: 같은 분류의 서로 다른 증강 수가 need 이상이면 보너스 (저주·특별·성장 제외, 증강 조합과 따로) */
+export type SynergyCat = '점수' | '피버' | '보스' | '유지' | '견제' | '보조';
+/** 시너지 보너스 수치: 내 색 +, 피버 게이지 ×, 보스 타격 점수 ×, 콤보가 끊길 때 남는 %, 견제·반격 +, 아이템 버프 시간 +ms */
+export const SYN = { ownAdd: 1, feverGain: 1.15, bossHit: 1.2, keepPct: 50, stealAdd: 2, buffAddMs: 1_000 } as const;
+export const SYNERGY: Record<SynergyCat, { need: number; text: string }> = {
+  점수: { need: 3, text: `내 색 원 +${SYN.ownAdd}점` },
+  피버: { need: 2, text: `피버 게이지 ${Math.round((SYN.feverGain - 1) * 100)}% 더 빨리 참` },
+  보스: { need: 2, text: `보스 타격 점수 ×${SYN.bossHit}` },
+  유지: { need: 2, text: `콤보가 끊길 때 ${SYN.keepPct}%는 남음` },
+  견제: { need: 2, text: `견제·반격 점수 +${SYN.stealAdd}` },
+  보조: { need: 2, text: `아이템 효과 시간 +${SYN.buffAddMs / 1000}초` },
+};
+const SYN_CATS = Object.keys(SYNERGY) as SynergyCat[];
+
+/** 시너지 진행도: 분류별 서로 다른 증강 수 (하나 이상 가진 분류만, SYNERGY 순서) */
+export function synergyProgress(picks: readonly Pick[] | undefined) {
+  const ids = new Set((picks ?? []).map((p) => p.id));
+  return SYN_CATS.map((cat) => ({ cat, have: [...ids].filter((id) => ABILITY[id]?.cat === cat).length, need: SYNERGY[cat].need, text: SYNERGY[cat].text }))
+    .filter((x) => x.have > 0);
+}
+
+/** 활성 시너지 */
+export function synergiesOf(picks: readonly Pick[] | undefined): Set<SynergyCat> {
+  return new Set(synergyProgress(picks).filter((x) => x.have >= x.need).map((x) => x.cat));
 }
 
 /** 같은 능력을 하나로 묶는다: 처음 고른 순서대로, 그중 가장 높은 등급, 고른 횟수 */
