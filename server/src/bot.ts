@@ -1,4 +1,4 @@
-import { FIELD, bossState, circlePos, isFever, isGuarded, isMarked, isOut, ownsKind, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
+import { FIELD, bossState, circlePos, combosOf, isFever, isGuarded, isMarked, isOut, ownsKind, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
 
 /**
  * gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms).
@@ -40,9 +40,9 @@ export class Bot {
       if (c.boss === 'raid') return fever ? 14 : 2;
       // 보스는 체력이 낮을수록 막타를 노리고 몰려든다
       if (c.kind === 'boss') {
-        // 보호막이나 붉은 상태의 보스는 피한다
+        // 보호막이나 붉은 상태의 보스는 피한다 (보스 헌터 조합은 붉은 보스도 감점이 없어 때린다)
         const st = bossState(c, now);
-        if (st.shielded || st.enraged) return 0;
+        if (st.shielded || (st.enraged && !combosOf(me.picks).has('bossHunter'))) return 0;
         return 4 + (1 - (c.hp ?? 1) / (c.maxHp ?? 1)) * 14;
       }
       if (c.kind === 'item') return 5;
