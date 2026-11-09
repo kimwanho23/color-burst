@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_RULES, RULES } from '../src/index.ts';
-import { guideBody } from '../../client/src/guide.ts';
+import { guideBody, guideSlides } from '../../client/src/guide.ts';
 
 const R = { ...DEFAULT_RULES, mode: 'arcade' as const };
 
@@ -29,4 +29,18 @@ test('꺼진 요소는 "이 방에선 꺼져 있어요" (보스·레이저·아�
 test('방 밖(처음 화면)에서는 꺼짐 표시 없음', () => {
   const h = guideBody('more', { ...R, mode: 'classic', boss: false }, false);
   assert.ok(!h.includes('이 방에선 꺼져 있어요'));
+});
+
+test('게임 방법 슬라이드: 한 장에 규칙 하나, 모두 그림(SVG)이 있고 id가 겹치지 않음', () => {
+  const all = [...guideSlides('basic', R), ...guideSlides('more', R)];
+  assert.equal(guideSlides('basic', R).length, 9);
+  assert.equal(guideSlides('more', R).length, 7);
+  assert.equal(new Set(all.map((s) => s.id)).size, all.length);
+  for (const s of all) {
+    assert.ok(s.art.startsWith('<svg') && s.art.endsWith('</svg>'), s.id);
+    assert.ok(!s.art.includes('undefined') && !s.art.includes('NaN'), s.id);
+  }
+  // 그림 속 숫자도 방 규칙을 따른다
+  const fever = guideSlides('basic', { ...R, feverMult: 5, feverSec: 10 }).find((s) => s.id === 'fever')!;
+  assert.ok(fever.art.includes('10초 동안 점수 ×5'));
 });
