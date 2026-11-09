@@ -740,7 +740,7 @@ test('사냥꾼 레전드 막타: 화면의 내 원 전부, 파쇄 레전드: �
   const p0 = circlePosOf(boss, now);
   room.click(me.id, { circleId: 90, x: p0.x, y: p0.y });
   assert.equal(boss.hp, 5, '보호막 무시하고 피해 1 + 파쇄 4');
-  assert.ok(me.score >= 1 + 5, '첫 타 +5');
+  assert.ok(me.score >= 1 * 2, '선봉 첫 타 ×2');
   room.click(me.id, { circleId: 90, x: p0.x, y: p0.y });
   assert.deepEqual([circles.has(90), circles.has(91), circles.has(92)], [false, false, false]);
   room.destroy();
@@ -771,7 +771,7 @@ test('헛손질 보정은 지연 보정 위치로 판정 (0.1초 전 자리를 �
   room.destroy();
 });
 
-test('잭팟 레전드는 보스 타격에도 ×2~×5 (보스도 점수 구역 배율)', (t) => {
+test('잭팟 레전드는 보스 타격에도 ×2~×5 (보스는 점수 구역 배율 없음)', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
   me.picks = [{ id: 'jackpot', tier: 3 }, { id: 'hammer', tier: 2 }]; // 타격 1 + 3 = 4
@@ -780,7 +780,7 @@ test('잭팟 레전드는 보스 타격에도 ×2~×5 (보스도 점수 구역 �
   t.mock.method(Math, 'random', () => 0.2); // 잭팟 터짐(0.2 < 0.3), 첫 배율 (일반 1.5, 레전드 2)
   const p0 = circlePosOf(boss, now);
   room.click(me.id, { circleId: 95, x: p0.x, y: p0.y });
-  assert.equal(me.score, 24); // 타격 4 × 피해 1 × 가장자리 ×3 × 잭팟 ×2
+  assert.equal(me.score, 8); // 타격 4 × 잭팟 ×2 (구역 배율 없음)
   room.destroy();
 });
 
@@ -1158,7 +1158,7 @@ test('막타를 못 친 사람도 독식하면 boss:killed의 solo 목록에 들
   room.click(me.id, { circleId: 98, x: p0.x, y: p0.y });
   const killed = log.find((e) => e.ev === 'boss:killed')!;
   assert.deepEqual(killed.d.solo, [other.id]);
-  assert.equal(other.score, RULES.boss.solo.points * 2 + RULES.boss.mvp); // 사이 구역 ×2, 최다 타격 +5
+  assert.equal(other.score, RULES.boss.solo.points + RULES.boss.mvp); // 구역 배율 없음, 최다 타격 +5
 });
 
 // ---------- 게임 중 나가기 ----------
