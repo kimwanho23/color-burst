@@ -52,3 +52,50 @@ test('shiftTimes가 다음 자동 발동 시각도 민다', () => {
   shiftTimes(p, 1_000, 2_000);
   assert.equal(p.autoAt.autoCharge, 500, '멈추기 전에 지난 시각은 그대로');
 });
+
+// ---------- 게임에 연결 ----------
+import { DEFAULT_RULES, RULES, feverMultOf, resolveClaim, startRound, toGameRules, luckyMods, modsOf, makeBoss } from '../src/index.ts';
+import { strikeBoss } from '../src/bossScore.ts';
+
+const G = toGameRules(DEFAULT_RULES);
+const two = (...picks: Pick[]) => { const a = withPicks(...picks); const b = newPlayer('b', 'B', 1); return { a, players: [a, b] }; };
+
+test('단련: 10콤보에 닿으면 한 칸, 그다음 내 색 원이 +1점', () => {
+  const { a, players } = two({ id: 'drill', tier: 0 });
+  const now = 1_000_000;
+  const r1 = resolveClaim(a, 0, players, now, G, { rand: () => 0.99 });
+  a.combo = 9;
+  resolveClaim(a, 0, players, now, G, { rand: () => 0.99 });
+  assert.equal(a.stacks.drill, 1);
+  a.combo = 3;
+  const r2 = resolveClaim(a, 0, players, now, G, { rand: () => 0.99 });
+  assert.equal(r2.gained - r1.gained, 1);
+});
+
+test('행운 축적: 잭팟이 터지면 한 칸, 잭팟 확률에 더해지되 잭팟 증강 상한(35%)은 그대로', () => {
+  const { a, players } = two({ id: 'luckStack', tier: 0 }, { id: 'jackpot', tier: 3 }, { id: 'jackpot', tier: 3 });
+  resolveClaim(a, 0, players, 1_000_000, G, { rand: () => 0 });
+  assert.equal(a.stacks.luckStack, 1);
+  a.stacks.luckStack = 3;
+  assert.equal(luckyMods(a, modsOf(a.picks)).jackpot, 35);
+  const b = withPicks({ id: 'luckStack', tier: 0 }, { id: 'jackpot', tier: 0 });
+  b.stacks.luckStack = 3;
+  assert.equal(luckyMods(b, modsOf(b.picks)).jackpot, 8);
+});
+
+test('왕의 증표: 보스 막타마다 한 칸, 피버 배율에 +0.2', () => {
+  const { a, players } = two({ id: 'crownMark', tier: 1 });
+  const base = feverMultOf(a, G);
+  const boss = makeBoss(1, 0, 2, G, () => 0.5);
+  boss.hp = 1;
+  strikeBoss(a, boss, new Map(), players, 10, G, () => 0.99);
+  assert.equal(a.stacks.crownMark, 1);
+  assert.ok(Math.abs(feverMultOf(a, G) - base - 0.2) < 1e-9);
+});
+
+test('자동 시전: 라운드 시작 때 첫 발동 시각 = 시작 + 간격 (가진 것만)', () => {
+  const a = withPicks({ id: 'autoCharge', tier: 1 });
+  startRound(a, 5_000, G);
+  assert.deepEqual(a.autoAt, { autoCharge: 5_000 + 10_000 });
+  assert.equal(RULES.fever.own > 0, true);
+});

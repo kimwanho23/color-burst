@@ -1297,3 +1297,39 @@ test('일시정지: 게임 정보에 멈춘 시각이 들어 있어 다시 접�
   const payload = (room as unknown as { playPayload(): { pausedAt: number } }).playPayload();
   assert.equal(payload.pausedAt, at);
 });
+
+type AutoRoom = { updateAuto(now: number): void };
+test('자동 시전(방): 충전기 1분 6번이면 10초마다 피버 게이지 +10, 일시정지하면 다음 발동도 밀림', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  const r = room as unknown as AutoRoom;
+  me.picks = [{ id: 'autoCharge', tier: 1 }];
+  me.fever = 0;
+  const t0 = Date.now();
+  me.autoAt = { autoCharge: t0 + 10_000 };
+  r.updateAuto(t0 + 9_900);
+  assert.equal(me.fever, 0);
+  r.updateAuto(t0 + 10_000);
+  assert.ok(me.fever >= 10, '10초에 발동');
+  assert.equal(me.autoAt.autoCharge, t0 + 20_000);
+  room.pause(me.id);
+  t.mock.timers.tick(5_000);
+  room.resume(me.id);
+  t.mock.timers.tick(RULES.pause.resumeMs);
+  assert.equal(me.autoAt.autoCharge, t0 + 20_000 + 5_000 + RULES.pause.resumeMs);
+});
+
+test('자동 시전(방): 보호막 발생기는 보호막 버프, 자기장은 자석 버프 (봇은 자기장 없음)', () => {
+  const { room, me } = playingRoom();
+  const r = room as unknown as AutoRoom;
+  const now = Date.now();
+  const bot = room.players.find((p) => p.id !== me.id)!;
+  bot.bot = true;
+  for (const p of [me, bot]) { p.picks = [{ id: 'autoGuard', tier: 0 }, { id: 'autoMagnet', tier: 0 }]; p.autoAt = { autoGuard: now, autoMagnet: now }; p.buffs = {}; }
+  r.updateAuto(now);
+  assert.ok((me.buffs.guard ?? 0) > now && (me.buffs.magnet ?? 0) > now);
+  assert.ok((bot.buffs.guard ?? 0) > now);
+  assert.equal(bot.buffs.magnet, undefined);
+  room.destroy();
+});
