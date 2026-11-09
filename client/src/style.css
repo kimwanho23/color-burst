@@ -141,6 +141,7 @@ td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align:
 .set-row:not(.check) { grid-template-columns: 70px 1fr 40px; }
 .set-row input[type="range"] { width: 100%; accent-color: var(--yellow); }
 .set-row em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.pk .stk, .tiles .stk { font-style: normal; color: #51cf66; font-weight: 800; }
 .members { display: flex; flex-direction: column; gap: 6px; }
 .member { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .member.off { opacity: .55; }

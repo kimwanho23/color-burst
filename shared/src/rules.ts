@@ -1,4 +1,4 @@
-import { ABILITY, ARCADE, AUG, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
+import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -686,6 +686,9 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   // 예열 100 또는 집중 포화: 라운드를 피버로 시작
   if (m.preheat >= 100 || m.focusFire) startFever(p, startAt, G, m);
   else p.fever = m.preheat;
+  // 자동 시전: 가진 것만, 라운드 시작부터 한 간격 뒤에 첫 발동
+  p.autoAt = {};
+  for (const id of AUTO_IDS) if (m[id] > 0) p.autoAt[id] = startAt + autoEveryMs(p, id);
 }
 
 /** 능력을 반영한 피버 시간·배율 */
@@ -693,7 +696,7 @@ export const feverMsOf = (p: PlayerState, G: GameRules) => G.feverMs + modsOf(p.
 export const feverMultOf = (p: PlayerState, G: GameRules) => {
   const m = modsOf(p.picks);
   return G.feverMult + m.frenzy + (m.berserker ? CURSE.berserker.multAdd : 0) + (m.focusFire ? SPECIAL.focusMult : 0) + (p.feverBonus ?? 0)
-    + (combosOf(p.picks).has('feverMaster') ? COMBO.feverAdd : 0);
+    + (combosOf(p.picks).has('feverMaster') ? COMBO.feverAdd : 0) + stackBonus(p).feverMult;
 };
 /** 배율 쌓임 상한: 잭팟 전 배율의 곱을 RULES.multCap까지 (잭팟은 그 위에 곱한다) */
 export const capMult = (x: number) => Math.min(RULES.multCap, x);
@@ -762,7 +765,22 @@ function shiftFeverEnd(p: PlayerState, delta: number) {
 }
 
 /** 행운아 조합: 잭팟 확률 +10 (보스 잭팟에도) */
-export const luckyMods = (p: PlayerState, m: Mods): Mods => (combosOf(p.picks).has('lucky') ? { ...m, jackpot: m.jackpot + COMBO.jackpotAdd } : m);
+/** 잭팟 확률: 잭팟 증강 + 행운 축적 칸(합쳐서 잭팟 증강 상한까지) + 행운아 조합 */
+export const luckyMods = (p: PlayerState, m: Mods): Mods => {
+  const base = Math.min(ABILITY.jackpot.cap ?? Infinity, m.jackpot + stackBonus(p).jackpot);
+  return { ...m, jackpot: base + (combosOf(p.picks).has('lucky') ? COMBO.jackpotAdd : 0) };
+};
+/** 잭팟 굴리기 (잭팟·행운 축적 레전드 반영). 터지면 행운 축적 한 칸 */
+export function rollJackpot(p: PlayerState, m: Mods, rand: () => number = Math.random, forced = false) {
+  const j = jackpotMult(forced ? { ...m, jackpot: 100 } : luckyMods(p, m), rand, hasLegend(p, 'jackpot'), hasLegend(p, 'luckStack') ? LEGEND.luckHighMult : 1);
+  if (j > 1) addStack(p, 'luckStack');
+  return j;
+}
+/** 콤보가 단련 주기를 넘으면 한 칸. 레전드면 그때 콤보 보너스 점수를 돌려준다 (이미 콤보 보너스가 터졌으면 0) */
+export function drillCheck(p: PlayerState, before: number, bonus: number) {
+  if (!crossedCombo(before, p.combo, GROWTH.drillEvery) || !addStack(p, 'drill')) return 0;
+  return hasLegend(p, 'drill') && bonus === 0 ? RULES.comboBonus : 0;
+}
 
 /** 여운 배율 (여운 레전드면 ×2) */
 export const afterMultOf = (p: PlayerState) => (hasLegend(p, 'afterglow') ? LEGEND.afterglowMult : AUG.afterglowMult);
@@ -1188,7 +1206,7 @@ export function resolveClaim(
   const gauge = (amt: number, raw = false) => !magnet && addFever(claimer, amt, now, G, players, raw);
 
   // 외길: 내 색 ×3, 노란색·무지개 0점
-  const own = (P.own + m.picky) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
+  const own = (P.own + m.picky + stackBonus(claimer).own) * (m.oneWay ? CURSE.oneWay.ownMult : 1);
   if (kind === 'rainbow') {
     res.type = 'rainbow'; pts = m.oneWay ? 0 : P.rainbow + m.rainbowHunt; bump();
     // 무지개 사냥 레전드: 피버 게이지 2배
@@ -1297,7 +1315,9 @@ export function resolveClaim(
       if (L.has('rapid') && claimer.rapidStreak >= LEGEND.rapidStreak) { claimer.rapidJackpot = true; claimer.rapidStreak = 0; }
     }
   }
-  const bonus = steal ? 0 : comboBonusOf(claimer, comboBefore, fever);
+  let bonus = steal ? 0 : comboBonusOf(claimer, comboBefore, fever);
+  // 단련: 콤보 주기마다 한 칸 (레전드면 콤보 보너스도)
+  if (!steal) bonus += drillCheck(claimer, comboBefore, bonus);
   if (bonus > 0) { res.comboBonus = true; pts += bonus; }
   const st = claimer.stats;
   st.hits++;
@@ -1315,7 +1335,7 @@ export function resolveClaim(
   if (!blast && !magnet) {
     const forced = rapidForced && pts > 0;
     if (forced) claimer.rapidJackpot = false;
-    res.jackpot = jackpotMult(forced ? { ...m, jackpot: 100 } : luckyMods(claimer, m), opts.rand, L.has('jackpot'));
+    res.jackpot = rollJackpot(claimer, m, opts.rand, forced);
   }
   const earned = Math.round(pts * mult * res.jackpot * (magnet ? AUG.magnetPointPct / 100 : 1));
   res.gained = earned + res.plundered;
@@ -1338,7 +1358,7 @@ export function goldGain(p: PlayerState, now: number, players: PlayerState[], G:
   const fever = isFever(p, now), after = !fever && now < p.afterUntil;
   const mult = capMult((fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * scoreBoostOf(m) * itemMult(p, now, true)
     * zoneMult(zone, m) * extraMult(p, now, players));
-  const jackpot = jackpotMult(luckyMods(p, m), rand, hasLegend(p, 'jackpot'));
+  const jackpot = rollJackpot(p, m, rand);
   return { gained: Math.round(RULES.gold.points * mult * jackpot), jackpot };
 }
 

@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  ABILITY, ARCADE, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, isMine, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -11,7 +11,7 @@ import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type Scor
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
-import { UI, icon, itemIcon } from './icons.ts';
+import { UI, abilityIcon, icon, itemIcon } from './icons.ts';
 import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
 import { GameCursor, startCursorSync } from './cursor.ts';
 import { hideTip, initTips } from './tooltip.ts';
@@ -406,6 +406,11 @@ async function askLeave() {
 }
 $('leaveTop').onclick = $('pauseLeaveBtn').onclick = () => { void askLeave(); };
 $('leaveTop').innerHTML = `${icon(UI.leave, 16)}<span class="bt">나가기</span>`;
+// 자동 시전 증강: 내 것이 발동하면 커서 위에 이름을 짧게
+socket.on('auto:fire', ({ playerId, id }) => {
+  if (playerId !== myId() || !gameCursor.pos) return;
+  renderer.text(gameCursor.pos.x, gameCursor.pos.y - 42, ABILITY[id].name, '#7fd3ff', 0.9);
+});
 socket.on('player:left', ({ name }) => pushFeed($('feed'), icon(UI.leave, 18), `${name}님이 나갔어요. 봇이 이어받아요.`, '#9ca2d6'));
 $('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
 $('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
@@ -629,8 +634,14 @@ socket.on('boss:escaped', ({ circleId }) => {
 });
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => {
+  const before = me()?.stacks ?? {};
   players = p; renderScores(); if (picking()) showPick();
   const m = me();
+  // 스택형 증강: 내 칸이 오르면 한 줄 알림
+  for (const id of STACK_IDS) {
+    const n = m?.stacks?.[id] ?? 0;
+    if (m && n > (before[id] ?? 0)) pushFeed($('feed'), abilityIcon(id, 18), `${ABILITY[id].name} ${n}/${modsOf(m.picks)[id]}`, '#51cf66');
+  }
   const now = combosOf(m?.picks);
   for (const id of now) if (!myCombos.has(id)) {
     const c = COMBOS.find((x) => x.id === id)!;
@@ -947,7 +958,7 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
-  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [])}${buffChips(p, serverNow())}</div>`).join('');
+  $('scores').innerHTML = players.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}" data-id="${p.id}">${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
   renderChipPop();
 }
 

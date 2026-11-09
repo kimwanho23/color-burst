@@ -3,7 +3,7 @@
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
-import type { AbilityId, Pick, RoundEffect } from './arcade.ts';
+import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
 import type { WavePattern } from './waves.ts';
@@ -162,6 +162,8 @@ export interface ServerToClient {
   'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number; solo: string[]; soloFever: string[]; feverStarted: boolean; comboBonus: boolean }) => void;
   'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
+  /** 자동 시전 증강이 발동함 */
+  'auto:fire': (d: { playerId: string; id: AutoId }) => void;
   /** 방장이 나를 내보냄 */
   'room:kicked': () => void;
   'game:over': (d: GameOver) => void;

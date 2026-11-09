@@ -368,12 +368,13 @@ function crushText(v: number) {
 }
 
 /** 잭팟: 터지면 배율, 아니면 1 */
-export function jackpotMult(m: Mods, rand = Math.random, legend = false) {
+export function jackpotMult(m: Mods, rand = Math.random, legend = false, highBoost = 1) {
   if (!(rand() < m.jackpot / 100)) return 1;
-  // 잭팟 레전드: 배율 ×2~×5 (확률은 그대로)
+  // 잭팟 레전드: 배율 ×2~×5 (확률은 그대로). 행운 축적 레전드: ×3 이상이 나올 확률 highBoost배
   const mults = legend ? LEGEND.jackpotMults : JACKPOT.mults;
-  let r = rand() * 100;
-  for (let i = 0; i < mults.length; i++) { r -= JACKPOT.odds[i]; if (r < 0) return mults[i]; }
+  const odds = JACKPOT.odds.map((o, i) => (mults[i] >= 3 ? o * highBoost : o));
+  let r = rand() * odds.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < mults.length; i++) { r -= odds[i]; if (r < 0) return mults[i]; }
   return mults[mults.length - 1];
 }
 

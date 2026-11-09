@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, holdCircles, isGuarded, isMine, itemMult, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
@@ -939,6 +939,7 @@ export class Room {
     this.updatePulls(now);
     this.updateAura(now);
     this.updatePattern(now);
+    this.updateAuto(now);
     // 과충전 레전드: 피버가 끝나면 남겨 둔 게이지를 채움
     let settled = false;
     for (const p of this.players) if (settleFever(p, now)) settled = true;
@@ -1067,6 +1068,27 @@ export class Room {
     if (stunned) this.emitPlayers();
   }
 
+  /** 자동 시전 증강: 때가 된 것을 발동하고 다음 시각을 정한다 (자기장은 봇에게 없음) */
+  private updateAuto(now: number) {
+    let changed = false;
+    for (const p of this.players) {
+      for (const id of AUTO_IDS) {
+        const at = p.autoAt[id];
+        if (at === undefined || now < at) continue;
+        const every = autoEveryMs(p, id);
+        p.autoAt[id] = Number.isFinite(every) ? Math.max(at + every, now + 1) : undefined;
+        if (id === 'autoMagnet' && p.bot) continue;
+        const L = hasLegend(p, id);
+        if (id === 'autoMagnet') addBuff(p, 'magnet', GROWTH.autoMs.autoMagnet, now);
+        else if (id === 'autoGuard') addBuff(p, 'guard', L ? LEGEND.autoGuardMs : GROWTH.autoMs.autoGuard, now);
+        else addFever(p, L ? LEGEND.autoCharge : GROWTH.autoCharge, now, this.G, this.players, true);
+        this.io.to(this.code).emit('auto:fire', { playerId: p.id, id });
+        changed = true;
+      }
+    }
+    if (changed) this.emitPlayers();
+  }
+
   /** 커서 자석: 끝난 끌기는 잡고, 커서 근처 내 원을 새로 끈다 (플레이어마다 1초에 perSec개) */
   private updatePulls(now: number) {
     const M = RULES.magnet;
@@ -1084,7 +1106,8 @@ export class Room {
       const log = (this.pullLog.get(p.id) ?? []).filter((t) => now - t < 1000);
       this.pullLog.set(p.id, log);
       // 자석 레전드: 1초에 LEGEND.magnetPerSec개
-      const per = hasLegend(p, 'magnet') ? LEGEND.magnetPerSec : M.perSec;
+      // 자기장 레전드: 발동 중 1초에 하나 더
+      const per = (hasLegend(p, 'magnet') ? LEGEND.magnetPerSec : M.perSec) + (hasLegend(p, 'autoMagnet') && buffOn(p, 'magnet', now) ? LEGEND.autoMagnetAdd : 0);
       if (log.length >= per) continue;
       for (const c of pickMagnetTargets(this.circles.values(), p.color, cur, now, radius, per - log.length, new Set(this.pulls.keys()))) {
         const pl: Pull = { circleId: c.id, by: p.id, from: circlePos(c, now), at: now, ms: M.pullMs };

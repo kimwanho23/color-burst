@@ -2,10 +2,10 @@
  * 보스 한 번 타격: 피해·점수·콤보·피버 게이지·막타·독식·MVP를 계산해 바로 반영한다 (서버가 부른다).
  * 원 삭제·알림·자동 획득(사냥꾼 레전드·점화)은 부르는 쪽이 한다.
  */
-import { AUG, COMBO, LEGEND, combosOf, hasLegend, jackpotMult, modsOf } from './arcade.ts';
+import { AUG, COMBO, LEGEND, combosOf, hasLegend, modsOf } from './arcade.ts';
 import {
   RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
-  luckyMods, ragePenalty, settleFever, zoneMult, zoneOf, type Circle, type GameRules, type PlayerState,
+  addStack, drillCheck, ragePenalty, rollJackpot, settleFever, zoneMult, zoneOf, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 
 export interface BossStrike {
@@ -76,14 +76,14 @@ export function strikeBoss(
   p.combo++;
   p.stats.maxCombo = Math.max(p.stats.maxCombo, p.combo);
   p.roundMaxCombo = Math.max(p.roundMaxCombo, p.combo);
-  const bonus = comboBonusOf(p, before, fever);
+  let bonus = comboBonusOf(p, before, fever);
+  bonus += drillCheck(p, before, bonus);
   out.comboBonus = bonus > 0;
   if (addFever(p, B.feverGain, now, G, players)) out.feverStarted = true;
 
   const mult = capMult((fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * info.boost * itemMult(p, now, true)
     * zoneMult(zoneOf(circlePos(c, now)), m) * extraMult(p, now, players));
-  const lucky = luckyMods(p, m), jl = hasLegend(p, 'jackpot');
-  out.jackpot = jackpotMult(lucky, rand, jl);
+  out.jackpot = rollJackpot(p, m, rand);
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
   out.gained = Math.round((info.hit * dmg * vanguard + bonus) * mult * out.jackpot);
   p.score += out.gained;
@@ -95,7 +95,9 @@ export function strikeBoss(
     const S = B.solo;
     const isSolo = (id: string) => (hits.get(id) ?? 0) * 100 >= (c.maxHp ?? hp) * S.pct;
     out.solo = isSolo(p.id);
-    out.killJackpot = jackpotMult(lucky, rand, jl);
+    out.killJackpot = rollJackpot(p, m, rand);
+    // 왕의 증표: 막타마다 한 칸 (레전드는 독식에도, 막타와 독식이 겹치면 한 칸)
+    addStack(p, 'crownMark');
     out.killGained = Math.round(info.kill * (out.solo ? S.killMult : 1) * mult * out.killJackpot);
     p.score += out.killGained;
     addSrc(p, 'boss', out.killGained, { fever, jackpot: out.killJackpot });
@@ -114,6 +116,7 @@ export function strikeBoss(
       if (started && q === p) out.feverStarted = true;
       else if (started) q.stats.fevers++;
       out.solos.push({ id, gained, feverStarted: started });
+      if (q !== p && hasLegend(q, 'crownMark')) addStack(q, 'crownMark');
     }
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
     let best = 0;
