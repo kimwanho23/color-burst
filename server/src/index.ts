@@ -103,6 +103,16 @@ io.on('connection', (socket) => {
   socket.on('room:leave', leaveCurrent);
   socket.on('lobby:color', (c) => { const s = here(); if (s && [0, 1, 2, 3].includes(c)) s.room.setColor(s.id, c as ColorIndex); });
   socket.on('lobby:options', (o) => { const s = here(); if (s) s.room.setOptions(s.id, o ?? {}); });
+  socket.on('lobby:ready', (on) => { const s = here(); if (s) s.room.setReady(s.id, on === true); });
+  socket.on('lobby:host', (to) => { const s = here(); if (s && typeof to === 'string') s.room.giveHost(s.id, to); });
+  socket.on('lobby:kick', (to) => {
+    const s = here();
+    if (!s || typeof to !== 'string') return;
+    const before = s.room.players.some((p) => p.id === to);
+    s.room.kick(s.id, to);
+    // 내보낸 사람의 자리 정보도 지운다
+    if (before && !s.room.players.some((p) => p.id === to)) for (const [sid, st] of seat) if (st.room === s.room && st.id === to) seat.delete(sid);
+  });
   socket.on('lobby:rules', (d) => { const s = here(); if (s && d && typeof d === 'object') s.room.setRules(s.id, d); });
   socket.on('game:start', (ack) => {
     const s = here();

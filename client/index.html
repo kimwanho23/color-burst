@@ -65,12 +65,17 @@
         <h1 id="soloTitle" hidden>혼자 <span>하기</span></h1>
         <div class="lbl">내 색상</div>
         <div class="picks" id="picks"></div>
+        <div id="membersBox">
+          <div class="lbl">참가자</div>
+          <div class="members" id="members"></div>
+        </div>
         <div id="hostOpts" class="opts">
           <label class="check" id="fillBotsRow"><input type="checkbox" id="fillBots" checked> 빈 자리는 봇으로 채우기</label>
           <div class="seg" id="botLevel"></div>
         </div>
         <div id="rulesBox" class="rulesbox"></div>
         <button class="btn" id="startBtn" type="button">게임 시작</button>
+        <button class="btn" id="readyBtn" type="button" hidden>준비</button>
         <p class="hint" id="lobbyHint"></p>
         <p class="err" id="lobbyErr" role="alert"></p>
         <div class="btnrow">

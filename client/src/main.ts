@@ -321,11 +321,55 @@ function renderLobby() {
   });
 
   const humans = room.players.filter((p) => !p.bot).length;
+  // 준비: 방장 뺀 사람이 모두 준비해야 시작할 수 있다
+  const waiting = room.solo ? 0 : room.players.filter((p) => !p.bot && p.id !== room!.hostId && !p.ready).length;
+  const meP = room.players.find((p) => p.id === myId());
+  renderMembers(host);
   $<HTMLButtonElement>('startBtn').hidden = !host;
+  $<HTMLButtonElement>('startBtn').disabled = waiting > 0;
+  const rb = $<HTMLButtonElement>('readyBtn');
+  rb.hidden = host || room.solo;
+  rb.textContent = meP?.ready ? '준비 취소' : '준비';
+  rb.classList.toggle('ghost', !!meP?.ready);
   $('lobbyHint').textContent = room.solo ? '봇 3명과 대결해요' : host
-    ? `참가자 ${humans}명${room.fillBots ? ` · 빈 자리 ${4 - humans}개는 봇` : ''}`
-    : `방장이 시작하기를 기다리는 중 · 참가자 ${humans}명`;
+    ? waiting > 0 ? `${waiting}명이 아직 준비 안 했어요` : `참가자 ${humans}명${room.fillBots ? ` · 빈 자리 ${4 - humans}개는 봇` : ''}`
+    : meP?.ready ? `준비 완료 · 방장이 시작하기를 기다리는 중` : `준비를 누르면 방장이 시작할 수 있어요 · 참가자 ${humans}명`;
 }
+
+/** 대기실 참가자 목록: 방장 표시·준비 ✓. 방장은 다른 사람을 눌러 방장 넘기기·내보내기 */
+let memberMenu: string | null = null;
+function renderMembers(host: boolean) {
+  if (!room) return;
+  $('membersBox').hidden = room.solo;
+  if (room.solo) return;
+  const people = room.players.filter((p) => !p.bot);
+  if (memberMenu && !people.some((p) => p.id === memberMenu)) memberMenu = null;
+  $('members').innerHTML = people.map((p) => {
+    const isHostP = p.id === room!.hostId, mine = p.id === myId();
+    const can = host && !mine;
+    const tag = isHostP ? '<em class="mtag host">방장</em>' : p.ready ? '<em class="mtag ok">✓ 준비</em>' : '<em class="mtag">대기</em>';
+    const menu = can && memberMenu === p.id
+      ? `<span class="mmenu"><button type="button" class="btn ghost small" data-host="${p.id}">방장 넘기기</button><button type="button" class="btn ghost small danger" data-kick="${p.id}">내보내기</button></span>` : '';
+    return `<div class="member${p.connected ? '' : ' off'}"><button type="button" class="mname" ${can ? `data-menu="${p.id}" aria-expanded="${memberMenu === p.id}"` : 'disabled'}>${shapeSVG(p.color, 18)}<span>${esc(p.name)}${mine ? ' (나)' : ''}</span>${tag}</button>${menu}</div>`;
+  }).join('');
+}
+$('members').addEventListener('click', async (e) => {
+  const t = e.target as HTMLElement;
+  const menu = t.closest<HTMLElement>('[data-menu]')?.dataset.menu;
+  if (menu) { memberMenu = memberMenu === menu ? null : menu; renderLobby(); return; }
+  const to = t.closest<HTMLElement>('[data-host]')?.dataset.host;
+  if (to) { memberMenu = null; socket.emit('lobby:host', to); return; }
+  const kick = t.closest<HTMLElement>('[data-kick]')?.dataset.kick;
+  if (kick) {
+    const who = room?.players.find((p) => p.id === kick);
+    memberMenu = null;
+    const ok = await confirmDialog($('stage'), { title: '내보낼까요?', text: `${who?.name ?? '이 사람'}님을 방에서 내보내요. 다시 들어올 수 없어요.`, ok: '내보내기', cancel: '취소' });
+    if (ok) socket.emit('lobby:kick', kick);
+    else renderLobby();
+  }
+});
+$('readyBtn').onclick = () => { const m = room?.players.find((p) => p.id === myId()); socket.emit('lobby:ready', !m?.ready); };
+socket.on('room:kicked', () => { store('cb-room', null); resetToHome('방장이 내보냈어요'); });
 $<HTMLInputElement>('fillBots').onchange = (e) => socket.emit('lobby:options', { fillBots: (e.target as HTMLInputElement).checked });
 $('startBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
 function resetToHome(err = '') {

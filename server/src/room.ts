@@ -52,6 +52,8 @@ export class Room {
   private clickLog = new Map<string, number[]>();
   /** 비밀 키 → 플레이어 id */
   private keyToId = new Map<string, string>();
+  /** 내보낸 사람의 키: 이 방에 다시 못 들어온다 */
+  private kicked = new Set<string>();
   /** 플레이어 id → 현재 소켓 id */
   private socketOf = new Map<string, string>();
   private dropTimers = new Map<string, NodeJS.Timeout>();
@@ -146,6 +148,7 @@ export class Room {
       return { id: p.id };
     }
 
+    if (this.kicked.has(key)) return { error: '이 방에서 내보내졌어요.' };
     if (this.solo && this.humans.length) return { error: '혼자 하기 방에는 들어갈 수 없어요.' };
     if (this.phase !== 'lobby') return { error: '이미 게임이 진행 중이에요. 끝나면 다시 들어와 주세요.' };
     this.players = this.players.filter((x) => !x.bot);
@@ -245,6 +248,7 @@ export class Room {
     if (id !== this.hostId || this.phase !== 'lobby') return;
     if (typeof o.fillBots === 'boolean' && !this.solo) this.fillBots = o.fillBots;
     if (o.botLevel === 0 || o.botLevel === 1 || o.botLevel === 2) this.botLevel = o.botLevel;
+    this.unready();
     this.broadcastState();
   }
 
@@ -256,12 +260,51 @@ export class Room {
       base = { ...PRESETS[d.preset].rules, mode: this.rules.mode, arcadeRoundSec: this.rules.arcadeRoundSec };
     }
     this.rules = sanitizeRules(base, d.rules ?? {});
+    this.unready();
     this.broadcastState();
   }
+
+  /** 준비 / 준비 취소: 대기실에서 방장이 아닌 사람 */
+  setReady(id: string, on: boolean) {
+    const p = this.players.find((x) => x.id === id);
+    if (!p || p.bot || id === this.hostId || this.phase !== 'lobby') return;
+    p.ready = !!on;
+    this.broadcastState();
+  }
+
+  /** 방장을 뺀 사람 중 아직 준비하지 않은 수 (봇 제외) */
+  notReady() {
+    return this.humans.filter((p) => p.id !== this.hostId && !p.ready).length;
+  }
+
+  /** 방장 넘기기: 방장이 봇이 아닌 다른 사람에게 */
+  giveHost(id: string, to: string) {
+    const t = this.players.find((x) => x.id === to);
+    if (id !== this.hostId || !t || t.bot || to === id) return;
+    this.hostId = to;
+    t.ready = false;
+    this.broadcastState();
+  }
+
+  /** 내보내기: 방장이 대기실에서. 그 사람의 키는 이 방에 다시 못 들어온다 */
+  kick(id: string, target: string) {
+    const t = this.players.find((x) => x.id === target);
+    if (id !== this.hostId || this.phase !== 'lobby' || !t || t.bot || target === id) return;
+    for (const [k, pid] of this.keyToId) if (pid === target) this.kicked.add(k);
+    const sock = this.socketOf.get(target);
+    if (sock) {
+      this.io.to(sock).emit('room:kicked');
+      this.io.sockets.sockets.get(sock)?.leave(this.code);
+    }
+    this.remove(target);
+  }
+
+  private unready() { for (const p of this.players) p.ready = false; }
 
   start(id: string): string | null {
     if (id !== this.hostId) return '방장만 시작할 수 있어요.';
     if (this.phase !== 'lobby') return '이미 진행 중이에요.';
+    if (!this.solo && this.notReady() > 0) return '아직 준비 안 한 사람이 있어요.';
 
     // 대기실에서 끊긴 채로 남아 있던 사람은 이번 판에서 제외
     for (const p of this.humans.filter((h) => !h.connected)) this.remove(p.id, false);
@@ -608,7 +651,7 @@ export class Room {
     const host = this.players.find((p) => p.id === this.hostId);
     if (host && host.connected) return;
     const next = this.humans.find((h) => h.connected);
-    if (next) this.hostId = next.id;
+    if (next) { this.hostId = next.id; next.ready = false; }
     else if (!host) this.hostId = this.humans[0]?.id ?? '';
   }
 
@@ -1234,6 +1277,7 @@ export class Room {
     this.players = this.players.filter((p) => !p.bot);
     this.bots.clear();
     this.phase = 'lobby';
+    this.unready();
     // 게임 중에 끊겼던 사람은 대기실 기준 유예 시간을 다시 준다
     for (const p of this.humans) {
       if (!p.connected && !this.dropTimers.has(p.id)) {

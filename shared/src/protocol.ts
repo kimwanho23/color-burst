@@ -162,6 +162,8 @@ export interface ServerToClient {
   'boss:killed': (d: { circleId: number; by: string; gained: number; mvp: string | null; mvpGained: number; x: number; y: number; jackpot: number; solo: string[]; soloFever: string[]; feverStarted: boolean; comboBonus: boolean }) => void;
   'boss:escaped': (d: { circleId: number }) => void;
   players: (p: PlayerState[]) => void;
+  /** 방장이 나를 내보냄 */
+  'room:kicked': () => void;
   'game:over': (d: GameOver) => void;
 }
 
@@ -177,6 +179,12 @@ export interface ClientToServer {
   'room:leave': () => void;
   'lobby:color': (color: ColorIndex) => void;
   'lobby:options': (o: { fillBots?: boolean; botLevel?: BotLevel }) => void;
+  /** 준비 / 준비 취소 (방장 아닌 사람) */
+  'lobby:ready': (on: boolean) => void;
+  /** 방장 넘기기 (방장) */
+  'lobby:host': (playerId: string) => void;
+  /** 내보내기 (방장, 대기실) */
+  'lobby:kick': (playerId: string) => void;
   /** 방 규칙 변경(방장). preset을 주면 그 프리셋으로 덮어쓴 뒤 rules를 반영 */
   'lobby:rules': (d: { preset?: PresetId; rules?: Partial<RoomRules> }) => void;
   'game:start': (ack: Ack) => void;

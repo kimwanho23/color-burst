@@ -528,6 +528,8 @@ export interface PlayerState {
   hazardUntil?: number;
   /** 이번 게임에 남은 일시정지 (멀티) */
   pausesLeft: number;
+  /** 대기실: 준비 완료 (방장·봇은 쓰지 않음) */
+  ready: boolean;
   /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
   lastClaimAt: number;
   rapidStreak: number;
@@ -624,7 +626,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
-    pausesLeft: RULES.pause.perGame,
+    pausesLeft: RULES.pause.perGame, ready: false,
   };
 }
 
