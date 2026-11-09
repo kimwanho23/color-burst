@@ -13,6 +13,7 @@ import {
   type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
+import { logGame } from './gameLog.ts';
 
 type IO = Server<ClientToServer, ServerToClient>;
 
@@ -1508,6 +1509,8 @@ export class Room {
     const teamDraw = !!teams && teams[0].score === teams[1].score && teams[0].best === teams[1].best;
     const winners = teams ? new Set(teamDraw ? [...teams[0].ids, ...teams[1].ids] : teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
     for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
+    // 판 기록 한 줄 (튜토리얼은 end()까지 오지 않는다)
+    logGame({ rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, roundMs: this.G.roundMs, ranking: rank });
     this.io.to(this.code).emit('game:over', {
       ranking: rank,
       teams,
