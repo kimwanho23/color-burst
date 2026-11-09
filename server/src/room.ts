@@ -854,6 +854,7 @@ export class Room {
   private hitBoss(p: PlayerState, c: Circle, now: number) {
     const hits = this.bossHits.get(c.id) ?? new Map<string, number>();
     this.bossHits.set(c.id, hits);
+    const comboBefore = p.combo;
     const r = strikeBoss(p, c, hits, this.players, now, this.G);
     // 방어형 보호막: 피해·점수 없음 (헛클릭도 아님) / 붉은 공격형: 감점
     if (r.blocked || r.enraged) {
@@ -884,6 +885,9 @@ export class Room {
     }
     // 점화: 보스 타격으로 피버가 터져도 화면의 내 원 자동 획득 (레전드는 전부)
     const m = modsOf(p.picks);
+    // 연쇄 콤보: 보스 타격으로 콤보 문턱을 넘어도 근처 내 원 자동 획득
+    const every = hasLegend(p, 'chainCombo') ? LEGEND.chainEvery : AUG.chainEvery;
+    if (m.chainCombo > 0 && crossedCombo(comboBefore, p.combo, every)) this.autoClaim(p, { x, y }, AUG.chainR, m.chainCombo, now);
     if (r.feverStarted && m.ignite > 0) this.autoClaim(p, { x, y }, Infinity, hasLegend(p, 'ignite') ? Infinity : m.ignite, now);
     this.emitPlayers();
   }
