@@ -82,11 +82,11 @@ io.on('connection', (socket) => {
     ack('error' in r ? { ok: false, error: r.error } : { ok: true, code, you: r.id });
   });
 
-  socket.on('room:solo', ({ name, key }, ack) => {
+  socket.on('room:solo', ({ name, key, timeAttack }, ack) => {
     if (!validKey(key)) return ack({ ok: false, error: '접속 정보가 올바르지 않아요. 새로고침해 주세요.' });
     leaveCurrent();
     const code = makeCode();
-    const room = new Room(io, code, () => rooms.delete(code), true);
+    const room = new Room(io, code, () => rooms.delete(code), true, timeAttack === true);
     rooms.set(code, room);
     const r = enter(room, key, String(name ?? ''));
     ack('error' in r ? { ok: false, error: r.error } : { ok: true, code, you: r.id });

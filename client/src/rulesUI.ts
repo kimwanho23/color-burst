@@ -50,6 +50,9 @@ function saveCustom(r: RoomRules) {
 export interface RulesUIHandlers {
   preset: (id: PresetId) => void;
   change: (patch: Partial<RoomRules>) => void;
+  /** 혼자 하기: 타임어택 시작 (있으면 모드 세 번째 칸에 보임). best = 최고 기록 */
+  timeAttack?: () => void;
+  best?: number | null;
 }
 
 export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean, on: RulesUIHandlers) {
@@ -64,6 +67,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <div class="modes">
       <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade}" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b><span>${rules.roundSec}초 한 판 승부</span></button>
       <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade}" ${dis}>${icon(UI.arcade, 26, 'mi')}<b>아케이드</b><span>${ARCADE.rounds}라운드, 라운드마다 능력 선택</span></button>
+      ${on.timeAttack ? `<button type="button" class="mode ta" data-ta ${dis}>${icon(UI.timer, 26, 'mi')}<b>타임어택</b><span>봇 없이 60초 기록 도전${on.best ? ` · 최고 ${on.best}점` : ''}</span></button>` : ''}
     </div>
     <div class="modeopts">
       <button type="button" class="mopt" data-o="team" aria-pressed="${rules.team}" ${dis}><b>팀전 2:2</b><span>같은 팀 색은 내 색, 팀 점수 합으로 승부</span></button>
@@ -97,7 +101,9 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
 
   // 다시 그려도 열려 있던 상태 유지
   el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen;
-  el.querySelectorAll<HTMLButtonElement>('.mode').forEach((b) => { b.onclick = () => on.change({ mode: b.dataset.m as RoomRules['mode'] }); });
+  el.querySelectorAll<HTMLButtonElement>('.mode[data-m]').forEach((b) => { b.onclick = () => on.change({ mode: b.dataset.m as RoomRules['mode'] }); });
+  const ta = el.querySelector<HTMLButtonElement>('[data-ta]');
+  if (ta && on.timeAttack) ta.onclick = on.timeAttack;
   // 모드 옵션(팀전·서바이벌): 누르면 켜고 끔
   el.querySelectorAll<HTMLButtonElement>('.mopt').forEach((b) => {
     const k = b.dataset.o as 'team' | 'survival';

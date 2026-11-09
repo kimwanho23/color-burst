@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TIME_ATTACK_RULES, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -129,8 +129,10 @@ export class Room {
   /** 아직 안 내보낸 웨이브 원 (born이 되면 내보낸다) */
   private spawnQueue: Circle[] = [];
 
-  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false) {
+  /** timeAttack: 혼자·봇 없이 기록 도전 (규칙 고정) */
+  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly timeAttack = false) {
     if (solo) this.fillBots = true;
+    if (timeAttack) { this.fillBots = false; this.rules = { ...TIME_ATTACK_RULES }; }
   }
 
   get humans() { return this.players.filter((p) => !p.bot); }
@@ -252,14 +254,14 @@ export class Room {
 
   setOptions(id: string, o: { fillBots?: boolean; botLevel?: BotLevel }) {
     if (id !== this.hostId || this.phase !== 'lobby') return;
-    if (typeof o.fillBots === 'boolean' && !this.solo) this.fillBots = o.fillBots;
+    if (typeof o.fillBots === 'boolean' && !this.solo && !this.timeAttack) this.fillBots = o.fillBots;
     if (o.botLevel === 0 || o.botLevel === 1 || o.botLevel === 2) this.botLevel = o.botLevel;
     this.unready();
     this.broadcastState();
   }
 
   setRules(id: string, d: { preset?: PresetId; rules?: Partial<RoomRules> }) {
-    if (id !== this.hostId || this.phase !== 'lobby') return;
+    if (id !== this.hostId || this.phase !== 'lobby' || this.timeAttack) return;
     let base = this.rules;
     // 프리셋은 점수·속도 규칙만 바꾸고 모드 설정은 유지
     if (d.preset && d.preset in PRESETS) {
@@ -346,7 +348,7 @@ export class Room {
         n++;
       }
     }
-    if (this.players.length < 2) {
+    if (this.players.length < 2 && !this.timeAttack) {
       this.players = this.players.filter((p) => !p.bot);
       this.bots.clear();
       return '혼자서는 시작할 수 없어요. 친구를 부르거나 봇 채우기를 켜 주세요.';
@@ -640,7 +642,7 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo, wins: Object.fromEntries(this.wins) };
+    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, wins: Object.fromEntries(this.wins) };
   }
 
   destroy() {

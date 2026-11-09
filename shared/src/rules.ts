@@ -285,6 +285,11 @@ export const DEFAULT_RULES: RoomRules = {
   eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, circleScale: 1, team: false, survival: false,
 };
 
+/** 타임어택(혼자·봇 없이 기록 도전): 기본 60초 클래식, 운이나 방해에 덜 좌우되게 보스·레이저·방해·맵 패턴·이벤트·테마를 끈다 */
+export const TIME_ATTACK_RULES: RoomRules = {
+  ...DEFAULT_RULES, mode: 'classic', roundSec: 60, boss: false, laser: false, sabotage: false, mapPct: 0, eventPct: 0, themePct: 0, team: false, survival: false,
+};
+
 export const PRESETS = {
   basic: { name: '기본', desc: '표준 규칙', rules: DEFAULT_RULES },
   party: {

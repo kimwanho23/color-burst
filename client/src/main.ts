@@ -6,6 +6,7 @@ import {
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
+import { taVerdict } from './timeAttack.ts';
 import { closeGuide, openGuide } from './guide.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
@@ -248,6 +249,25 @@ const getName = () => {
   try { localStorage.setItem('cb-name', n); } catch {}
   return n;
 };
+/** 타임어택 최고 기록 (브라우저 저장, 못 읽으면 null) */
+const TA_KEY = 'cb-timeattack-best';
+function taBest(): number | null {
+  try { const v = Number(localStorage.getItem(TA_KEY)); return v > 0 ? v : null; } catch { return null; }
+}
+function renderTaBest() {
+  const b = taBest();
+  $('taBest').hidden = !b;
+  if (b) $('taBest').textContent = `타임어택 최고 기록 ${b}점`;
+}
+renderTaBest();
+/** 타임어택: 봇 없는 비공개 방을 만들고 바로 시작 */
+function startTimeAttack() {
+  initAudio();
+  socket.emit('room:solo', { name: getName(), key: KEY, timeAttack: true }, (r) => {
+    entered(r);
+    if (r.ok) socket.emit('game:start', (s) => { if (!s.ok) $('lobbyErr').textContent = s.error; });
+  });
+}
 const entered = (r: { ok: true; code: string; you: string } | { ok: false; error: string }) => {
   $('homeErr').textContent = r.ok ? '' : r.error;
   if (r.ok) { myPlayerId = r.you; store('cb-room', r.code); renderScores(); renderLobby(); }
@@ -284,7 +304,7 @@ socket.on('room:state', (s) => {
   if (!playing) rules = s.rules;
   if (!playing) players = s.players;
   $('roomTag').hidden = false;
-  $('roomTag').textContent = s.solo ? '혼자 하기' : `방 ${s.code}`;
+  $('roomTag').textContent = s.timeAttack ? '타임어택' : s.solo ? '혼자 하기' : `방 ${s.code}`;
   history.replaceState(null, '', s.solo ? location.pathname : `#${s.code}`);
   renderScores();
   renderLobby();
@@ -305,7 +325,6 @@ function renderLobby() {
   });
 
   $('codeBlock').hidden = room.solo;
-  $('soloTitle').hidden = !room.solo;
   $('fillBotsRow').hidden = room.solo;
   $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
   $('hostOpts').hidden = !host;
@@ -315,9 +334,14 @@ function renderLobby() {
     b.onclick = () => socket.emit('lobby:options', { botLevel: Number(b.dataset.l) as BotLevel });
   });
 
-  renderRules($('rulesBox'), room.rules, host, {
+  // 타임어택 방: 규칙은 고정이라 보여 주기만
+  $('taTitle').hidden = !room.timeAttack;
+  $('soloTitle').hidden = !room.solo || room.timeAttack;
+  $('picks').hidden = room.timeAttack;
+  renderRules($('rulesBox'), room.rules, host && !room.timeAttack, {
     preset: (preset) => socket.emit('lobby:rules', { preset }),
     change: (patch) => socket.emit('lobby:rules', { rules: patch }),
+    ...(room.solo && !room.timeAttack ? { timeAttack: startTimeAttack, best: taBest() } : {}),
   });
 
   const humans = room.players.filter((p) => !p.bot).length;
@@ -427,7 +451,7 @@ socket.on('player:out', ({ id }) => {
 });
 socket.on('player:left', ({ name }) => pushFeed($('feed'), icon(UI.leave, 18), `${name}님이 나갔어요. 봇이 이어받아요.`, '#9ca2d6'));
 $('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
-$('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
+$('toLobbyBtn').onclick = () => { if (room?.timeAttack) { leaveRoom(); return; } show('lobby'); renderLobby(); };
 
 
 
@@ -854,6 +878,16 @@ socket.on('game:over', (d) => {
   $<HTMLButtonElement>('rematchBtn').hidden = !again;
   $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
   $('resultHint').textContent = again ? '' : '방장이 한 판 더를 누르면 바로 시작해요';
+  // 타임어택: 최고 기록과 비교해 신기록이면 저장
+  if (room?.timeAttack) {
+    const score = d.ranking.find((p) => p.id === myId())?.score ?? 0;
+    const v = taVerdict(score, taBest());
+    if (v.record) { try { localStorage.setItem(TA_KEY, String(score)); } catch { /* 저장 못 하는 환경 */ } }
+    $('resTitle').textContent = v.title;
+    $('resultHint').textContent = v.hint;
+    $('toLobbyBtn').textContent = '처음으로';
+    renderTaBest();
+  }
   closeChipPop();
   show('result');
 });
