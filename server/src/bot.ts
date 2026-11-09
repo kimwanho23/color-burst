@@ -1,4 +1,4 @@
-import { bossState, isFever, isGuarded, isMarked, isOut, ownsKind, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
+import { FIELD, bossState, circlePos, isFever, isGuarded, isMarked, isOut, ownsKind, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
 
 /**
  * gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms).
@@ -19,8 +19,8 @@ export class Bot {
   shift(ms: number) { if (this.next) this.next += ms; }
 
   /** 이번 틱에 가져갈 원을 고른다. 없으면 null */
-  /** team: 팀전이면 같은 팀 색도 내 색처럼 노린다 */
-  think(me: PlayerState, circles: Circle[], players: PlayerState[], now: number, team = false): Circle | null {
+  /** team: 팀전이면 같은 팀 색도 내 색처럼 노린다. coop: 협력전이면 공격 원 → 내 색 → 레이드 보스 (피버 중엔 보스 먼저), 남의 색은 안 노린다 */
+  think(me: PlayerState, circles: Circle[], players: PlayerState[], now: number, team = false, coop = false): Circle | null {
     const L = LEVELS[this.level];
     if (!this.next) this.next = now + 800 + Math.random() * 600;
     if (now < this.next) return null;
@@ -31,6 +31,13 @@ export class Bot {
     if (!cands.length) return null;
 
     const weights = cands.map((c) => {
+      // 협력전 공격 원: 화면 끝에 가까울수록 먼저
+      if (c.kind === 'threat') {
+        const q = circlePos(c, now);
+        const edge = Math.min(q.x, q.y, FIELD.w - q.x, FIELD.h - q.y);
+        return 8 + 24 * (1 - Math.min(1, Math.max(0, edge) / 400));
+      }
+      if (c.boss === 'raid') return fever ? 14 : 2;
       // 보스는 체력이 낮을수록 막타를 노리고 몰려든다
       if (c.kind === 'boss') {
         // 보호막이나 붉은 상태의 보스는 피한다
@@ -42,11 +49,14 @@ export class Bot {
       if (c.kind === 'rainbow' || c.kind === 'gold') return 6;
       if (c.kind === me.color || (team && ownsKind(c.kind, me, players, true))) return 5;
       if (c.kind === 'y') return fever ? 5 : 3;
+      if (coop) return 0;
       const owner = players.find((p) => p.color === c.kind);
       if (owner && isMarked(owner, now)) return 4;
       return fever ? 2.5 : 0.5;
     });
-    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    const total = weights.reduce((a, b) => a + b, 0);
+    if (total <= 0) return null;
+    let r = Math.random() * total;
     let pick = cands[cands.length - 1];
     for (let i = 0; i < cands.length; i++) { r -= weights[i]; if (r <= 0) { pick = cands[i]; break; } }
     // 황금 원은 노려도 놓칠 수 있다
