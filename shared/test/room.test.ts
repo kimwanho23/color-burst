@@ -9,12 +9,18 @@ const sent: string[] = [];
 const CX = FIELD.w / 2, CY = FIELD.h / 2;
 const fakeIo = () => ({ to: () => ({ emit(ev: string) { sent.push(ev); } }), sockets: { sockets: new Map() } }) as never;
 
+/** 방장이 아닌 사람을 모두 준비시킨 뒤 시작 (대기실 준비 규칙) */
+function startReady(room: Room, hostId: string) {
+  for (const p of room.players) if (!p.bot && p.id !== hostId) room.setReady(p.id, true);
+  return room.start(hostId);
+}
+
 function playingRoom() {
   const room = new Room(fakeIo(), 'TEST', () => {});
   const a = room.join('s1', 'k1', 'A') as { id: string };
   room.join('s2', 'k2', 'B');
   room.fillBots = false;
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   const r = room as unknown as { startAt: number; circles: Map<number, Circle> };
   r.startAt = 0;
   return { room, me: room.players.find((p) => p.id === a.id)!, circles: r.circles };
@@ -49,7 +55,7 @@ test('랜덤 이벤트가 일어나면 능력 선택 상태에 그 결과가 남
   room.join('s2', 'k2', 'B');
   room.fillBots = false;
   room.setRules(a.id, { rules: { mode: 'arcade' } });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   room.players[0].score = 50;
   t.mock.method(Math, 'random', () => 0);
   t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -99,7 +105,7 @@ test('라운드가 끝나면 "라운드 종료"를 먼저 알리고 1.5초 뒤�
   room.join('s2', 'k2', 'B');
   room.fillBots = false;
   room.setRules(a.id, { rules: { mode: 'arcade' } });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const r = room as unknown as { endRound(): void; offers: Map<string, unknown> };
   sent.length = 0;
@@ -285,7 +291,7 @@ test('라운드가 끝날 때 끌려오던 원은 끄는 사람이 잡은 것으
   room.join('s2', 'k2', 'B');
   room.fillBots = false;
   room.setRules(a.id, { rules: { mode: 'arcade' } });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const me = room.players.find((p) => p.id === a.id)!;
   const r = room as unknown as { circles: Map<number, Circle>; pulls: Map<number, unknown>; endRound(): void; startAt: number };
@@ -423,7 +429,7 @@ test('카오스 방: 아이템 원 확률 3배', () => {
   room.join('s2', 'k2', 'B');
   room.fillBots = false;
   room.setRules(a.id, { preset: 'chaos' });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   const opts = (room as unknown as { spawnOpts(now: number): { itemChance?: number } }).spawnOpts(Date.now());
   assert.ok(Math.abs(opts.itemChance! - RULES.items.chance * 3) < 1e-12);
   room.destroy();
@@ -463,7 +469,7 @@ test('카오스도 시작·끝 조용한 시간을 지키고, 다음은 0.6초�
   room.join('s2', 'k2', 'B');
   room.fillBots = false;
   room.setRules(a.id, { preset: 'chaos' });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   const r = room as unknown as Priv & { startAt: number };
   const now = Date.now();
   r.nextLaserAt = 0;
@@ -535,7 +541,7 @@ function arcadeRoom() {
   const b = room.join('s2', 'k2', 'B') as { id: string };
   room.fillBots = false;
   room.setRules(a.id, { rules: { mode: 'arcade', randomEvents: false } });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   const me = room.players.find((p) => p.id === a.id)!, other = room.players.find((p) => p.id === b.id)!;
   return { room, me, other, r: room as unknown as PickPriv };
 }
@@ -613,7 +619,7 @@ test('봇은 두 장을 고르고 특별 카드를 먼저', (t) => {
   t.after(() => room.destroy());
   const a = room.join('s1', 'k1', 'A') as { id: string };
   room.setRules(a.id, { rules: { mode: 'arcade', randomEvents: false } });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const r = room as unknown as PickPriv;
   const bots = room.players.filter((p) => p.bot);
@@ -840,7 +846,7 @@ test('일시정지: 멈춘 사람이 방을 나가도 30초 자동 재개는 그
   room.join('s3', 'k3', 'C');
   room.fillBots = false;
   t.after(() => room.destroy());
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   room.pause(a.id);
   room.leave(a.id, 's1');
   t.mock.timers.tick(RULES.pause.maxMs);
@@ -854,7 +860,7 @@ test('혼자 하기 일시정지: 횟수가 줄지 않고 30초가 지나도 안
   const room = new Room(fakeIo(), 'SOLO', () => {}, true);
   t.after(() => room.destroy());
   const a = room.join('s1', 'k1', 'A') as { id: string };
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   const me = room.players.find((p) => p.id === a.id)!;
   const bot = room.players.find((p) => p.bot)!;
   assert.equal(ps(room).canPause(bot.id), false);
@@ -874,7 +880,7 @@ test('혼자 하기: 재개 카운트다운 중에 연결이 끊기거나 다시
   const room = new Room(fakeIo(), 'SOLO', () => {}, true);
   t.after(() => room.destroy());
   const a = room.join('s1', 'k1', 'A') as { id: string };
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   room.pause(a.id);
   room.resume(a.id);
   room.disconnect(a.id, 's1');
@@ -913,7 +919,7 @@ function mapRoom(mapPct: number, mode: 'classic' | 'arcade' = 'classic') {
   room.join('s2', 'k2', 'B');
   room.fillBots = false;
   room.setRules(a.id, { rules: { mapPct, mode } });
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   return { room, me: room.players.find((p) => p.id === a.id)! };
 }
 
@@ -1120,7 +1126,7 @@ function payloadRoom() {
   const a = room.join('s1', 'k1', 'A') as { id: string };
   const b = room.join('s2', 'k2', 'B') as { id: string };
   room.fillBots = false;
-  assert.equal(room.start(a.id), null);
+  assert.equal(startReady(room, a.id), null);
   const r = room as unknown as { startAt: number; circles: Map<number, Circle> };
   r.startAt = 0;
   const me = room.players.find((p) => p.id === a.id)!, other = room.players.find((p) => p.id === b.id)!;
