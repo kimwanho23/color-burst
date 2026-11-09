@@ -24,15 +24,16 @@ export function makeRaid(id: number, now: number, hp: number): Circle {
 /** 체력 비율로 단계: 0.67 초과 1, 0.33 초과 2, 그 밖 3 */
 export function coopPhase(hp: number, maxHp: number): CoopPhase {
   const f = maxHp > 0 ? hp / maxHp : 0;
-  if (f > C.phaseAt[0]) return 1;
-  if (f > C.phaseAt[1]) return 2;
+  // 경계에서 멈춘 체력(maxHp × 비율)이 실수 오차로 비율보다 살짝 커도 다음 단계로 본다
+  const eps = 1e-9;
+  if (f > C.phaseAt[0] + eps) return 1;
+  if (f > C.phaseAt[1] + eps) return 2;
   return 3;
 }
 
-/** 지금 단계의 아래 경계 체력 (3단계는 0) */
-function floorHp(hp: number, maxHp: number) {
-  const ph = coopPhase(hp, maxHp);
-  return ph === 3 ? 0 : maxHp * C.phaseAt[ph - 1];
+/** 그 단계의 아래 경계 체력 (3단계는 0) */
+function floorHp(phase: CoopPhase, maxHp: number) {
+  return phase === 3 ? 0 : maxHp * C.phaseAt[phase - 1];
 }
 
 /** 한 번 때렸을 때 피해: 1 × 피버 배율 × (1 + 콤보 보너스 + 카드 보너스), 봇은 × botWeight */
@@ -44,11 +45,15 @@ export function raidDamage(p: PlayerState, cards: readonly CoopCardId[], feverOn
   return fever * (1 + combo + card) * (p.bot ? C.botWeight : 1);
 }
 
-/** 피해를 넣는다. 지금 단계의 아래 경계에서 멈추고 넘친 피해는 버린다. crossed: 경계(3단계는 0)에 닿았는지 */
-export function applyRaidDamage(c: Circle, dmg: number): { dealt: number; crossed: boolean } {
+/**
+ * 피해를 넣는다. 지금 단계의 아래 경계에서 멈추고 넘친 피해는 버린다. crossed: 경계(3단계는 0)에 닿았는지.
+ * phase: 지금 단계 (없으면 체력에서 계산)
+ */
+export function applyRaidDamage(c: Circle, dmg: number, phase?: CoopPhase): { dealt: number; crossed: boolean } {
   const hp = c.hp ?? 0, max = c.maxHp ?? 0;
   if (hp <= 0 || dmg <= 0) return { dealt: 0, crossed: false };
-  const floor = floorHp(hp, max);
+  const floor = floorHp(phase ?? coopPhase(hp, max), max);
+  if (hp <= floor) return { dealt: 0, crossed: false };
   const next = Math.max(floor, hp - dmg);
   c.hp = next;
   return { dealt: hp - next, crossed: next <= floor };
