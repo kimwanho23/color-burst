@@ -14,7 +14,10 @@ const PARTS: readonly { key: Part; name: string; color: string }[] = [
   { key: 'other', name: '기타', color: '#868e96' },
 ];
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+/** 기타는 음수일 수 있어 막대·비율은 플러스 출처의 합을 기준으로 한다 */
+export const OTHER_NOTE = '기타 = 이벤트·저주 정산(음수 가능), 비율은 플러스 출처 합 기준';
+
+const esc =(s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const pct = (v: number, total: number) => (total > 0 ? Math.round((v / total) * 100) : 0);
 
 /** 플레이어마다 출처별 가로 막대 한 줄. 마우스를 올리면 출처별 점수·비율, 잃은 점수, 참고값 */
@@ -30,6 +33,7 @@ export function sourcesHtml(ranking: readonly PlayerState[], myId: string) {
       .map((x) => `<div><span class="dot" style="background:${x.color}"></span>${x.name} <b>${val(x.key)}</b>${val(x.key) > 0 ? ` (${pct(val(x.key), total)}%)` : ''}</div>`).join('');
     const extra = [
       s.lost ? `<div>잃은 점수 <b>−${s.lost}</b></div>` : '',
+      otherOf(p) !== 0 ? `<div class="ref">${OTHER_NOTE}</div>` : '',
       s.fever ? `<div class="ref">피버 중 얻은 점수 ${s.fever}</div>` : '',
       s.jackpot ? `<div class="ref">잭팟으로 더 얻은 점수 ${s.jackpot}</div>` : '',
     ].join('');
