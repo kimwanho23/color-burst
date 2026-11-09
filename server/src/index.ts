@@ -5,6 +5,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import type { AbilityId, ClientToServer, ColorIndex, ServerToClient } from '@color-burst/shared';
+import { COOP_CARD_IDS } from '@color-burst/shared';
 import { Room } from './room.ts';
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -129,6 +130,7 @@ io.on('connection', (socket) => {
   socket.on('game:resume', () => { const s = here(); if (s) s.room.resume(s.id); });
   socket.on('arcade:choose', (i, cardId, deal) => { const s = here(); if (s && Number.isInteger(i)) s.room.choose(s.id, i, typeof cardId === 'string' ? cardId as AbilityId : undefined, Number.isInteger(deal) ? deal : undefined); });
   socket.on('arcade:reroll', () => { const s = here(); if (s) s.room.reroll(s.id); });
+  socket.on('coop:pick', (card) => { const s = here(); if (s && typeof card === 'string' && COOP_CARD_IDS.includes(card)) s.room.coopPick(s.id, card); });
   socket.on('cursor:move', (d) => {
     const s = here();
     if (s && d && Number.isFinite(d.x) && Number.isFinite(d.y)) s.room.cursor(s.id, { x: d.x, y: d.y });

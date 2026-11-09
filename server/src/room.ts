@@ -10,10 +10,11 @@ import {
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
-  type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
+  type CoopCardId, type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
 import { logGame } from './gameLog.ts';
+import { CoopRun, type CoopHost } from './coop.ts';
 
 type IO = Server<ClientToServer, ServerToClient>;
 
@@ -69,6 +70,8 @@ export class Room {
   /** 서바이벌: 시작 인원, 클래식 다음 탈락 시각(0 = 없음), 이번 탈락 경고를 보냈는지 */
   private survivalN = 0;
   private nextCutAt = 0;
+  /** 협력전 한 판 (협력전이 아니면 null) */
+  private coop: CoopRun | null = null;
   private cutWarned = false;
   /** 경고한 탈락 예정자 (그대로 꼴찌면 이 사람이 탈락) */
   private cutTarget: string | null = null;
@@ -287,6 +290,7 @@ export class Room {
     const p = this.players.find((x) => x.id === playerId);
     if (!p) return;
     p.connected = false;
+    this.coop?.recheck();
     // 혼자 하기에서 연결이 끊기면(새로고침 등) 자동으로 멈춰 둔다
     if (this.solo && this.phase === 'play' && this.roundPhase === 'play') {
       if (!this.pausedAt) this.doPause(playerId);
@@ -322,6 +326,7 @@ export class Room {
     this.socketOf.delete(p.id);
     this.cursors.delete(p.id);
     for (const [cid, pl] of this.pulls) if (pl.by === p.id) this.pulls.delete(cid);
+    this.coop?.recheck();
     // 일시정지를 건 사람이 나가면 바로 다시 시작 카운트다운
     if (this.pausedAt && !this.resumeAt && this.pausedBy === p.id) this.beginResume();
     // 증강 고르는 중이면 남은 선택을 바로 무작위로, 모두 골랐으면 다음 라운드
@@ -448,7 +453,7 @@ export class Room {
     this.players = this.players.filter((p) => !p.bot);
     this.bots.clear();
     // 팀전·서바이벌은 늘 4명이 되게 봇으로 채운다
-    if (this.fillBots || this.rules.team || this.rules.survival) {
+    if (this.fillBots || this.rules.team || this.rules.survival || this.rules.coop) {
       let n = 1;
       for (let c = this.freeColor(); c !== null && this.players.length < MAX_PLAYERS; c = this.freeColor()) {
         const bot = newPlayer(`bot-${n}`, `봇 ${String.fromCharCode(64 + n)}`, c, true);
@@ -481,6 +486,7 @@ export class Room {
     this.phase = 'play';
     this.beginRound();
     if (this.tutorial) this.startTutorial(this.startAt);
+    if (this.G.coop) this.startCoop();
     this.broadcastState();
     this.loop = setInterval(() => this.tick(), TICK_MS);
     return null;
@@ -496,6 +502,7 @@ export class Room {
   canResume(id: string) { return this.players.some((p) => p.id === id && !p.bot); }
 
   pause(id: string) {
+    if (this.coop?.busy()) return;
     if (this.tut?.done) return; // 튜토리얼 완료 뒤에는 멈출 판이 없다
     // 혼자 하기: 다시 시작 카운트다운 중에 다시 멈추면(탭 숨김 등) 카운트다운을 취소
     if (this.solo && this.phase === 'play' && this.pausedAt && this.resumeAt && this.canPause(id)) { this.cancelResume(id); return; }
@@ -508,6 +515,7 @@ export class Room {
 
   /** 누가 풀면 카운트다운 뒤에 다시 시작 (이미 카운트다운 중이면 무시) */
   resume(id: string) {
+    if (this.coop?.busy()) return;
     if (this.phase !== 'play' || !this.pausedAt || this.resumeAt || !this.canResume(id)) return;
     this.beginResume();
   }
@@ -557,6 +565,7 @@ export class Room {
     if (this.pattern) this.pattern = shiftPattern(this.pattern, delta);
     if (this.pendingPattern) this.pendingPattern = shiftPattern(this.pendingPattern, delta);
     if (this.nextCutAt) this.nextCutAt += delta;
+    this.coop?.shift(delta);
     // 멈춘 동안 화면의 탈락 경고가 끝났을 수 있으니 다시 보낸다 (탈락 예정자는 그대로)
     this.cutWarned = false;
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
@@ -640,7 +649,9 @@ export class Room {
       if (!c || !this.hitWithLag(c, now, d.x, d.y) || (pulled && pulled.by !== id)) this.rejectTo(id, d.circleId);
       else {
         got = true;
-        if (c.kind === 'boss') this.hitBoss(p, c, now);
+        if (c.boss === 'raid') this.hitRaid(p, c, now);
+        else if (c.kind === 'threat') this.popThreat(p, c, now);
+        else if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
         else if (c.kind === 'gold') this.claimGold(p, c, now);
         else this.claim(p, c, now, 'click');
@@ -707,6 +718,7 @@ export class Room {
       const cur = this.freshCursor(p.id, now);
       if (p.bot || !cur) continue;
       let by: 'spike' | 'ring' | null = null, ms = -1;
+      if (this.coop && now < p.immuneUntil) continue;
       if (pt.id === 'spikes') {
         const i = spikeHit(pt, cur, now, this.popped);
         if (i < 0) continue;
@@ -716,6 +728,10 @@ export class Room {
         by = 'spike'; ms = hazardStun(p, now, R.spikes.stunMs, this.G, this.players);
       } else if (inRingDanger(pt, cur, now)) {
         by = 'ring'; ms = hazardStun(p, now, R.ring.stunMs, this.G, this.players);
+      }
+      if (by && this.coop) {
+        if (!this.coop.damage(p, 'hazard', now)) continue;
+        if (this.phase !== 'play') return;
       }
       if (by && ms >= 0) changed = true;
       if (by && ms > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by });
@@ -770,6 +786,8 @@ export class Room {
     this.stop();
     if (this.tut?.timer) clearTimeout(this.tut.timer);
     this.tut = null;
+    this.coop?.dispose();
+    this.coop = null;
     this.clearPickTimers();
     for (const t of this.dropTimers.values()) clearTimeout(t);
     if (this.emptyTimer) clearTimeout(this.emptyTimer);
@@ -874,6 +892,7 @@ export class Room {
       rules: this.rules, pausedBy: this.pausedBy, pausedAt: this.pausedAt, nextCutAt: this.nextCutAt, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
       pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
       pattern: this.pattern, popped: [...this.popped],
+      coop: this.coop?.state() ?? null,
     };
   }
 
@@ -1108,10 +1127,13 @@ export class Room {
       this.io.to(this.code).emit('circle:spawn', c);
     }
     this.spawnWaves(now, kinds);
+    this.coop?.tick(now);
     this.updateLaser(now);
+    if (this.phase !== 'play') return;
     this.updatePulls(now);
     this.updateAura(now);
     this.updatePattern(now);
+    if (this.phase !== 'play') return;
     this.updateAuto(now);
     // 과충전 레전드: 피버가 끝나면 남겨 둔 게이지를 채움
     let settled = false;
@@ -1132,6 +1154,7 @@ export class Room {
       if (!isOut(c, now - LAG_WINDOW_MS) || this.pulls.has(id)) continue;
       this.circles.delete(id);
       if (c.kind === 'boss') { this.bossHits.delete(id); this.io.to(this.code).emit('boss:escaped', { circleId: id }); }
+      if (c.kind === 'threat') { this.coop?.threatEscaped(c, now); if (this.phase !== 'play') return; }
     }
 
     // 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다
@@ -1149,11 +1172,14 @@ export class Room {
     if (zoned) this.emitPlayers();
 
     for (const p of this.players) {
+      if (this.phase !== 'play') return;
       const bot = this.bots.get(p.id);
       if (!bot || p.outAt) continue;
       const target = bot.think(p, this.botCandidates(), this.players, now, this.rules.team);
       if (!target) continue;
-      if (target.kind === 'boss') this.hitBoss(p, target, now);
+      if (target.boss === 'raid') this.hitRaid(p, target, now);
+      else if (target.kind === 'threat') this.popThreat(p, target, now);
+      else if (target.kind === 'boss') this.hitBoss(p, target, now);
       else if (target.kind === 'item') this.claimItem(p, target, now);
       else if (target.kind === 'gold') this.claimGold(p, target, now);
       else this.claim(p, target, now, 'click');
@@ -1213,11 +1239,11 @@ export class Room {
    * 발사 중인 볼리의 줄에 커서가 닿으면 스턴. 스턴 중·스턴이 끝난 직후(무적)에는 다시 걸리지 않는다
    */
   private updateLaser(now: number) {
-    if (!this.G.laser) return;
+    if (!this.G.laser && !this.lasers.length) return;
     const L = RULES.laser;
     const el = now - this.startAt;
     // 판 시작 직후·시간 정지 중·라운드 끝 직전에는 쏘지 않는다
-    if (el >= this.nextLaserAt && el >= L.startQuietMs && now >= this.freezeUntil && this.endAt - (now + L.warnMs + L.fireMs) >= L.endQuietMs) {
+    if (this.G.laser && el >= this.nextLaserAt && el >= L.startQuietMs && now >= this.freezeUntil && this.endAt - (now + L.warnMs + L.fireMs) >= L.endQuietMs) {
       const v = { lines: rollVolley(Math.random, this.G.laserHalf).lines, at: now + L.warnMs };
       this.lasers.push({ ...v, hit: new Set() });
       this.io.to(this.code).emit('laser:warn', v);
@@ -1231,6 +1257,9 @@ export class Room {
         const cur = this.freshCursor(p.id, now);
         if (p.bot || l.hit.has(p.id) || !cur || !volleyHits(cur, l.lines, this.G.laserHalf)) continue;
         l.hit.add(p.id);
+        // 협력전: 생명이 줄었을 때만 스턴 (무적이면 아무 일 없음)
+        if (this.coop && !this.coop.damage(p, 'laser', now)) continue;
+        if (this.phase !== 'play') return;
         // 위험 스턴 공통: 철벽·무적 시간, 방해 내성, 피버 중이면 피버 절반
         const r = hazardStun(p, now, L.stunMs, this.G, this.players);
         if (r < 0) continue;
@@ -1269,6 +1298,72 @@ export class Room {
   }
 
   /** 탈락: 순위 = 탈락 직전 살아 있던 수. 끌던 원·커서를 지운다 */
+  /** 협력전 시작: CoopRun에 방 기능을 넘긴다 */
+  private startCoop() {
+    const host: CoopHost = {
+      players: () => this.players,
+      emit: (ev, ...args) => (this.io.to(this.code).emit as (e: string, ...a: unknown[]) => void)(ev, ...args),
+      nextId: () => this.nextCircleId++,
+      addCircle: (c) => { this.circles.set(c.id, c); this.io.to(this.code).emit('circle:spawn', c); },
+      removeCircles: (pred) => { for (const [id, c] of this.circles) if (pred(c)) this.circles.delete(id); },
+      fireLaser: (lines, at) => { this.lasers.push({ lines, at, hit: new Set() }); this.io.to(this.code).emit('laser:warn', { lines, at }); },
+      clearLasers: () => { this.lasers = []; },
+      setPattern: (p) => { if (p) this.pendingPattern = p; else this.clearPattern(); },
+      pauseForVote: (now) => {
+        this.pausedAt = now; this.pausedBy = null; this.pauseUntil = 0; this.resumeAt = 0;
+        this.io.to(this.code).emit('game:pause', { by: '', until: 0, at: now });
+      },
+      resumeAfterVote: () => {
+        // 빠른 충전 카드: 피버 게이지 충전 배율
+        if (this.coop) this.G = { ...this.G, feverGain: toGameRules(this.rules).feverGain * this.coop.feverGainMult() };
+        if (this.phase === 'play' && this.pausedAt) this.beginResume();
+      },
+      eliminate: (p, now) => this.eliminate(p, now),
+      finish: (win) => { if (this.phase === 'play') this.end(win); },
+      emitPlayers: () => this.emitPlayers(),
+      feverOn: (p, now) => isFever(p, now),
+      laserHalf: () => this.G.laserHalf,
+    };
+    this.coop = new CoopRun(host, this.rules.coopLevel);
+    this.coop.start(this.startAt);
+  }
+
+  /** 레이드 보스 타격: 콤보 +1·피버 게이지는 기존 보스와 같다. 피해·점수는 CoopRun */
+  private hitRaid(p: PlayerState, c: Circle, now: number) {
+    if (!this.coop) return;
+    settleFever(p, now);
+    const r = this.coop.hitRaid(p, c, now);
+    let feverStarted = false;
+    if (r.dealt > 0) {
+      p.combo++;
+      p.stats.maxCombo = Math.max(p.stats.maxCombo, p.combo);
+      p.roundMaxCombo = Math.max(p.roundMaxCombo, p.combo);
+      feverStarted = addFever(p, RULES.boss.feverGain, now, this.G, this.players);
+    }
+    this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: r.gained, jackpot: 1, ...(r.dealt > 0 ? { feverStarted } : { blocked: true }) });
+    if (r.killed) {
+      const { x, y } = circlePos(c, now);
+      this.circles.delete(c.id);
+      this.io.to(this.code).emit('boss:killed', { circleId: c.id, by: p.id, gained: r.gained, mvp: null, mvpGained: 0, x, y, jackpot: 1, solo: [], soloFever: [], feverStarted, comboBonus: false });
+      this.emitPlayers();
+      this.end(true);
+      return;
+    }
+    this.emitPlayers();
+  }
+
+  /** 협력전 공격 원 터뜨리기 */
+  private popThreat(p: PlayerState, c: Circle, now: number) {
+    if (!this.coop) return;
+    this.circles.delete(c.id);
+    const gained = this.coop.popThreat(p, c, now);
+    this.io.to(this.code).emit('threat:popped', { circleId: c.id, by: p.id, gained });
+    this.emitPlayers();
+  }
+
+  /** 협력전 투표 */
+  coopPick(id: string, card: CoopCardId) { this.coop?.pick(id, card); }
+
   private eliminate(p: PlayerState, now: number) {
     const alive = this.players.filter((x) => !x.outAt).length;
     p.outAt = now;
@@ -1492,7 +1587,10 @@ export class Room {
     return hitWithin(c, now, x, y, pad, LAG_WINDOW_MS);
   }
 
-  private end() {
+  private end(coopWin = false) {
+    const coopResult = this.coop?.result(Date.now(), this.startAt, coopWin);
+    this.coop?.dispose();
+    this.coop = null;
     this.resolvePulls(Date.now(), true);
     this.clearPattern();
     this.stop();
@@ -1507,14 +1605,15 @@ export class Room {
     const teams = this.rules.team ? teamRanking(this.players) : undefined;
     // 팀 합계·팀 최고 점수까지 같으면 무승부: 두 팀 모두 1승 (개인전의 공동 1등과 같은 규칙)
     const teamDraw = !!teams && teams[0].score === teams[1].score && teams[0].best === teams[1].best;
-    const winners = teams ? new Set(teamDraw ? [...teams[0].ids, ...teams[1].ids] : teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
+    const winners = coopResult ? new Set(coopResult.win ? this.humans.map((p) => p.id) : []) : teams ? new Set(teamDraw ? [...teams[0].ids, ...teams[1].ids] : teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
     for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
     // 판 기록 한 줄 (튜토리얼은 end()까지 오지 않는다)
-    logGame({ rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, roundMs: this.G.roundMs, ranking: rank });
+    logGame({ rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, roundMs: this.G.roundMs, ranking: rank, coop: coopResult, startAt: this.startAt });
     this.io.to(this.code).emit('game:over', {
       ranking: rank,
       teams,
       teamDraw,
+      ...(coopResult ? { coop: coopResult } : {}),
       titles: awardTitles(this.players),
       history: { stepMs: HISTORY_STEP_MS, scores: this.history },
       wins: Object.fromEntries(this.wins),

@@ -118,17 +118,27 @@ export class CoopRun {
   }
 
   /** 레이드 보스 타격. 점수 = 넣은 피해(반올림) × RULES.boss.hit */
-  hitRaid(p: PlayerState, c: Circle, now: number): { dealt: number; gained: number } {
-    if (this.shifting || now < this.invulnUntil || p.outAt) return { dealt: 0, gained: 0 };
-    const { dealt, crossed } = applyRaidDamage(c, raidDamage(p, this.cards, this.host.feverOn(p, now)));
+  /** killed면 호출 쪽이 이벤트를 보낸 뒤 판을 끝낸다(승리) */
+  hitRaid(p: PlayerState, c: Circle, now: number): { dealt: number; gained: number; killed: boolean } {
+    if (this.shifting || now < this.invulnUntil || p.outAt) return { dealt: 0, gained: 0, killed: false };
+    const fever = this.host.feverOn(p, now);
+    const { dealt, crossed } = applyRaidDamage(c, raidDamage(p, this.cards, fever));
     const gained = Math.round(dealt) * RULES.boss.hit;
-    if (gained) { p.score += gained; addSrc(p, 'boss', gained, { fever: this.host.feverOn(p, now) }); }
+    if (gained) { p.score += gained; addSrc(p, 'boss', gained, { fever }); }
     if (dealt > 0) p.stats.bossHits++;
-    if (crossed) {
-      if ((c.hp ?? 0) <= 0) { p.stats.bossKills++; this.host.finish(true); }
-      else this.beginShift(now);
-    }
-    return { dealt, gained };
+    const killed = crossed && (c.hp ?? 0) <= 0;
+    if (killed) p.stats.bossKills++;
+    else if (crossed) this.beginShift(now);
+    return { dealt, gained, killed };
+  }
+
+  /** 단계 전환 중이거나 투표 중 (일시정지 요청 무시) */
+  busy() { return this.shifting || !!this.vote; }
+
+  /** 사람이 나가거나 끊겼을 때: 남은 사람이 모두 투표했으면 마감 */
+  recheck() {
+    const v = this.vote;
+    if (v && !this.humans().some((x) => x.connected && !v.votes.has(x.id)) && v.votes.size > 0) this.closeVote(Date.now());
   }
 
   /** 단계 전환: 공격을 모두 지우고, 보스 무적 뒤 투표 */

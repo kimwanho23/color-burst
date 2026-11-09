@@ -3,7 +3,7 @@
  * 이름·접속 키는 남기지 않는다.
  */
 import { readFileSync } from 'node:fs';
-import { ARCADE, type PlayerState, type RoomRules } from '@color-burst/shared';
+import { ARCADE, type CoopResult, type PlayerState, type RoomRules } from '@color-burst/shared';
 
 const VERSION: string = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')).version;
 
@@ -16,6 +16,9 @@ export interface GameInfo {
   /** 순위 순서대로 */
   ranking: readonly PlayerState[];
   now?: Date;
+  /** 협력전 결과, 판 시작 시각(탈락 시각을 판 기준 ms로) */
+  coop?: CoopResult;
+  startAt?: number;
 }
 
 export function gameRecord(g: GameInfo) {
@@ -26,6 +29,8 @@ export function gameRecord(g: GameInfo) {
     mode: g.timeAttack ? 'timeAttack' : rules.mode,
     team: rules.team,
     survival: rules.survival,
+    coop: !!rules.coop,
+    ...(g.coop ? { coopResult: { level: rules.coopLevel, result: g.coop.win ? 'win' : 'lose', phase: g.coop.phase, bossHpPct: g.coop.bossHpPct, timeMs: g.coop.timeMs, cards: g.coop.cards } } : {}),
     solo: g.solo,
     /** 아케이드는 라운드 하나 길이 × rounds */
     roundSec: Math.round(g.roundMs / 1000),
@@ -37,6 +42,7 @@ export function gameRecord(g: GameInfo) {
       bot: p.bot,
       color: p.color,
       ...(rules.team ? { team: p.team } : {}),
+      ...(g.coop && !p.bot ? { lives: p.lives, outAt: p.outAt ? Math.max(0, p.outAt - (g.startAt ?? 0)) : 0 } : {}),
       score: p.score,
       picks: (p.picks ?? []).map((x) => `${x.id}:${x.tier}`),
       stats: p.stats,
