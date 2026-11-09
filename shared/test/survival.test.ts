@@ -123,3 +123,31 @@ test('서바이벌(아케이드): 3·4라운드 뒤 꼴찌 탈락, 탈락자는 
   t.mock.timers.tick(RULES.roundEndMs);
   assert.ok(!r.offers.has(me.id), '탈락자는 선택지 없음');
 });
+
+// ---------- 최종 리뷰 수정 ----------
+test('서바이벌(아케이드): 랜덤 이벤트·라운드 끝 특별 카드는 탈락자를 대상으로 하지 않음', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
+  const { room } = survivalRoom('arcade');
+  t.after(() => room.destroy());
+  const [a, b, c, d] = room.players;
+  a.score = 400; b.score = 300; c.score = 50; d.score = 80;
+  c.outAt = 1; d.outAt = 2;
+  const r = room as unknown as { round: number; startPick(): void; G: { eventChance: number }; lastEvent: { id: string } | null };
+  r.G.eventChance = 1;
+  r.round = 4;
+  for (let i = 0; i < 20; i++) {
+    a.score = 400; b.score = 300; c.score = 50; d.score = 80;
+    r.startPick();
+    assert.deepEqual([c.score, d.score], [50, 80], `탈락자 점수 그대로 (${r.lastEvent?.id})`);
+    assert.ok(a.score + b.score >= 0);
+  }
+});
+
+test('서바이벌: 탈락하면 그 사람 색의 원 소나기가 멈춤', () => {
+  const { room, me } = survivalRoom();
+  const r = room as unknown as { rain: { color: number; until: number } | null; eliminate(p: PlayerState, now: number): void };
+  r.rain = { color: me.color, until: Date.now() + 5000 };
+  r.eliminate(me, Date.now());
+  assert.equal(r.rain, null);
+  room.destroy();
+});

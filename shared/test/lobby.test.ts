@@ -86,3 +86,33 @@ test('혼자 하기는 준비 없이 시작', () => {
   assert.equal(room.start(a), null);
   room.destroy();
 });
+
+// ---------- 최종 리뷰 수정 ----------
+test('바로 한 판 더: 게임이 끝난 직후 방장은 준비 확인 없이 다시 시작 (대기실 시작은 준비 필요)', () => {
+  const { room, a, b } = lobby();
+  room.setReady(b, true);
+  assert.equal(room.start(a), null);
+  (room as unknown as { end(): void }).end();
+  assert.equal(room.start(a), '아직 준비 안 한 사람이 있어요.', '대기실 시작 버튼은 준비 확인');
+  assert.equal(room.start(a, true), null, '한 판 더는 준비 확인 없이');
+  (room as unknown as { end(): void }).end();
+  room.setRules(a, { rules: { feverSec: 10 } });
+  assert.equal(room.start(a, true), '아직 준비 안 한 사람이 있어요.', '규칙을 바꾸면 한 판 더도 준비 필요');
+  void b;
+  room.destroy();
+});
+
+test('방장 넘기기: 대기실에서 접속 중인 사람에게만', () => {
+  const { room, a, b, P } = lobby();
+  P(b).connected = false;
+  room.giveHost(a, b);
+  assert.equal(room.hostId, a, '끊긴 사람에게는 안 넘김');
+  room.destroy();
+});
+
+test('준비 확인은 접속 중인 사람만 센다 (끊긴 사람은 시작할 때 어차피 빠짐)', () => {
+  const { room, a, b, P } = lobby();
+  P(b).connected = false;
+  assert.equal(room.notReady(), 0);
+  room.destroy();
+});
