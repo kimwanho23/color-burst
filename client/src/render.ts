@@ -418,7 +418,8 @@ export class Renderer {
     // 체력 숫자
     ctx.fillStyle = 'rgba(30,20,10,.85)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `${Math.round(r * 0.55)}px 'Black Han Sans', sans-serif`;
-    ctx.fillText(String(c.hp ?? 0), 0, r * 0.12);
+    // 레이드 보스는 피해가 소수(봇·콤보 보너스)라 올림해서 보인다
+    ctx.fillText(String(Math.ceil(c.hp ?? 0)), 0, r * 0.12);
     // 체력 링
     ctx.lineWidth = 10; ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(255,255,255,.18)';
