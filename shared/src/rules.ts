@@ -1,4 +1,4 @@
-import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, synergiesOf, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
+import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, evolvedCap, evolvedOf, synergiesOf, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -796,7 +796,7 @@ function shiftFeverEnd(p: PlayerState, delta: number) {
 /** 행운아 조합: 잭팟 확률 +10 (보스 잭팟에도) */
 /** 잭팟 확률: 잭팟 증강 + 행운 축적 칸(합쳐서 잭팟 증강 상한까지) + 행운아 조합 */
 export const luckyMods = (p: PlayerState, m: Mods): Mods => {
-  const base = Math.min(ABILITY.jackpot.cap ?? Infinity, m.jackpot + stackBonus(p).jackpot);
+  const base = Math.min(evolvedCap('jackpot', evolvedOf(p.picks).has('jackpot')), m.jackpot + stackBonus(p).jackpot);
   return { ...m, jackpot: base + (combosOf(p.picks).has('lucky') ? COMBO.jackpotAdd : 0) };
 };
 /** 잭팟 굴리기 (잭팟·행운 축적 레전드 반영). 터지면 행운 축적 한 칸 */

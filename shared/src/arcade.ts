@@ -346,14 +346,21 @@ export function modsOf(picks: readonly Pick[] | undefined): Mods {
   for (const p of picks) {
     const a = ABILITY[p.id];
     if (!a) continue;
-    const cap = (a.cap ?? Infinity) * (evolved.has(p.id) ? EVOLVE.capMult : 1);
+    const cap = evolvedCap(p.id, evolved.has(p.id));
     m[p.id] = Math.min(cap, m[p.id] + a.values[p.tier]);
   }
   return m;
 }
 
+/** 중첩 상한: 진화하면 ×capMult, 잭팟만은 +jackpotCapAdd(%p)만 (확률 상한이 너무 커지지 않게) */
+export function evolvedCap(id: AbilityId, evolved: boolean) {
+  const cap = ABILITY[id].cap ?? Infinity;
+  if (!evolved) return cap;
+  return id === 'jackpot' ? cap + EVOLVE.jackpotCapAdd : cap * EVOLVE.capMult;
+}
+
 /** 진화: 같은 증강을 count번 고르면 레전드 전용 효과 + 중첩 상한 ×capMult. 빌드 가중치: count−1번 고른 증강 ×weight */
-export const EVOLVE = { count: 3, capMult: 1.5, weight: 2 } as const;
+export const EVOLVE = { count: 3, capMult: 1.5, weight: 2, jackpotCapAdd: 5 } as const;
 
 /** 진화한 능력 (저주·특별 제외) */
 export function evolvedOf(picks: readonly Pick[] | undefined): Set<AbilityId> {

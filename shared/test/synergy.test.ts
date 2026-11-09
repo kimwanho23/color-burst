@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ABILITY, DEFAULT_RULES, RULES, addFever, bossHitInfo, buildWeight, evolvedOf, hasLegend, legendOf, modsOf, newPlayer, resolveClaim,
-  synergiesOf, synergyProgress, toGameRules, type Pick,
+  luckyMods, synergiesOf, synergyProgress, toGameRules, type Pick,
 } from '../src/index.ts';
 import { applyItem } from '../src/items.ts';
 
@@ -58,10 +58,15 @@ test('진화: 같은 증강 3번이면 hasLegend 참, 중첩 상한 1.5배', () 
   assert.ok(hasLegend(three, 'frenzy'));
   assert.ok(legendOf(three.picks).has('frenzy'));
   assert.deepEqual([...evolvedOf(three.picks)], ['frenzy']);
-  // 잭팟 cap 35 → 52.5 (진화)
+  // 다른 증강은 진화하면 상한 ×1.5 (연장전 cap 없음 → 폭주로 확인: 상한 없는 증강은 그대로 합)
+  const e = Array.from({ length: 3 }, () => ({ id: 'edge' as const, tier: 3 as const }));
+  assert.equal(modsOf(e).edge, ABILITY.edge.cap! * 1.5);
+  // 잭팟만은 진화해도 상한이 조금만 (+5%p, 35 → 40). 실제 잭팟 확률도 40까지
   const j = Array.from({ length: 4 }, () => ({ id: 'jackpot' as const, tier: 3 as const }));
   assert.equal(modsOf(j.slice(0, 2)).jackpot, ABILITY.jackpot.cap);
-  assert.equal(modsOf(j.slice(0, 3)).jackpot, ABILITY.jackpot.cap! * 1.5);
+  assert.equal(modsOf(j.slice(0, 3)).jackpot, ABILITY.jackpot.cap! + 5);
+  const jp = withPicks(j.slice(0, 3));
+  assert.equal(luckyMods(jp, modsOf(jp.picks)).jackpot, 40);
   // 저주·특별은 진화하지 않음
   assert.equal(evolvedOf(P('glassCannon', 'glassCannon', 'glassCannon')).size, 0);
 });
