@@ -19,7 +19,9 @@ test('zoneOf: 정사각형 판이라 원 0.35 / 0.7 경계 (같은 거리면 방
 test('zoneMult: 1/2/3, 찰나의 순간은 가장자리만, 상한 +4', () => {
   const m = modsOf([{ id: 'edge', tier: 3 }]);
   assert.deepEqual(([0, 1, 2] as const).map((z) => zoneMult(z, m)), [1, 2, 6]);
-  assert.equal(modsOf(Array<Pick>(5).fill({ id: 'edge', tier: 3 })).edge, 4);
+  assert.equal(modsOf(Array<Pick>(2).fill({ id: 'edge', tier: 3 })).edge, 4);
+  // 3번 고르면 진화: 상한 ×1.5
+  assert.equal(modsOf(Array<Pick>(5).fill({ id: 'edge', tier: 3 })).edge, 6);
 });
 
 test('구역 배율은 다른 배율과 곱하고 0점은 그대로', () => {

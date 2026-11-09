@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMBO,
+import { COMBO, SYN,
   ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
   resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type EventId, type Pick,
 } from '../src/index.ts';
@@ -31,7 +31,8 @@ test('조합 효과: 피버 마스터·콤보 머신·보스 헌터·견제왕·
   assert.equal(h.hit, hb.hit * COMBO.bossHitMult, '보스 헌터: 타격 점수 ×1.5');
   assert.equal(h.kill, hb.kill * COMBO.bossKillMult, '막타 ×2');
   const s = pl(0, 'plunder', 'counterPro', 'thickSkin'), o = newPlayer('o', 'O', 1);
-  assert.equal(resolveClaim(s, 1, [s, o], 100, G).gained, 1 * COMBO.stealMult, '견제왕: 견제 점수 ×3');
+  // 견제 증강 3종이라 견제 시너지(+SYN.stealAdd)도 함께 붙는다
+  assert.equal(resolveClaim(s, 1, [s, o], 100, G).gained, 1 * COMBO.stealMult + SYN.stealAdd, '견제왕: 견제 점수 ×3 (+ 견제 시너지)');
   assert.equal(s.markedUntil, 100 + G.markMs - 1000 - COMBO.stealMarkCutMs, '표적 시간: 철면피 1초 + 견제왕 1초');
   const g = pl(0, 'picky', 'yellowTaste');
   assert.equal(resolveClaim(g, 'y', [g], 100, G).gained, 3 + 1 + 1, '미식가: 노란 원 = 내 색 (편식가 +1, 노란 맛 +1)');

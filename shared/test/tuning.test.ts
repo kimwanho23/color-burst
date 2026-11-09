@@ -96,8 +96,11 @@ test('출발 신호: 처음 N초 ×1.3, 시작 보너스 점수 없음, 중첩 �
   assert.equal(p.score, 0);
   assert.equal(extraMult(p, 5_999, [p]), AUG.headStartMult);
   assert.equal(extraMult(p, 6_000, [p]), 1);
-  const q = pl('q', 0, P('headStart', 2), P('headStart', 2), P('headStart', 2)); // 30초 → 20초
+  const q = pl('q', 0, P('headStart', 2), P('headStart', 2)); // 20초 (상한)
   assert.equal(headStartMsOf(q), 20_000);
+  // 3번 고르면 진화: 상한 ×1.5 = 30초
+  const q3 = pl('q3', 0, P('headStart', 2), P('headStart', 2), P('headStart', 2));
+  assert.equal(headStartMsOf(q3), 30_000);
 });
 
 test('출발 신호가 없으면 라운드 시작 전(카운트다운)에도 배율 없음', () => {
