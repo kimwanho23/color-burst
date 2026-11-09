@@ -241,6 +241,35 @@ export const ART: Record<string, (n: ArtNums) => string> = {
     );
   },
 
+  growth: () => svg(
+    // 쌓이는 칸
+    `<rect x="18" y="34" width="132" height="44" rx="12" fill="#1e2247" stroke="#51cf66" stroke-width="2"/>`
+    + label(84, 62, '단련 3/5', '#51cf66', 18)
+    + [0, 1, 2, 3, 4].map((i) => `<rect x="${30 + i * 22}" y="90" width="16" height="16" rx="4" fill="${i < 3 ? '#51cf66' : '#30366b'}"/>`).join('')
+    + small(84, 128, '조건마다 한 칸씩', '#9ca2d6')
+    // 진화: 같은 카드 3장
+    + [0, 1, 2].map((i) => `<rect x="${182 + i * 14}" y="${30 + i * 8}" width="54" height="74" rx="9" fill="#1e2247" stroke="#b26cff" stroke-width="2.5"/>`).join('')
+    + label(237, 132, '3장 = 진화', '#d4bcff', 16)
+    + small(160, 168, '같은 분류를 모으면 시너지', '#ffd43b'),
+  ),
+
+  team: () => svg(
+    `<rect x="14" y="26" width="132" height="110" rx="14" fill="#2a1420" stroke="#ff8fa0" stroke-width="2"/><rect x="174" y="26" width="132" height="110" rx="14" fill="#10223a" stroke="#7fc8ff" stroke-width="2"/>`
+    + label(80, 52, '팀 A', '#ff8fa0', 16) + label(240, 52, '팀 B', '#7fc8ff', 16)
+    + ball(54, 92, 20, 0) + ball(106, 92, 20, 2) + ball(214, 92, 20, 1) + ball(266, 92, 20, 3)
+    + small(160, 160, '같은 팀 색 = 내 색 · 점수 합으로 승부', '#f1f2ff'),
+  ),
+
+  survival: () => svg(
+    [0, 1, 2, 3].map((i) => {
+      const x = 44 + i * 78, out = i === 3;
+      return `<rect x="${x - 30}" y="40" width="60" height="70" rx="12" fill="#1e2247" stroke="${out ? '#ff5d73' : '#30366b'}" stroke-width="2" ${out ? 'opacity=".55"' : ''}/>`
+        + ball(x, 66, 15, i as 0) + small(x, 98, out ? '탈락' : '생존', out ? '#ff5d73' : '#9ca2d6')
+        + (out ? `<path d="M${x - 22} 48l44 54M${x + 22} 48l-44 54" stroke="#ff5d73" stroke-width="3" stroke-linecap="round"/>` : '');
+    }).join('')
+    + label(160, 150, '30초마다 꼴찌 탈락', '#ff5d73', 18),
+  ),
+
   arcade: (n) => {
     const card = (x: number, col: string, name: string, prism = false) =>
       `<rect x="${x}" y="30" width="62" height="88" rx="10" fill="#1e2247" stroke="${prism ? 'url(#pr)' : col}" stroke-width="3"/>`

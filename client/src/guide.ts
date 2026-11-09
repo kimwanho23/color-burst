@@ -2,7 +2,7 @@
  * 게임 방법: 처음 하는 사람을 위한 그림 슬라이드 (처음 화면·대기실에서 열고, 처음 접속 때 한 번 자동).
  * 화면 전체를 덮는 전용 화면. 한 장에 규칙 하나(큰 그림 + 한두 줄), 기본 → 심화 순서로 넘긴다
  */
-import { ARCADE, RULES, comboPeriod, type RoomRules } from '@color-burst/shared';
+import { ARCADE, EVOLVE, RULES, comboPeriod, type RoomRules } from '@color-burst/shared';
 import { ART, type ArtNums } from './guideArt.ts';
 import { UI, icon } from './icons.ts';
 
@@ -46,6 +46,9 @@ export function guideSlides(tab: GuideTab, rules: RoomRules, inRoom = true): Gui
     s('items', '아이템 원', '? 원을 잡으면 무작위 아이템(넓은 손, 자석, 점수 2배, 시간 정지 등)이 바로 발동해요.', !rules.items),
     s('laser', '레이저', '경고 띠가 보인 뒤 레이저가 지나가요. 커서가 닿으면 잠깐 클릭할 수 없어요.', !rules.laser),
     s('patterns', '맵 패턴', '라운드 중에 벽·가시 공·소용돌이·빙판 같은 패턴이 경고 뒤 잠깐 나타나요.', rules.mapPct <= 0),
+    s('growth', '성장 증강 · 시너지 · 진화', `아케이드에서 성장 증강은 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 남아요. 같은 분류의 서로 다른 증강을 모으면 시너지 보너스, 같은 증강을 ${EVOLVE.count}번 고르면 진화해서 레전드 효과를 얻어요.`, rules.mode !== 'arcade'),
+    s('team', '팀전 2:2', '두 명씩 팀을 나눠요. 같은 팀 색 원은 내 색처럼 잡고, 견제는 상대 팀에게만 돼요. 두 사람 점수의 합으로 이겨요.', !rules.team),
+    s('survival', '서바이벌', `${rules.mode === 'arcade' ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌가 탈락해요. 탈락하면 구경만 할 수 있고, 마지막까지 남은 사람이 이겨요.`, !rules.survival),
     s('arcade', '아케이드', `${ARCADE.rounds}라운드를 이어서 해요. 라운드가 끝날 때마다 증강을 골라요(노말·레어·에픽·레전드). 정해진 증강을 모으면 조합 보너스, 가끔 큰 보상과 대가가 붙은 저주 카드도 나와요. 꼴찌에게는 역전 기회가 있어요.`, rules.mode !== 'arcade'),
   ];
 }
