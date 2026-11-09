@@ -332,6 +332,10 @@ $('startBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { 
 function resetToHome(err = '') {
   closeConfirm();
   room = null; players = []; playing = false; circles.clear(); pending.clear();
+  // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
+  pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;
+  arcade = null; offer = null;
+  $('pauseOv').hidden = true; $('pickOv').hidden = true; $('roundEnd').hidden = true;
   resetComboNotice();
   closeChipPop();
   stopMusic();
