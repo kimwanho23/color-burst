@@ -10,7 +10,7 @@ import {
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
   Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
   HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
-  ChevronLeft, ChevronRight, Dumbbell, Clover, Orbit, BatteryFull, ShieldPlus, Sprout,
+  ChevronLeft, ChevronRight, User, Users, HeartPulse, Dumbbell, Clover, Orbit, BatteryFull, ShieldPlus, Sprout,
 } from 'lucide';
 import type { AbilityCategory, AbilityId, EventId, ItemId, PatternId } from '@color-burst/shared';
 
@@ -53,7 +53,7 @@ export const UI = {
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,
   codex: BookOpen, leave: LogOut, close: X, special: Gem, combo: Link, guide: CircleHelp,
   obstacle: Construction, precision: Crosshair, custom: SlidersHorizontal,
-  prev: ChevronLeft, next: ChevronRight, timer: Timer,
+  prev: ChevronLeft, next: ChevronRight, timer: Timer, solo: User, team: Users, survival: HeartPulse,
 } as const;
 
 /** 아이콘 SVG 문자열 */

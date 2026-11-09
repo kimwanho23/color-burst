@@ -261,8 +261,11 @@ function renderTaBest() {
 }
 renderTaBest();
 /** 타임어택: 봇 없는 비공개 방을 만들고 바로 시작 */
+/** 혼자 하기 대기실에서 타임어택을 골랐는지 (화면에서만, [게임 시작]을 누르면 타임어택 방으로) */
+let taPick = false;
 function startTimeAttack() {
   initAudio();
+  taPick = false;
   socket.emit('room:solo', { name: getName(), key: KEY, timeAttack: true }, (r) => {
     entered(r);
     if (r.ok) socket.emit('game:start', (s) => { if (!s.ok) $('lobbyErr').textContent = s.error; });
@@ -337,14 +340,17 @@ function renderLobby() {
     b.onclick = () => socket.emit('lobby:options', { botLevel: Number(b.dataset.l) as BotLevel });
   });
 
-  // 타임어택 방: 규칙은 고정이라 보여 주기만
+  // 타임어택 방: 규칙은 고정이라 보여 주기만. 혼자 하기 대기실에서 타임어택을 고르면 고정 규칙 안내 + [타임어택 시작]
+  if (!room.solo || room.timeAttack) taPick = false;
   $('taTitle').hidden = !room.timeAttack;
   $('soloTitle').hidden = !room.solo || room.timeAttack;
-  $('picks').hidden = room.timeAttack;
+  $('picks').hidden = $('picksLbl').hidden = room.timeAttack || taPick;
+  $('hostOpts').hidden = !host || taPick;
   renderRules($('rulesBox'), room.rules, host && !room.timeAttack, {
     preset: (preset) => socket.emit('lobby:rules', { preset }),
-    change: (patch) => socket.emit('lobby:rules', { rules: patch }),
-    ...(room.solo && !room.timeAttack ? { timeAttack: startTimeAttack, best: taBest() } : {}),
+    // 클래식·아케이드를 다시 누르면 타임어택 선택이 풀린다
+    change: (patch) => { if (taPick && 'mode' in patch) { taPick = false; renderLobby(); } socket.emit('lobby:rules', { rules: patch }); },
+    ...(room.solo && !room.timeAttack ? { timeAttack: { selected: taPick, best: taBest(), select: () => { taPick = true; renderLobby(); } } } : {}),
   });
 
   const humans = room.players.filter((p) => !p.bot).length;
@@ -354,11 +360,12 @@ function renderLobby() {
   renderMembers(host);
   $<HTMLButtonElement>('startBtn').hidden = !host;
   $<HTMLButtonElement>('startBtn').disabled = waiting > 0;
+  $('startBtn').textContent = taPick ? '타임어택 시작' : '게임 시작';
   const rb = $<HTMLButtonElement>('readyBtn');
   rb.hidden = host || room.solo;
   rb.textContent = meP?.ready ? '준비 취소' : '준비';
   rb.classList.toggle('ghost', !!meP?.ready);
-  $('lobbyHint').textContent = room.solo ? '봇 3명과 대결해요' : host
+  $('lobbyHint').textContent = taPick ? '봇 없이 혼자 60초 동안 최고 점수에 도전해요' : room.timeAttack ? '' : room.solo ? '봇 3명과 대결해요' : host
     ? waiting > 0 ? `${waiting}명이 아직 준비 안 했어요` : `참가자 ${humans}명${(room.fillBots || forceBots) && humans < 4 ? ` · 빈 자리 ${4 - humans}개는 봇이 채워요` : ''}`
     : meP?.ready ? `준비 완료 · 방장이 시작하기를 기다리는 중` : `준비를 누르면 방장이 시작할 수 있어요 · 참가자 ${humans}명`;
 }
@@ -367,20 +374,32 @@ function renderLobby() {
 let memberMenu: string | null = null;
 function renderMembers(host: boolean) {
   if (!room) return;
-  $('membersBox').hidden = room.solo;
-  if (room.solo) return;
+  const team = room.rules.team && !taPick;
+  // 혼자 하기는 참가자 목록이 없지만, 팀전이면 팀 칸은 보여 준다
+  $('membersBox').hidden = room.solo && !team;
+  if (room.solo && !team) return;
   const people = room.players.filter((p) => !p.bot);
   if (memberMenu && !people.some((p) => p.id === memberMenu)) memberMenu = null;
-  $('members').innerHTML = people.map((p) => {
+  const row = (p: PlayerState) => {
     const isHostP = p.id === room!.hostId, mine = p.id === myId();
     const can = host && !mine;
     const tag = isHostP ? '<em class="mtag host">방장</em>' : p.ready ? '<em class="mtag ok">✓ 준비</em>' : '<em class="mtag">대기</em>';
     const menu = can && memberMenu === p.id
       ? `<span class="mmenu"><button type="button" class="btn ghost small" data-host="${p.id}">방장 넘기기</button><button type="button" class="btn ghost small danger" data-kick="${p.id}">내보내기</button></span>` : '';
-    const team = room!.rules.team ? `<em class="mtag tm t${p.team}">${p.team === 0 ? '팀 A' : '팀 B'}</em>` : '';
-    const swap = room!.rules.team && mine ? `<button type="button" class="btn ghost small" data-team="${1 - p.team}">팀 바꾸기</button>` : '';
-    return `<div class="member${p.connected ? '' : ' off'}"><button type="button" class="mname" ${can ? `data-menu="${p.id}" aria-expanded="${memberMenu === p.id}"` : 'disabled'}>${shapeSVG(p.color, 18)}<span>${esc(p.name)}${mine ? ' (나)' : ''}</span>${team}${tag}</button>${swap}${menu}</div>`;
+    return `<div class="member${p.connected ? '' : ' off'}"><button type="button" class="mname" ${can ? `data-menu="${p.id}" aria-expanded="${memberMenu === p.id}"` : 'disabled'}>${shapeSVG(p.color, 18)}<span>${esc(p.name)}${mine ? ' (나)' : ''}</span>${room!.solo ? '' : tag}</button>${menu}</div>`;
+  };
+  if (!team) { $('members').innerHTML = people.map(row).join(''); return; }
+  // 팀전: 팀 A·팀 B 두 칸. 칸(빈 자리)을 누르면 그 팀으로, 빈 자리는 시작할 때 봇이 채운다
+  const me = people.find((p) => p.id === myId());
+  const cols = ([0, 1] as const).map((t) => {
+    const ms = people.filter((p) => p.team === t);
+    const open = RULES.team.size - ms.length;
+    const canJoin = !!me && me.team !== t && open > 0;
+    const slots = Array.from({ length: Math.max(0, open) }, () =>
+      `<button type="button" class="tslot" ${canJoin ? `data-team="${t}"` : 'disabled'}>${canJoin ? '+ 이 팀으로' : '빈 자리 · 봇'}</button>`).join('');
+    return `<div class="tcol t${t}"><div class="thead"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${ms.length}/${RULES.team.size}</span></div>${ms.map(row).join('')}${slots}</div>`;
   }).join('');
+  $('members').innerHTML = `<p class="tnote">들어온 순서대로 나뉘어요. 빈 칸을 누르면 그 팀으로 옮기고, 남은 빈 자리는 봇이 채워요.</p><div class="teams">${cols}</div>`;
 }
 $('members').addEventListener('click', async (e) => {
   const t = e.target as HTMLElement;
@@ -402,9 +421,10 @@ $('members').addEventListener('click', async (e) => {
 $('readyBtn').onclick = () => { const m = room?.players.find((p) => p.id === myId()); socket.emit('lobby:ready', !m?.ready); };
 socket.on('room:kicked', () => { store('cb-room', null); resetToHome('방장이 내보냈어요'); });
 $<HTMLInputElement>('fillBots').onchange = (e) => socket.emit('lobby:options', { fillBots: (e.target as HTMLInputElement).checked });
-$('startBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
+$('startBtn').onclick = () => { if (taPick) { startTimeAttack(); return; } initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
 function resetToHome(err = '') {
   closeConfirm();
+  taPick = false;
   room = null; players = []; playing = false; circles.clear(); pending.clear();
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
   pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;

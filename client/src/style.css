@@ -171,6 +171,24 @@ td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align:
 @keyframes dangerBlink { from { box-shadow: inset 0 0 0 2px rgba(255, 93, 115, .25); } to { box-shadow: inset 0 0 0 2px var(--red), 0 0 14px rgba(255, 93, 115, .55); } }
 .outbanner { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); z-index: 3; pointer-events: none; padding: 8px 18px; border-radius: 999px; background: rgba(20, 8, 14, .85); border: 1px solid var(--red); color: #ffb3bf; font: 700 15px var(--body); white-space: nowrap; }
 .reduce-fx .chip.danger { animation: none; box-shadow: inset 0 0 0 2px var(--red); }
+.tnote { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); }
+.teams { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tcol { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 14px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 60%, transparent); min-width: 0; }
+.tcol.t0 { border-color: #ff8fa0; } .tcol.t1 { border-color: #7fc8ff; }
+.thead { display: flex; justify-content: space-between; align-items: center; padding: 0 4px; }
+.thead b { font: 400 18px var(--display); }
+.tcol.t0 .thead b { color: #ff8fa0; } .tcol.t1 .thead b { color: #7fc8ff; }
+.thead span { font: 700 12px var(--body); color: var(--muted); }
+.tslot { padding: 9px 10px; border-radius: 12px; border: 1px dashed var(--line); background: none; color: var(--muted); font: 600 13px var(--body); cursor: pointer; }
+.tslot:not(:disabled):hover { border-color: var(--yellow); color: var(--yellow); }
+.tslot:disabled { cursor: default; }
+.modes.three { grid-template-columns: repeat(3, 1fr); }
+.mopt .mi { color: var(--yellow); }
+.mopt[aria-pressed="true"] .mi { color: var(--yellow); }
+.tabox { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+.tabox ul { margin: 0; padding-left: 18px; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); font-size: 13.5px; line-height: 1.6; }
+.tabest { margin: 2px 0 0; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.tabest b { color: var(--yellow); }
 .members { display: flex; flex-direction: column; gap: 6px; }
 .member { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .member.off { opacity: .55; }
