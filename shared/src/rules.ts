@@ -43,8 +43,8 @@ export const RULES = {
   pause: { perGame: 3, maxMs: 30_000, resumeMs: 3_000 },
   /** 팀전: 한 팀 인원 */
   team: { size: 2 },
-  /** 서바이벌: 클래식 탈락 간격, 탈락 경고, 최소 인원 */
-  survival: { everyMs: 30_000, warnMs: 3_000, minPlayers: 3 },
+  /** 서바이벌: 클래식 탈락 간격, 탈락 경고 (인원은 늘 4명이 되게 봇으로 채움) */
+  survival: { everyMs: 30_000, warnMs: 3_000 },
   /** 클릭 판정 여유(필드 단위) */
   hitPad: 12,
   /** 게임 커서: 서버로 보내는 빈도, 이보다 오래된 커서는 레이저·자석 판정에서 뺀다 */

@@ -2,3 +2,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
+# 이 PC의 미리보기 설정·작업 기록 (저장소에 두지 않음)
+.claude/
+.superpowers/
