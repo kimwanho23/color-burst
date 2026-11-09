@@ -259,6 +259,7 @@ test('coop 승리: 보스 체력 0이면 game:over coop.win, 사람 모두 1승'
   const { room, r, me } = coopRoom();
   const boss = r.coop.boss;
   boss.hp = 1;
+  r.coop.phase = 3;
   r.hitRaid(me, boss, r.startAt + 5000);
   assert.equal(room.phase, 'lobby');
   const over = overOf()!;
@@ -354,4 +355,69 @@ test('gameRecord: 협력전이면 coopResult와 사람마다 lives·outAt', () =
   assert.equal(rec.coop, true);
   assert.deepEqual((rec as { coopResult?: unknown }).coopResult, { level: 'hard', result: 'win', phase: 3, bossHpPct: 0, timeMs: 120_000, cards: ['power', 'heal'] });
   assert.deepEqual(rec.players.map((p) => [(p as { lives?: number }).lives, (p as { outAt?: number }).outAt]), [[2, 0], [0, 60_000]]);
+});
+
+// ---------- 리뷰 지적 수정 ----------
+
+test('applyRaidDamage: 경계 체력이 실수 오차로 비율보다 커도 단계가 넘어가고 다음 타격이 들어감', () => {
+  for (let max = 1; max <= 3000; max++) {
+    const c = makeRaid(1, 0, max);
+    const r = applyRaidDamage(c, max, 1);
+    assert.ok(r.crossed, `max ${max}`);
+    assert.equal(coopPhase(c.hp!, max), 2, `max ${max}`);
+    assert.ok(applyRaidDamage(c, 0.5, 2).dealt > 0 || c.hp! <= max * C.phaseAt[1], `max ${max}`);
+  }
+});
+
+test('coop 리뷰: 살아 있던 마지막 사람이 나가면 봇만 남아 패배로 끝', () => {
+  const { room, r, me, ids } = coopRoom(2);
+  const t = r.startAt + 5000;
+  for (let i = 0; i < 3; i++) r.coop.damage(me, 'laser', t + i * 3000);
+  assert.equal(room.phase, 'play');
+  room.leave(ids[1], 's1');
+  assert.equal(room.phase, 'lobby');
+  assert.equal(overOf()?.coop?.win, false);
+  room.destroy();
+});
+
+test('coop 리뷰: 멈춘 만큼 탈락 시각도 밀린다 (판 기준 경과 시간 유지)', () => {
+  const { room, r, me } = coopRoom(2);
+  const t = r.startAt + 5000;
+  for (let i = 0; i < 3; i++) r.coop.damage(me, 'laser', t + i * 3000);
+  const before = me.outAt - r.startAt;
+  r.pausedAt = Date.now() - 5000;
+  (r as unknown as { finishResume(): void }).finishResume();
+  assert.equal(me.outAt - r.startAt, before);
+  room.destroy();
+});
+
+test('coop 리뷰: 투표 앞에 이미 멈춰 있었으면 그 시각을 유지', () => {
+  const { room, r, me } = coopRoom();
+  const boss = r.coop.boss;
+  boss.hp = Math.floor(boss.maxHp! * C.phaseAt[0]) + 1;
+  r.hitRaid(me, boss, r.startAt + 5000);
+  r.pausedAt = 12345;
+  r.coop.openVote(r.startAt + 6000);
+  assert.equal(r.pausedAt, 12345);
+  room.destroy();
+});
+
+test('coop 리뷰: 혼자 하기에서 끊긴 채 투표가 끝나면 다시 시작하지 않고 멈춘 채로', () => {
+  const room = new Room(fakeIo(), 'SOLO', () => {}, true);
+  const a = (room.join('s0', 'k0', 'A') as { id: string }).id;
+  room.setRules(a, { rules: { coop: true } });
+  assert.equal(room.start(a), null);
+  const r = room as unknown as CRoom & { resumeAt: number };
+  const me = room.players.find((p) => p.id === a)!;
+  // 투표 타이머(실제 30초)가 남지 않게 투표 전부터 가짜 타이머
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    toVote(r, me);
+    room.disconnect(a, 's0');
+    (r.coop as unknown as { closeVote(now: number): void }).closeVote(Date.now());
+    mock.timers.tick(C.voteResultMs);
+    assert.equal(r.pausedBy, a);
+    assert.equal(r.resumeAt, 0);
+    room.destroy();
+  } finally { mock.timers.reset(); }
 });
