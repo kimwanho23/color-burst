@@ -11,6 +11,7 @@ import { closeGuide, openGuide } from './guide.ts';
 import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules, scoreTable } from './rulesUI.ts';
+import { lobbySlots, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, heartsHtml, renderCoopHud, renderVote, tickVote } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
@@ -76,7 +77,8 @@ socket.on('connect', async () => {
   const code = store('cb-room');
   if (code) {
     socket.emit('room:join', { code, name: getName(), key: KEY }, (r) => {
-      if (r.ok) { myPlayerId = r.you; return; }
+      // 방 상태가 답보다 먼저 올 수 있어서, 내 id를 안 뒤 대기실·점수판을 다시 그린다 (안 그러면 내 칸이 남의 칸처럼 보임)
+      if (r.ok) { myPlayerId = r.you; renderScores(); if (room && !playing) renderLobby(); return; }
       store('cb-room', null);
       resetToHome(r.error);
     });
@@ -246,8 +248,12 @@ const me = () => players.find((p) => p.id === myId());
 const renderer = new Renderer($<HTMLCanvasElement>('cv'), $('stage'));
 
 // ---------- 화면 전환 ----------
+/** 자리 4칸 아래 작은 칸: 내 색 고르기 또는 (방장) 방장 넘기기·내보내기 */
+let slotPanel: { kind: 'color' } | { kind: 'member'; id: string } | null = null;
 function show(id: 'home' | 'lobby' | 'result' | null) {
   for (const s of ['home', 'lobby', 'result']) $(s).hidden = s !== id;
+  // 대기실을 떠나면 규칙 창·자리 아래 칸도 닫는다
+  if (id !== 'lobby') { $('rulesModal').hidden = true; slotPanel = null; }
 }
 
 // ---------- 처음 화면 ----------
@@ -343,40 +349,24 @@ $('scoreBtn').onclick = () => {
 function renderLobby() {
   if (!room) return;
   const host = room.hostId === myId();
-  $('lobbyCode').textContent = room.code;
-  $('picks').innerHTML = COLORS.map((c, i) => {
-    const owner = room!.players.find((p) => p.color === i && !p.bot);
-    const mine = owner?.id === myId();
-    return `<button type="button" class="pick" data-c="${i}" aria-pressed="${mine}" ${owner && !mine ? 'disabled' : ''}>${shapeSVG(i as ColorIndex, 34)}${c.name}<span class="who">${owner ? (mine ? '나' : owner.name) : ''}</span></button>`;
-  }).join('');
-  $('picks').querySelectorAll<HTMLButtonElement>('.pick').forEach((b) => {
-    b.onclick = () => socket.emit('lobby:color', Number(b.dataset.c) as ColorIndex);
-  });
-
-  $('codeBlock').hidden = room.solo;
-  $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
-  $('hostOpts').hidden = true; // 봇은 대기실 칸에서 (화면 개편 전 임시)
-
   // 타임어택 방: 규칙은 고정이라 보여 주기만. 혼자 하기 대기실에서 타임어택을 고르면 고정 규칙 안내 + [타임어택 시작]
   if (!room.solo || room.timeAttack) taPick = false;
-  $('taTitle').hidden = !room.timeAttack;
-  $('soloTitle').hidden = !room.solo || room.timeAttack;
-  $('picks').hidden = $('picksLbl').hidden = room.timeAttack || taPick;
-  $('hostOpts').hidden = !host || taPick;
-  renderRules($('rulesBox'), room.rules, host && !room.timeAttack, {
-    preset: (preset) => socket.emit('lobby:rules', { preset }),
-    // 클래식·아케이드를 다시 누르면 타임어택 선택이 풀린다
-    change: (patch) => { if (taPick && 'mode' in patch) { taPick = false; renderLobby(); } socket.emit('lobby:rules', { rules: patch }); },
-    ...(room.solo && !room.timeAttack ? { timeAttack: { selected: taPick, best: taBest(), select: () => { taPick = true; renderLobby(); } } } : {}),
-  });
+  $('lobbyName').textContent = room.timeAttack || taPick ? '타임어택' : room.solo ? '혼자 하기' : `방 ${room.code}`;
+  $('copyLinkBtn').hidden = room.solo;
+  $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
 
+  renderSlots(host);
+
+  const sum = rulesSummary(room.rules);
+  $('rulesTitle').textContent = taPick || room.timeAttack ? '타임어택 · 봇 없이 60초' : sum.title;
+  $('rulesDetail').textContent = taPick || room.timeAttack ? '' : sum.detail;
+  $('rulesBtn').textContent = host && !room.timeAttack ? '규칙 바꾸기' : '규칙 보기';
+  renderRulesBox();
   renderScorePop();
 
-  const humans = room.players.filter((p) => !p.bot).length;
   // 준비: 방장 뺀 사람이 모두 준비해야 시작할 수 있다
   const waiting = room.solo ? 0 : room.players.filter((p) => !p.bot && p.id !== room!.hostId && !p.ready).length;
   const meP = room.players.find((p) => p.id === myId());
-  renderMembers(host);
   $<HTMLButtonElement>('startBtn').hidden = !host;
   $<HTMLButtonElement>('startBtn').disabled = waiting > 0;
   $('startBtn').textContent = taPick ? '타임어택 시작' : '게임 시작';
@@ -384,54 +374,115 @@ function renderLobby() {
   rb.hidden = host || room.solo;
   rb.textContent = meP?.ready ? '준비 취소' : '준비';
   rb.classList.toggle('ghost', !!meP?.ready);
-  $('lobbyHint').textContent = taPick ? '봇 없이 혼자 60초 동안 최고 점수에 도전해요' : room.timeAttack ? '' : room.solo ? '봇 3명과 대결해요' : host
-    ? waiting > 0 ? `${waiting}명이 아직 준비 안 했어요` : `참가자 ${humans}명`
-    : meP?.ready ? `준비 완료 · 방장이 시작하기를 기다리는 중` : `준비를 누르면 방장이 시작할 수 있어요 · 참가자 ${humans}명`;
 }
 
-/** 대기실 참가자 목록: 방장 표시·준비 ✓. 방장은 다른 사람을 눌러 방장 넘기기·내보내기 */
-let memberMenu: string | null = null;
-function renderMembers(host: boolean) {
+/** 규칙 설정 창 안의 규칙 화면 (방장만 바꿀 수 있음) */
+function renderRulesBox() {
   if (!room) return;
-  const team = room.rules.team && !taPick;
-  // 혼자 하기는 참가자 목록이 없지만, 팀전이면 팀 칸은 보여 준다
-  $('membersBox').hidden = room.solo && !team;
-  if (room.solo && !team) return;
-  const people = room.players.filter((p) => !p.bot);
-  if (memberMenu && !people.some((p) => p.id === memberMenu)) memberMenu = null;
-  const row = (p: PlayerState) => {
-    const isHostP = p.id === room!.hostId, mine = p.id === myId();
-    const can = host && !mine;
-    const tag = isHostP ? '<em class="mtag host">방장</em>' : p.ready ? '<em class="mtag ok">✓ 준비</em>' : '<em class="mtag">대기</em>';
-    const menu = can && memberMenu === p.id
-      ? `<span class="mmenu"><button type="button" class="btn ghost small" data-host="${p.id}">방장 넘기기</button><button type="button" class="btn ghost small danger" data-kick="${p.id}">내보내기</button></span>` : '';
-    return `<div class="member${p.connected ? '' : ' off'}"><button type="button" class="mname" ${can ? `data-menu="${p.id}" aria-expanded="${memberMenu === p.id}"` : 'disabled'}>${shapeSVG(p.color, 18)}<span>${esc(p.name)}${mine ? ' (나)' : ''}</span>${room!.solo ? '' : tag}</button>${menu}</div>`;
-  };
-  if (!team) { $('members').innerHTML = people.map(row).join(''); return; }
-  // 팀전: 팀 A·팀 B 두 칸. 칸(빈 자리)을 누르면 그 팀으로, 빈 자리는 시작할 때 봇이 채운다
-  const me = people.find((p) => p.id === myId());
-  const cols = ([0, 1] as const).map((t) => {
-    const ms = people.filter((p) => p.team === t);
-    const open = RULES.team.size - ms.length;
-    const canJoin = !!me && me.team !== t && open > 0;
-    const slots = Array.from({ length: Math.max(0, open) }, () =>
-      `<button type="button" class="tslot" ${canJoin ? `data-team="${t}"` : 'disabled'}>${canJoin ? '+ 이 팀으로' : '빈 자리 · 봇'}</button>`).join('');
-    return `<div class="tcol t${t}"><div class="thead"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${ms.length}/${RULES.team.size}</span></div>${ms.map(row).join('')}${slots}</div>`;
-  }).join('');
-  $('members').innerHTML = `<p class="tnote">들어온 순서대로 나뉘어요. 빈 칸을 누르면 그 팀으로 옮기고, 남은 빈 자리는 봇이 채워요.</p><div class="teams">${cols}</div>`;
+  const host = room.hostId === myId();
+  renderRules($('rulesBox'), room.rules, host && !room.timeAttack, {
+    preset: (preset) => socket.emit('lobby:rules', { preset }),
+    // 클래식·아케이드를 다시 누르면 타임어택 선택이 풀린다
+    change: (patch) => { if (taPick && 'mode' in patch) { taPick = false; renderLobby(); } socket.emit('lobby:rules', { rules: patch }); },
+    ...(room.solo && !room.timeAttack ? { timeAttack: { selected: taPick, best: taBest(), select: () => { taPick = true; renderLobby(); } } } : {}),
+  });
 }
-$('members').addEventListener('click', async (e) => {
+const closeRulesModal = () => { $('rulesModal').hidden = true; };
+$('rulesBtn').onclick = () => { renderRulesBox(); $('rulesModal').hidden = false; };
+$('rulesClose').innerHTML = icon(UI.close, 18);
+$('rulesClose').onclick = closeRulesModal;
+$('rulesModal').addEventListener('click', (e) => { if (e.target === $('rulesModal')) closeRulesModal(); });
+
+
+/** 대기실 자리 4칸: 사람·봇·빈 칸. 팀전이면 팀 A 두 칸 | 팀 B 두 칸 */
+function renderSlots(host: boolean) {
+  if (!room) return;
+  const hide = room.timeAttack || taPick;
+  $('slots').hidden = hide;
+  if (hide) { $('slotPanel').hidden = true; return; }
+  const team = room.rules.team;
+  const slots = lobbySlots(room.players, room.hostId, myId(), team);
+  const cell = (s: Slot) => {
+    if (s.kind === 'empty') {
+      const add = s.canAdd ? `<button type="button" class="slotbtn" data-add="${s.team ?? ''}">${icon(UI.plus, 22)}<span>봇 추가</span></button>` : '';
+      const join = s.canJoin ? `<button type="button" class="slotbtn" data-team="${s.team}">이 팀으로</button>` : '';
+      return `<div class="slot empty">${add}${join}</div>`;
+    }
+    const p = s.p;
+    if (s.kind === 'bot') {
+      const lv = p.botLevel ?? 1;
+      const levels = s.canEdit
+        ? `<select class="lvsel" data-bot="${p.id}" aria-label="${esc(p.name)} 난이도">${LEVELS.map((l, i) => `<option value="${i}"${lv === i ? ' selected' : ''}>${l}</option>`).join('')}</select>`
+        : `<span class="mtag">${LEVELS[lv]}</span>`;
+      const x = s.canEdit ? `<button type="button" class="iconbtn slotx" data-rm="${p.id}" aria-label="${esc(p.name)} 빼기">${icon(UI.close, 14)}</button>` : '';
+      return `<div class="slot bot">${x}${shapeSVG(p.color, 34)}<b>${esc(p.name)}</b>${levels}</div>`;
+    }
+    const tag = s.isHost ? '<em class="mtag host">방장</em>' : room!.solo ? '' : p.ready ? '<em class="mtag ok">준비</em>' : '<em class="mtag">대기</em>';
+    const click = s.me ? 'data-color="1"' : host ? `data-menu="${p.id}"` : '';
+    const open = (s.me && slotPanel?.kind === 'color') || (slotPanel?.kind === 'member' && slotPanel.id === p.id);
+    return `<button type="button" class="slot human${s.me ? ' me' : ''}${p.connected ? '' : ' off'}${open ? ' open' : ''}" ${click} ${click ? '' : 'disabled'}>${shapeSVG(p.color, 34)}<b>${esc(p.name)}${s.me ? ' (나)' : ''}</b>${tag}</button>`;
+  };
+  if (team) {
+    const group = (t: 0 | 1) => {
+      const n = room!.players.filter((p) => p.team === t).length;
+      return `<div class="teamgroup t${t}"><div class="thead"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${n}/${RULES.team.size}</span></div><div class="pair">${slots.slice(t * 2, t * 2 + 2).map(cell).join('')}</div></div>`;
+    };
+    $('slots').className = 'slots teams2';
+    $('slots').innerHTML = group(0) + group(1);
+  } else {
+    $('slots').className = 'slots';
+    $('slots').innerHTML = slots.map(cell).join('');
+  }
+  renderSlotPanel(host);
+}
+
+function renderSlotPanel(host: boolean) {
+  const panel = $('slotPanel');
+  if (!room || !slotPanel) { panel.hidden = true; return; }
+  if (slotPanel.kind === 'member') {
+    const id = slotPanel.id;
+    const who = room.players.find((p) => p.id === id && !p.bot);
+    if (!who || !host) { slotPanel = null; panel.hidden = true; return; }
+    panel.innerHTML = `<b>${esc(who.name)}</b><button type="button" class="btn ghost small" data-host="${who.id}">방장 넘기기</button><button type="button" class="btn ghost small danger" data-kick="${who.id}">내보내기</button>`;
+  } else {
+    // 내 색 고르기: 사람이 쓰는 색은 못 고르고, 봇이 쓰는 색은 그 봇과 맞바꾼다
+    panel.innerHTML = COLORS.map((c, i) => {
+      const owner = room!.players.find((p) => p.color === i);
+      const mine = owner?.id === myId();
+      const human = !!owner && !owner.bot && !mine;
+      return `<button type="button" class="pick" data-c="${i}" aria-pressed="${mine}" ${human ? 'disabled' : ''}>${shapeSVG(i as ColorIndex, 28)}${c.name}<span class="who">${owner ? (mine ? '나' : esc(owner.name)) : ''}</span></button>`;
+    }).join('');
+  }
+  panel.className = `slotpanel ${slotPanel.kind}`;
+  panel.hidden = false;
+}
+
+$('slots').addEventListener('click', (e) => {
   const t = e.target as HTMLElement;
-  const menu = t.closest<HTMLElement>('[data-menu]')?.dataset.menu;
-  if (menu) { memberMenu = memberMenu === menu ? null : menu; renderLobby(); return; }
+  const add = t.closest<HTMLElement>('[data-add]');
+  if (add) { const v = add.dataset.add; socket.emit('lobby:addBot', v === '0' || v === '1' ? { team: Number(v) as 0 | 1 } : {}); return; }
   const team = t.closest<HTMLElement>('[data-team]')?.dataset.team;
   if (team) { socket.emit('lobby:team', Number(team) as 0 | 1); return; }
+  const rm = t.closest<HTMLElement>('[data-rm]')?.dataset.rm;
+  if (rm) { socket.emit('lobby:removeBot', rm); return; }
+  if (t.closest('[data-color]')) { slotPanel = slotPanel?.kind === 'color' ? null : { kind: 'color' }; renderLobby(); return; }
+  const menu = t.closest<HTMLElement>('[data-menu]')?.dataset.menu;
+  if (menu) { slotPanel = slotPanel?.kind === 'member' && slotPanel.id === menu ? null : { kind: 'member', id: menu }; renderLobby(); }
+});
+$('slots').addEventListener('change', (e) => {
+  const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-bot]');
+  if (sel) socket.emit('lobby:botLevel', { id: sel.dataset.bot!, level: Number(sel.value) as BotLevel });
+});
+$('slotPanel').addEventListener('click', async (e) => {
+  const t = e.target as HTMLElement;
+  const c = t.closest<HTMLElement>('[data-c]')?.dataset.c;
+  if (c !== undefined) { socket.emit('lobby:color', Number(c) as ColorIndex); slotPanel = null; return; }
   const to = t.closest<HTMLElement>('[data-host]')?.dataset.host;
-  if (to) { memberMenu = null; socket.emit('lobby:host', to); return; }
+  if (to) { slotPanel = null; socket.emit('lobby:host', to); return; }
   const kick = t.closest<HTMLElement>('[data-kick]')?.dataset.kick;
   if (kick) {
     const who = room?.players.find((p) => p.id === kick);
-    memberMenu = null;
+    slotPanel = null;
     const ok = await confirmDialog($('stage'), { title: '내보낼까요?', text: `${who?.name ?? '이 사람'}님을 방에서 내보내요. 다시 들어올 수 없어요.`, ok: '내보내기', cancel: '취소' });
     if (ok) socket.emit('lobby:kick', kick);
     else renderLobby();
@@ -666,6 +717,7 @@ $('pauseBtn').onclick = togglePause;
 $('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('settingsPanel').hidden) return; // Esc는 설정 창 닫기가 먼저
+  if (e.key === 'Escape' && !$('rulesModal').hidden) { closeRulesModal(); return; }
   // 튜토리얼: Enter·Space로 설명 카드 넘기기, Esc는 나가기 확인, P는 쓰지 않음
   if (playing && room?.tutorial && !isTyping(e)) {
     if (e.repeat || document.querySelector('.codex, .confirm, .guide-screen')) return;

@@ -721,3 +721,45 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .scorepop td:first-child { white-space: nowrap; }
 /* 대기실 카드는 좁아서 점수 칸도 줄바꿈 (보스 줄이 길다) */
 .scorepop td:nth-child(2), .scorepop td:nth-child(3) { white-space: normal; }
+
+/* 대기실: 헤더 · 자리 4칸 · 규칙 요약과 시작 */
+.card.lobby-card { width: min(780px, 100%); gap: 18px; }
+.lobby-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lobby-head .sp { flex: 1; }
+.lobby-name { font: 400 26px var(--display); letter-spacing: .04em; }
+.slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.slots.teams2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.teamgroup { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 16px; border: 1px solid var(--line); }
+.teamgroup.t0 { border-color: #ff8fa0; } .teamgroup.t1 { border-color: #7fc8ff; }
+.teamgroup.t0 .thead b { color: #ff8fa0; } .teamgroup.t1 .thead b { color: #7fc8ff; }
+.teamgroup .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.slot { position: relative; min-height: 148px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 14px 8px; border-radius: 16px; border: 2px solid var(--line); background: var(--panel); color: var(--fg); font: 600 14px var(--body); text-align: center; min-width: 0; }
+.slot b { font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot.human { cursor: pointer; }
+.slot.human:disabled { cursor: default; }
+.slot.human.me { border-color: var(--fg); }
+.slot.human.open, .slot.human:not(:disabled):hover { border-color: var(--yellow); }
+.slot.human.off { opacity: .55; }
+.slot.empty { border-style: dashed; background: none; gap: 6px; }
+.slotbtn { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; color: var(--muted); font: 600 13px var(--body); cursor: pointer; padding: 6px; border-radius: 10px; }
+.slotbtn:hover { color: var(--yellow); }
+.lvsel { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font: 600 13px var(--body); cursor: pointer; }
+.slotx { position: absolute; top: 6px; right: 6px; padding: 4px; }
+.slotpanel { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 70%, transparent); }
+.slotpanel.color { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.lobby-bottom { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 14px; align-items: stretch; }
+.lobby-rules { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); min-width: 0; }
+.lobby-rules > b { font: 400 20px var(--display); }
+.lobby-rules > span { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.lobby-rules .row { margin-top: 4px; flex-wrap: wrap; }
+.lobby-go { display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; }
+.lobby-go .btn { width: 100%; }
+.rules-card { width: min(720px, 100%); max-height: calc(100% - 16px); overflow: auto; padding: 18px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg); }
+.rules-modal { z-index: 40; }
+@media (max-width: 640px) {
+  .slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .slots.teams2 { grid-template-columns: minmax(0, 1fr); }
+  .slot { min-height: 120px; }
+  .lobby-bottom { grid-template-columns: minmax(0, 1fr); }
+  .lobby-name { font-size: 22px; }
+}

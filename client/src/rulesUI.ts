@@ -81,9 +81,9 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   const modes = `
     <div class="lbl">모드${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="modes${ta ? ' three' : ''}">
-      <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade && !taOn}" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b><span>${rules.roundSec}초 한 판 승부</span></button>
-      <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade && !taOn}" ${dis}>${icon(UI.arcade, 26, 'mi')}<b>아케이드</b><span>${ARCADE.rounds}라운드, 라운드마다 능력 선택</span></button>
-      ${ta ? `<button type="button" class="mode ta" data-ta aria-pressed="${taOn}" ${dis}>${icon(UI.timer, 26, 'mi')}<b>타임어택</b><span>봇 없이 60초 기록 도전${ta.best ? ` · 최고 ${ta.best}점` : ''}</span></button>` : ''}
+      <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade && !taOn}" title="${rules.roundSec}초 한 판 승부" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b></button>
+      <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade && !taOn}" title="${ARCADE.rounds}라운드, 라운드마다 능력 선택" ${dis}>${icon(UI.arcade, 26, 'mi')}<b>아케이드</b></button>
+      ${ta ? `<button type="button" class="mode ta" data-ta aria-pressed="${taOn}" title="봇 없이 60초 기록 도전${ta.best ? ` · 최고 ${ta.best}점` : ''}" ${dis}>${icon(UI.timer, 26, 'mi')}<b>타임어택</b>${ta.best ? `<span>최고 ${ta.best}점</span>` : ''}</button>` : ''}
     </div>`;
   // 타임어택을 고르면 규칙은 고정이라 안내만
   if (taOn) {
@@ -105,14 +105,14 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   el.innerHTML = `${modes}
     <div class="lbl">인원 모드${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="modeopts">
-      <button type="button" class="mopt" data-o="solo" aria-pressed="${solo}" ${dis}>${icon(UI.solo, 22, 'mi')}<b>개인전</b><span>모두가 각자 경쟁, 점수가 가장 높은 사람이 승리</span></button>
-      <button type="button" class="mopt" data-o="team" aria-pressed="${rules.team}" ${dis}>${icon(UI.team, 22, 'mi')}<b>팀전 2:2</b><span>같은 팀 색은 내 색, 팀 점수 합으로 승부</span></button>
-      <button type="button" class="mopt" data-o="survival" aria-pressed="${rules.survival}" ${dis}>${icon(UI.survival, 22, 'mi')}<b>서바이벌</b><span>${arcade ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌 탈락, 마지막 1명이 승리</span></button>
-      <button type="button" class="mopt" data-o="coop" aria-pressed="${coop}" ${dis}>${icon(UI.coop, 22, 'mi')}<b>협력전</b><span>다 같이 거대 보스를 잡아요, 생명 ${RULES.coop.lives}개 · ${RULES.coop.timeSec}초 (클래식)</span></button>
+      <button type="button" class="mopt" data-o="solo" aria-pressed="${solo}" title="모두가 각자 경쟁, 점수가 가장 높은 사람이 승리" ${dis}>${icon(UI.solo, 22, 'mi')}<b>개인전</b></button>
+      <button type="button" class="mopt" data-o="team" aria-pressed="${rules.team}" title="같은 팀 색은 내 색, 팀 점수 합으로 승부" ${dis}>${icon(UI.team, 22, 'mi')}<b>팀전 2:2</b></button>
+      <button type="button" class="mopt" data-o="survival" aria-pressed="${rules.survival}" title="${arcade ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌 탈락, 마지막 1명이 승리" ${dis}>${icon(UI.survival, 22, 'mi')}<b>서바이벌</b></button>
+      <button type="button" class="mopt" data-o="coop" aria-pressed="${coop}" title="다 같이 거대 보스를 잡아요, 생명 ${RULES.coop.lives}개 · ${RULES.coop.timeSec}초 (클래식)" ${dis}>${icon(UI.coop, 22, 'mi')}<b>협력전</b></button>
     </div>
     ${coop ? `<div class="lbl">협력전 난이도${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="modeopts coop-levels">
-      ${COOP_LEVELS.map((l) => `<button type="button" class="mopt" data-lv="${l}" aria-pressed="${rules.coopLevel === l}" ${dis}><b>${COOP_LEVEL_LABEL[l][0]}</b><span>${COOP_LEVEL_LABEL[l][1]}</span></button>`).join('')}
+      ${COOP_LEVELS.map((l) => `<button type="button" class="mopt" data-lv="${l}" aria-pressed="${rules.coopLevel === l}" title="${COOP_LEVEL_LABEL[l][1]}" ${dis}><b>${COOP_LEVEL_LABEL[l][0]}</b></button>`).join('')}
     </div>
     <p class="coop-note">협력전에서는 견제·표적·보스 원·레이저 설정·방해 아이템·맵 패턴·꼴찌 보정을 쓰지 않아요. 보스가 직접 레이저·공격 원·장판으로 공격해요.</p>` : ''}
     ${arcade ? `<label class="adv-row" for="rule-arcadeRoundSec"><span>라운드 시간</span>
@@ -122,8 +122,8 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <div class="lbl">방 규칙${editable ? '' : ' (방장이 정해요)'}</div>
     <div class="presets">
       ${(Object.entries(PRESETS) as [PresetId, (typeof PRESETS)[PresetId]][]).map(([id, p]) =>
-        `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" ${dis}>${icon(UI[id], 20, 'pi')}<b>${p.name}</b><span>${p.desc}</span>${'warn' in p ? `<em class="pwarn">${p.warn}</em>` : ''}</button>`).join('')}
-      <button type="button" class="preset custom" aria-pressed="${!current}" ${dis}>${icon(UI.custom, 20, 'pi')}<b>커스텀</b><span>고급 설정에서 직접 정한 규칙</span></button>
+        `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" title="${p.desc}${'warn' in p ? ` · ${p.warn}` : ''}" ${dis}>${icon(UI[id], 20, 'pi')}<b>${p.name}</b></button>`).join('')}
+      <button type="button" class="preset custom" aria-pressed="${!current}" title="고급 설정에서 직접 정한 규칙" ${dis}>${icon(UI.custom, 20, 'pi')}<b>커스텀</b></button>
     </div>
     <details class="adv">
       <summary>고급 설정</summary>

@@ -59,35 +59,39 @@
 
     <!-- 2. 대기실 -->
     <div class="overlay" id="lobby" hidden>
-      <div class="card">
-        <div id="codeBlock">
-          <div class="lbl">방 코드 (친구에게 알려 주세요)</div>
-          <div class="bigcode" id="lobbyCode">----</div>
-        </div>
-        <h1 id="soloTitle" hidden>혼자 <span>하기</span></h1>
-        <h1 id="taTitle" hidden>타임<span>어택</span></h1>
-        <div class="lbl" id="picksLbl">내 색상</div>
-        <div class="picks" id="picks"></div>
-        <div id="membersBox">
-          <div class="lbl">참가자</div>
-          <div class="members" id="members"></div>
-        </div>
-        <div id="hostOpts" class="opts">
-          <label class="check" id="fillBotsRow"><input type="checkbox" id="fillBots" checked> 빈 자리는 봇으로 채우기</label>
-          <div class="seg" id="botLevel"></div>
-        </div>
-        <div id="rulesBox" class="rulesbox"></div>
-        <button class="btn ghost small" id="scoreBtn" type="button" aria-expanded="false" aria-controls="scorePop">이 방 점수표</button>
-        <div class="scorepop" id="scorePop" hidden></div>
-        <button class="btn" id="startBtn" type="button">게임 시작</button>
-        <button class="btn" id="readyBtn" type="button" hidden>준비</button>
-        <p class="hint" id="lobbyHint"></p>
-        <p class="err" id="lobbyErr" role="alert"></p>
-        <div class="btnrow">
-          <button class="btn ghost small iconlbl" id="guideBtn2" type="button">게임 방법</button>
+      <div class="card lobby-card">
+        <div class="lobby-head">
+          <button class="btn ghost small iconlbl" id="leaveBtn" type="button">방 나가기</button>
+          <b class="lobby-name" id="lobbyName">방</b>
+          <button class="btn ghost small iconlbl" id="copyLinkBtn" type="button">링크 복사</button>
+          <span class="sp"></span>
           <button class="btn ghost small iconlbl" id="codexBtn2" type="button">도감</button>
-          <button class="btn ghost small iconlbl danger" id="leaveBtn" type="button">방 나가기</button>
+          <button class="btn ghost small iconlbl" id="guideBtn2" type="button">게임 방법</button>
         </div>
+        <div class="slots" id="slots"></div>
+        <div class="slotpanel" id="slotPanel" hidden></div>
+        <div class="lobby-bottom">
+          <div class="lobby-rules">
+            <b id="rulesTitle"></b>
+            <span id="rulesDetail"></span>
+            <div class="row">
+              <button class="btn ghost small" id="rulesBtn" type="button">규칙 바꾸기</button>
+              <button class="btn ghost small" id="scoreBtn" type="button" aria-expanded="false" aria-controls="scorePop">이 방 점수표</button>
+            </div>
+            <div class="scorepop" id="scorePop" hidden></div>
+          </div>
+          <div class="lobby-go">
+            <button class="btn" id="startBtn" type="button">게임 시작</button>
+            <button class="btn" id="readyBtn" type="button" hidden>준비</button>
+          </div>
+        </div>
+        <p class="err" id="lobbyErr" role="alert"></p>
+      </div>
+    </div>
+    <div class="overlay rules-modal" id="rulesModal" hidden>
+      <div class="card wide rules-card" role="dialog" aria-modal="true" aria-label="방 규칙">
+        <div class="cx-head"><b>방 규칙</b><button class="iconbtn x" id="rulesClose" type="button" aria-label="닫기">닫기</button></div>
+        <div id="rulesBox" class="rulesbox"></div>
       </div>
     </div>
 
