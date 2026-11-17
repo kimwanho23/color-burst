@@ -715,7 +715,6 @@ body[data-tut-point="bot"] #scores .chip:not(.me),
 body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); outline-offset: 3px; position: relative; z-index: 21; }
 
 /* 대기실 [이 방 점수표] */
-#scoreBtn { justify-self: start; }
 .scorepop { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); }
 .scorepop .hint { margin: 0; }
 .scorepop td:first-child { white-space: nowrap; }
@@ -790,3 +789,22 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .cx-body td:nth-child(2), .cx-body td:nth-child(3), .cx-body th:nth-child(2), .cx-body th:nth-child(3) { white-space: normal; }
 /* 도감 창: 대기실 위에 열려도 뒤가 비치지 않게 단단한 바탕 */
 .codex .cx-card { padding: 18px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg); }
+
+/* 대기실 2차: 규칙 칩, 게임 설정·점수표 창 크기 고정, 시작 버튼 맨 아래 */
+.lobby-rules { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); }
+.lr-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.lr-head > b { font: 400 20px var(--display); }
+.lr-head .row { flex-wrap: wrap; }
+.rchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rchip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: 600 13px var(--body); }
+.rchip svg { color: var(--yellow); }
+.rchip.off { color: var(--muted); text-decoration: line-through; opacity: .6; }
+.rchip.off svg { color: var(--muted); }
+.lobby-card > #startBtn, .lobby-card > #readyBtn { width: 100%; }
+/* 게임 설정 창은 고른 모드에 따라 내용이 바뀌어도 크기가 흔들리지 않게 높이를 고정 */
+.rules-card { height: min(680px, calc(100% - 16px)); }
+.score-card { height: auto; max-height: calc(100% - 16px); }
+.scoretable td:first-child, .scoretable th:first-child { white-space: nowrap; }
+.scoretable td:nth-child(2), .scoretable td:nth-child(3), .scoretable th:nth-child(2), .scoretable th:nth-child(3) { white-space: normal; }
+/* 팀전처럼 내용이 길어져 스크롤바가 생겨도 대기실 폭이 줄어들지 않게 자리를 미리 잡아 둔다 */
+#lobby { scrollbar-gutter: stable both-edges; }

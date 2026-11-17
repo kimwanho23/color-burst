@@ -48,6 +48,7 @@ export const EVENT_ICON: Record<EventId, IconNode> = {
 
 export const UI = {
   gold: CircleDollarSign, plus: Plus, copy: Copy, lock: LockKeyhole,
+  boss: Crown, rainbow: Rainbow, item: Gift, laser: Zap, map: Construction, speed: Gauge, mark: Target, miss: CircleOff, score: Trophy,
   pause: Pause, settings: Settings, reroll: RefreshCw, classic: Gamepad2, arcade: Layers,
   basic: Gauge, party: PartyPopper, hardcore: Zap, chill: Coffee, chaos: Tornado, ping: Wifi, bot: Bot,
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,

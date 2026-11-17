@@ -11,7 +11,7 @@ import { closeGuide, openGuide } from './guide.ts';
 import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules, scoreTable } from './rulesUI.ts';
-import { lobbySlots, roomLink, rulesSummary, type Slot } from './lobbyUI.ts';
+import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, heartsHtml, renderCoopHud } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
@@ -256,7 +256,7 @@ function show(id: 'home' | 'lobby' | 'result' | null) {
   // 대기실에서는 위쪽 점수판을 숨긴다 (자리 칸과 겹쳐 보여 헷갈림). 자리는 그대로 두어 판 위치가 흔들리지 않게
   document.body.classList.toggle('lobby-on', id === 'lobby');
   // 대기실을 떠나면 규칙 창·자리 아래 칸도 닫는다
-  if (id !== 'lobby') { $('rulesModal').hidden = true; $('linkBox').hidden = true; slotPanel = null; }
+  if (id !== 'lobby') { $('rulesModal').hidden = true; $('scoreModal').hidden = true; $('linkBox').hidden = true; slotPanel = null; }
 }
 
 // ---------- 처음 화면 ----------
@@ -362,17 +362,17 @@ socket.on('room:state', (s) => {
   if (s.phase === 'lobby' && !playing && $('result').hidden) show('lobby');
 });
 
-/** 대기실의 [이 방 점수표]: 이 방 규칙으로 계산한 점수 (열려 있으면 규칙이 바뀔 때마다 다시 채운다) */
-function renderScorePop() {
-  const pop = $('scorePop');
-  if (!pop.hidden && room) pop.innerHTML = `<p class="hint">이 방 규칙으로 계산한 점수예요</p>${scoreTable(room.rules)}`;
+/** 점수표 보기 창: 이 방 규칙으로 계산한 점수 (열려 있으면 규칙이 바뀔 때마다 다시 채운다) */
+function renderScoreBox() {
+  if (!$('scoreModal').hidden && room) $('scoreBox').innerHTML = scoreTable(room.rules);
 }
-$('scoreBtn').onclick = () => {
-  const pop = $('scorePop');
-  pop.hidden = !pop.hidden;
-  $('scoreBtn').setAttribute('aria-expanded', String(!pop.hidden));
-  renderScorePop();
-};
+$('scoreBtn').onclick = () => { $('scoreModal').hidden = false; renderScoreBox(); };
+$('scoreClose').innerHTML = icon(UI.close, 18);
+const closeScoreModal = () => { $('scoreModal').hidden = true; };
+$('scoreClose').onclick = closeScoreModal;
+$('scoreModal').addEventListener('click', (e) => { if (e.target === $('scoreModal')) closeScoreModal(); });
+$('scoreBtn').innerHTML = `${icon(UI.score, 16)}<span>점수표 보기</span>`;
+const RULE_ICON = { timer: UI.timer, fever: UI.fever, speed: UI.speed, mark: UI.mark, miss: UI.miss, boss: UI.boss, item: UI.item, laser: UI.laser, map: UI.map, rainbow: UI.rainbow, up: UI.up } as const;
 
 function renderLobby() {
   if (!room) return;
@@ -381,16 +381,17 @@ function renderLobby() {
   if (!room.solo || room.timeAttack) taPick = false;
   $('lobbyName').textContent = room.timeAttack || taPick ? '타임어택' : room.solo ? '혼자 하기' : `방 ${room.code}`;
   $('copyLinkBtn').hidden = room.solo;
-  $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
+  $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>나가기</span>`;
 
   renderSlots(host);
 
   const sum = rulesSummary(room.rules);
   $('rulesTitle').textContent = taPick || room.timeAttack ? '타임어택 · 봇 없이 60초' : sum.title;
-  $('rulesDetail').textContent = taPick || room.timeAttack ? '' : sum.detail;
-  $('rulesBtn').textContent = host && !room.timeAttack ? '규칙 바꾸기' : '규칙 보기';
+  $('rulesChips').innerHTML = taPick || room.timeAttack ? '' : rulesChips(room.rules)
+    .map((c) => `<span class="rchip${c.off ? ' off' : ''}">${icon(RULE_ICON[c.icon], 15)}${c.text}</span>`).join('');
+  $('rulesBtn').innerHTML = `${icon(UI.settings, 16)}<span>게임 설정</span>`;
   renderRulesBox();
-  renderScorePop();
+  renderScoreBox();
 
   // 준비: 방장 뺀 사람이 모두 준비해야 시작할 수 있다
   const waiting = room.solo ? 0 : room.players.filter((p) => !p.bot && p.id !== room!.hostId && !p.ready).length;
@@ -757,6 +758,7 @@ $('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('settingsPanel').hidden) return; // Esc는 설정 창 닫기가 먼저
   if (e.key === 'Escape' && !$('rulesModal').hidden) { closeRulesModal(); return; }
+  if (e.key === 'Escape' && !$('scoreModal').hidden) { closeScoreModal(); return; }
   // 튜토리얼: Enter·Space로 설명 카드 넘기기, Esc는 나가기 확인, P는 쓰지 않음
   if (playing && room?.tutorial && !isTyping(e)) {
     if (e.repeat || document.querySelector('.codex, .confirm, .guide-screen')) return;

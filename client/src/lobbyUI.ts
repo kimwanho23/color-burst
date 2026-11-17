@@ -44,6 +44,29 @@ export function rulesSummary(r: RoomRules): { title: string; detail: string } {
   return { title, detail: [time, `피버 ×${r.feverMult} ${r.feverSec}초`, ...on].join(' · ') };
 }
 
+export type RuleChipIcon = 'timer' | 'fever' | 'speed' | 'mark' | 'miss' | 'boss' | 'item' | 'laser' | 'map' | 'rainbow' | 'up';
+export interface RuleChip { icon: RuleChipIcon; text: string; off?: boolean }
+
+/** 대기실 규칙 칩: 판 시간·피버·속도·견제·빈 곳·요소 켜짐/꺼짐 (꺼진 것은 off로 흐리게). 협력전은 쓰지 않는 것을 뺀다 */
+export function rulesChips(r: RoomRules): RuleChip[] {
+  const time = r.mode === 'arcade' ? `${ARCADE.rounds}라운드 × ${r.arcadeRoundSec}초`
+    : r.coop ? `${RULES.coop.timeSec}초` : r.survival ? `${RULES.survival.everyMs / 1000}초마다 꼴찌 탈락` : `${r.roundSec}초`;
+  const chips: RuleChip[] = [{ icon: 'timer', text: time }];
+  if (!r.coop) chips.push({ icon: 'fever', text: `피버 ×${r.feverMult} · ${r.feverSec}초` });
+  chips.push({ icon: 'speed', text: `속도 ×${r.speed} · 원 개수 ×${r.density}` });
+  if (!r.coop) {
+    chips.push({ icon: 'mark', text: r.stealPenalty ? `견제 페널티 · 표적 ${r.markSec}초` : '견제 페널티 없음' });
+    chips.push({ icon: 'miss', text: '빈 곳 감점', off: !r.missPenalty });
+    chips.push({ icon: 'boss', text: '보스', off: !r.boss });
+    chips.push({ icon: 'item', text: '아이템', off: !r.items });
+    chips.push({ icon: 'laser', text: '레이저', off: !r.laser });
+    chips.push(r.mapPct > 0 ? { icon: 'map', text: `맵 패턴 ${r.mapPct}%` } : { icon: 'map', text: '맵 패턴', off: true });
+    chips.push(r.rainbowPct > 0 ? { icon: 'rainbow', text: `무지개 ${r.rainbowPct}%` } : { icon: 'rainbow', text: '무지개', off: true });
+    chips.push({ icon: 'up', text: '꼴찌 보정', off: !r.comeback });
+  }
+  return chips;
+}
+
 /** 친구에게 보낼 방 링크 (열면 그 방으로) */
 export function roomLink(origin: string, pathname: string, code: string): string {
   return `${origin}${pathname}#${code}`;

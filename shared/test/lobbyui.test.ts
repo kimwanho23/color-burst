@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ARCADE, DEFAULT_RULES, newPlayer, type PlayerState } from '../src/index.ts';
-import { lobbySlots, roomLink, rulesSummary } from '../../client/src/lobbyUI.ts';
+import { ARCADE, DEFAULT_RULES, RULES, newPlayer, type PlayerState } from '../src/index.ts';
+import { lobbySlots, roomLink, rulesChips, rulesSummary } from '../../client/src/lobbyUI.ts';
 
 /** 사람 A(나, 방장) · 봇 */
 function people() {
@@ -65,4 +65,17 @@ test('rulesSummary: 협력전은 꺼지는 보스·레이저·맵 패턴을 적�
   const surv = rulesSummary({ ...DEFAULT_RULES, survival: true }).detail;
   assert.ok(surv.startsWith('30초마다 꼴찌 탈락'), surv);
   assert.ok(!surv.startsWith('60초'), surv);
+});
+
+test('rulesChips: 시간·피버·속도·견제·요소 켜짐/꺼짐을 빠짐없이', () => {
+  const t = (r: Parameters<typeof rulesChips>[0]) => rulesChips(r).map((c) => `${c.off ? '-' : ''}${c.text}`);
+  const d = t(DEFAULT_RULES);
+  for (const s of ['60초', '피버 ×3 · 7초', '속도 ×1 · 원 개수 ×1', '견제 페널티 · 표적 4초', '빈 곳 감점', '보스', '아이템', '레이저', '맵 패턴 35%', '무지개 3%', '-꼴찌 보정']) assert.ok(d.includes(s), `${s} in ${d.join('/')}`);
+  const off = t({ ...DEFAULT_RULES, boss: false, items: false, stealPenalty: false, mapPct: 0 });
+  for (const s of ['-보스', '-아이템', '견제 페널티 없음', '-맵 패턴']) assert.ok(off.includes(s), `${s} in ${off.join('/')}`);
+  const coop = t({ ...DEFAULT_RULES, coop: true });
+  assert.ok(coop.includes(`${RULES.coop.timeSec}초`));
+  for (const s of ['보스', '레이저', '피버 ×3 · 7초']) assert.ok(!coop.some((x) => x.replace('-', '') === s), s);
+  assert.ok(t({ ...DEFAULT_RULES, survival: true }).includes('30초마다 꼴찌 탈락'));
+  assert.ok(t({ ...DEFAULT_RULES, mode: 'arcade' }).includes(`${ARCADE.rounds}라운드 × 30초`));
 });
