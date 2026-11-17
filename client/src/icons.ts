@@ -1,6 +1,6 @@
 /** 아이콘 (lucide, ISC 라이선스). 필요한 것만 가져와서 번들이 작다 */
 import {
-  createElement, type IconNode, CircleHelp, Plus, Copy,
+  createElement, type IconNode, CircleHelp, Plus, Copy, LockKeyhole,
   UtensilsCrossed, Citrus, Rainbow, Link2, Flag, Thermometer, Hourglass, BatteryCharging, Flame, Sunset,
   Hammer, Crosshair, Pickaxe, Umbrella, Wind, Shield, EyeOff, HandCoins, Swords, RadioTower,
   GlassWater, Dices, Axe, MoveUp, Droplet, Bomb, Target, Skull,
@@ -47,7 +47,7 @@ export const EVENT_ICON: Record<EventId, IconNode> = {
 };
 
 export const UI = {
-  gold: CircleDollarSign, plus: Plus, copy: Copy,
+  gold: CircleDollarSign, plus: Plus, copy: Copy, lock: LockKeyhole,
   pause: Pause, settings: Settings, reroll: RefreshCw, classic: Gamepad2, arcade: Layers,
   basic: Gauge, party: PartyPopper, hardcore: Zap, chill: Coffee, chaos: Tornado, ping: Wifi, bot: Bot,
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,

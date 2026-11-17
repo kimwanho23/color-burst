@@ -138,10 +138,12 @@ export class CoopRun {
   /** 보스가 원을 뿜는다: 사람·봇 한 명당 간격마다 그 색 원(가끔 노란 원). 탈락한 사람 색은 없음 */
   private spawnOrbs(now: number) {
     if (!this.boss) return;
-    const gap = this.inBurst(now) ? C.burst.orbGapMs : this.orbGap();
+    const base = this.inBurst(now) ? C.burst.orbGapMs : this.orbGap();
     const from = circlePos(this.boss, now);
     for (const p of this.host.players()) {
       if (p.outAt) continue;
+      // 봇 색 원은 덜 자주 (판이 봇 원으로 덮이지 않게)
+      const gap = p.bot ? base * C.orb.botGapMult : base;
       let at = this.nextOrb.get(p.id) ?? now;
       if (at > now + gap) at = now + gap * this.rand(); // 큰 피해 구간이 시작되면 바로 촘촘하게
       while (at <= now) {
@@ -212,7 +214,8 @@ export class CoopRun {
   hitCrystal(p: PlayerState, c: Circle, now: number): boolean {
     if (!this.shield || c.kind !== 'crystal' || c.target !== p.id || p.outAt) return false;
     c.hp = Math.max(0, (c.hp ?? 1) - 1);
-    if (c.hp > 0) { this.host.emit('coop:state', this.state()); return false; }
+    this.host.emit('coop:crystal', { id: c.id, hp: c.hp, maxHp: c.maxHp ?? c.hp });
+    if (c.hp > 0) return false;
     this.host.removeCircles((x) => x.id === c.id);
     this.stat(p.id).crystals++;
     this.afterCrystalGone(now);
@@ -257,7 +260,7 @@ export class CoopRun {
     if (!this.boss || !this.shield) return; // 판이 끝났거나 탈락으로 보호막이 풀림
     // 남은 수정은 처음 횟수로, 제한 시간 다시
     const hits = crystalHits(this.level, this.shield.no);
-    for (const c of this.crystals()) c.hp = c.maxHp = hits;
+    for (const c of this.crystals()) { c.hp = c.maxHp = hits; this.host.emit('coop:crystal', { id: c.id, hp: hits, maxHp: hits }); }
     this.shield.until = now + C.levels[this.level].crystalSec * 1000;
     this.host.emit('coop:state', this.state());
   }
@@ -312,6 +315,7 @@ export class CoopRun {
     const mine = this.crystals().filter((c) => c.target && (gone.has(c.target) || !this.host.players().some((p) => p.id === c.target)));
     if (mine.length) {
       const ids = new Set(mine.map((c) => c.id));
+      for (const id of ids) this.host.emit('coop:crystal', { id, hp: 0, maxHp: 0 });
       this.host.removeCircles((x) => ids.has(x.id));
       this.afterCrystalGone(Date.now());
     }
@@ -338,7 +342,11 @@ export class CoopRun {
       // 보호막 중이면 그 사람 수정은 깬 것으로 친다
       if (this.shield) {
         const ids = new Set(this.crystals().filter((c) => c.target === p.id).map((c) => c.id));
-        if (ids.size) { this.host.removeCircles((x) => ids.has(x.id)); this.afterCrystalGone(now); }
+        if (ids.size) {
+          for (const id of ids) this.host.emit('coop:crystal', { id, hp: 0, maxHp: 0 });
+          this.host.removeCircles((x) => ids.has(x.id));
+          this.afterCrystalGone(now);
+        }
       }
     }
     this.host.emitPlayers();

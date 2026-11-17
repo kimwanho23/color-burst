@@ -3,7 +3,7 @@ import { COLORS, type GameOver, type PlayerState, type RoundEffect } from '@colo
 import { shapeSVG } from './render.ts';
 import { buildTiles, effectItems } from './arcadeUI.ts';
 import { sourcesHtml } from './sources.ts';
-import { coopLine } from './coopUI.ts';
+import { coopRankHtml } from './coopUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -18,12 +18,12 @@ export function renderResult(d: GameOver, myId: string, finalEffects: readonly R
   const teamsHtml = d.teams ? `<div class="teamres">${d.teams.map((t, i) =>
     `<div class="tr${i === 0 || d.teamDraw ? ' win' : ''} t${t.team}"><b>${teamName(t.team)}${d.teamDraw ? ' 무승부' : i === 0 ? ' 승리' : ''}</b><span>${t.ids.map((id) => esc(byId.get(id)?.name ?? '')).join(' · ')}</span><em>${t.score}</em></div>`).join('')}</div>` : '';
 
-  const rank = teamsHtml + d.ranking.map((p, i) => {
+  const rank = d.coop ? coopRankHtml(d.coop, d.ranking, myId, startAt, (p) => shapeSVG(p.color, 24)) : teamsHtml + d.ranking.map((p, i) => {
     const w = d.wins[p.id];
     const tags = titlesOf(p.id).map((t) => `<span class="title" title="${esc(t.desc)}">${t.name}</span>`).join('');
     return `<div class="${p.id === myId ? 'me' : ''}">
       <span class="pos">${i + 1}</span>${shapeSVG(p.color, 24)}
-      <span class="who"><span>${esc(p.name)}${p.id === myId ? ' (나)' : ''}${w ? ` <em>${w}승</em>` : ''}</span>${tags ? `<span class="tags">${tags}</span>` : ''}${d.coop ? coopLine(p, startAt) : ''}${buildTiles(p.picks ?? [], 15)}</span>
+      <span class="who"><span>${esc(p.name)}${p.id === myId ? ' (나)' : ''}${w ? ` <em>${w}승</em>` : ''}</span>${tags ? `<span class="tags">${tags}</span>` : ''}${buildTiles(p.picks ?? [], 15)}</span>
       <span class="v">${p.score}</span></div>`;
   }).join('');
 

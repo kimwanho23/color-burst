@@ -245,6 +245,8 @@ export interface ServerToClient {
   'coop:slam': (d: Slam[]) => void;
   /** 협력전: 안전지대 경고 (끝나면 null) */
   'coop:safe': (d: SafeZones | null) => void;
+  /** 협력전: 수정 남은 횟수 (0이면 사라짐) */
+  'coop:crystal': (d: { id: number; hp: number; maxHp: number }) => void;
   /** 협력전: 잡은 원이 보스에게 피해 (연출) */
   'coop:orb': (d: { by: string; x: number; y: number; dmg: number }) => void;
   /** 협력전: 공격 원을 터뜨림 */

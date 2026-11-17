@@ -4,8 +4,7 @@
  */
 import {
   COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, vortexAlive, vortexWarned,
-  type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern,
-} from '@color-burst/shared';
+  type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones } from '@color-burst/shared';
 
 /** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
 function seeded(seed: number) {
@@ -104,6 +103,9 @@ export interface DrawState {
   /** 협력전: 사람 id → 색 (공격 원 표적 테두리), 내 id */
   colorOf?: ReadonlyMap<string, ColorIndex>;
   meId?: string;
+  /** 협력전: 내려찍기 경고, 안전지대 */
+  slams?: readonly Slam[];
+  safe?: SafeZones | null;
 }
 
 export class Renderer {
@@ -201,6 +203,8 @@ export class Renderer {
   /** 자석: 클릭 지점 → 잡힌 원 */
   pullLine(x0: number, y0: number, x1: number, y1: number) { this.add({ type: 'line', x: x0, y: y0, x1, y1, col: SKY, t: 0, life: 0.22 }); }
   /** 충격파 (폭죽·필드 클리어). 효과 줄이기여도 링은 그린다 */
+  /** 협력전: 잡은 원에서 보스로 날아가는 빛줄기 */
+  beam(x0: number, y0: number, x1: number, y1: number, col: string) { this.add({ type: 'line', x: x0, y: y0, x1, y1, col, t: 0, life: 0.3 }); }
   shockwave(x: number, y: number, R: number) { this.add({ type: 'ring', x, y, col: '#fff', t: 0, life: 0.35, r0: 10, r1: R, w: 6 }); }
   flash() { if (!reduceMotion) this.add({ type: 'flash', t: 0, life: 0.12 }); }
   /** 저격당함: 화면 가운데 붉은 조준선이 좁혀든다 */
@@ -286,6 +290,8 @@ export class Renderer {
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
     for (const l of s.lasers ?? []) this.drawLaser(l, s.now, now);
+    if (s.safe) this.drawSafe(s.safe, s.now);
+    for (const sl of s.slams ?? []) this.drawSlam(sl, s.now, s);
     if (s.pattern) this.drawPattern(s.pattern, s.popped ?? new Set(), s.now, now, s.trapped ?? -1);
     const base = ctx.globalAlpha;
     // 발사 보호 구역 안의 원은 반투명 (아직 잡을 수 없음)
@@ -727,6 +733,40 @@ export class Renderer {
     ctx.lineWidth = mine ? 6 : 3;
     ctx.strokeStyle = col !== undefined ? COLORS[col].hex : '#c9b8d8';
     ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 내려찍기: 경고 원이 at까지 안쪽부터 차오른다 (내 것은 진하게) */
+  private drawSlam(sl: Slam, t: number, s: DrawState) {
+    if (t > sl.at + 250) return;
+    const ctx = this.ctx, warn = RULES.coop.slam.warnMs;
+    const f = Math.min(1, Math.max(0, 1 - (sl.at - t) / warn));
+    const mine = sl.owner === s.meId;
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 93, 115, ${mine ? 0.18 : 0.1})`;
+    ctx.beginPath(); ctx.arc(sl.x, sl.y, sl.r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255, 93, 115, ${mine ? 0.45 : 0.25})`;
+    ctx.beginPath(); ctx.arc(sl.x, sl.y, sl.r * f, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff5d73'; ctx.lineWidth = mine ? 4 : 2; ctx.setLineDash([10, 8]);
+    ctx.beginPath(); ctx.arc(sl.x, sl.y, sl.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 안전지대: 판 전체를 붉게 덮고 안전한 원만 밝게 뚫는다 (테두리 길이 = 남은 시간) */
+  private drawSafe(sz: SafeZones, t: number) {
+    if (t > sz.at + 300) return;
+    const ctx = this.ctx;
+    const f = Math.min(1, Math.max(0, (t - (sz.at - sz.warnMs)) / sz.warnMs));
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 60, 80, ${0.12 + 0.18 * f})`;
+    ctx.beginPath(); ctx.rect(0, 0, FIELD.w, FIELD.h);
+    for (let i = 0; i < sz.zones.length; i++) { const z = safeZoneAt(sz, i, t); ctx.moveTo(z.x + z.r, z.y); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2, true); }
+    ctx.fill();
+    for (let i = 0; i < sz.zones.length; i++) {
+      const z = safeZoneAt(sz, i, t);
+      ctx.strokeStyle = 'rgba(120, 255, 170, .9)'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(z.x, z.y, z.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - f)); ctx.stroke();
+    }
     ctx.restore();
   }
 
