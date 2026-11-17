@@ -1,5 +1,5 @@
 import type { Server } from 'socket.io';
-import { enterStep as enterTutorialStep, progress as tutorialProgress, spawnKinds as tutorialKinds } from './tutorial.ts';
+import { enterStep as enterTutorialStep, freeKinds as tutorialKinds } from './tutorial.ts';
 import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
@@ -157,7 +157,7 @@ export class Room {
 
   private emitTutorial(done = false) {
     const t = this.tut!, step = this.tutStep();
-    this.io.to(this.code).emit('tutorial:step', { step, index: t.i, total: RULES.tutorial.steps.length, count: t.count, goal: RULES.tutorial.goal[step], done });
+    this.io.to(this.code).emit('tutorial:step', { step, index: t.i, total: RULES.tutorial.steps.length, done });
   }
 
   private startTutorial(now: number) {
@@ -172,13 +172,7 @@ export class Room {
     const t = this.tut;
     if (!t || t.advancing || p.bot) return;
     const step = this.tutStep();
-    const next = tutorialProgress(step, { kind: 'claim', circleKind: kind, feverStarted }, p, this.tutBot(), t.count);
-    if (next === t.count) return;
-    t.count = next;
-    this.emitTutorial();
-    if (t.count < RULES.tutorial.goal[step]) return;
-    t.advancing = true;
-    t.timer = setTimeout(() => this.advanceTutorial(), RULES.tutorial.nextMs);
+    void step; void kind; void feverStarted; // 장면 진행은 다음 커밋에서
   }
 
   /** 콤보 단계에서 헛클릭으로 콤보가 끊기면 진행 수도 0 */
@@ -224,7 +218,9 @@ export class Room {
   /** 튜토리얼 틱: 단계별 원 생성과 판 밖 원 정리만 (보스·황금·웨이브·레이저·패턴·봇 없음, 판 시간 없음) */
   private tickTutorial(now: number) {
     if (!this.tut || this.tut.advancing) return;
-    const S = RULES.tutorial.spawn[this.tutStep()];
+    const step = this.tutStep();
+    if (!(step in RULES.tutorial.spawn)) return;
+    const S = RULES.tutorial.spawn[step as keyof typeof RULES.tutorial.spawn];
     for (const [id, c] of this.circles) if (isOut(c, now - LAG_WINDOW_MS)) this.circles.delete(id);
     if (settleFever(this.tutMe(), now)) this.emitPlayers();
     const kinds = tutorialKinds(this.tutStep(), this.tutMe(), this.tutBot());
@@ -257,7 +253,7 @@ export class Room {
       // 튜토리얼: 다시 접속하면 지금 단계 안내(완료 뒤면 done)를 다시 보낸다
       if (this.tut) {
         const step = this.tutStep();
-        this.io.to(socketId).emit('tutorial:step', { step, index: this.tut.i, total: RULES.tutorial.steps.length, count: this.tut.count, goal: RULES.tutorial.goal[step], done: this.tut.done });
+        this.io.to(socketId).emit('tutorial:step', { step, index: this.tut.i, total: RULES.tutorial.steps.length, done: this.tut.done });
       }
       this.broadcastState();
       return { id: p.id };

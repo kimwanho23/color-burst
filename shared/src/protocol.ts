@@ -81,7 +81,27 @@ export interface RoomSnapshot {
   wins: Record<string, number>;
 }
 
-export interface TutorialStatus { step: TutorialStep; index: number; total: number; count: number; goal: number; done: boolean }
+export interface TutorialStatus { step: TutorialStep; index: number; total: number; done: boolean }
+
+/** 튜토리얼 장면: focus 짚기(멈춤, 받을 동작 하나), card 설명 카드(멈춤), free 자유 연습 */
+export type TutorialBeatKind = 'focus' | 'card' | 'free';
+export interface TutorialBeatInfo {
+  step: TutorialStep;
+  /** 화면이 문구를 찾는 장면 id (예: own.mine) */
+  beat: string;
+  kind: TutorialBeatKind;
+  /** 짚기 장면이 받을 동작: 짚은 원 클릭 / 빈 곳 클릭 */
+  accept?: 'circle' | 'empty';
+  /** 짚은 원 */
+  circleId?: number;
+  /** 카드가 짚는 곳 */
+  point?: 'me' | 'bot' | 'gauge' | 'zones';
+  /** 멈춘 서버 시각 (멈춤 장면일 때) */
+  at?: number;
+  /** 자유 연습 진행 */
+  count?: number;
+  goal?: number;
+}
 
 export interface GameOver {
   ranking: PlayerState[];
@@ -199,8 +219,10 @@ export interface ServerToClient {
   /** 방장이 나를 내보냄 */
   'room:kicked': () => void;
   'game:over': (d: GameOver) => void;
-  /** 튜토리얼: 단계가 바뀔 때·진행 수가 오를 때·마지막(done) */
+  /** 튜토리얼: 단계가 바뀔 때·마지막(done) */
   'tutorial:step': (d: TutorialStatus) => void;
+  /** 튜토리얼: 장면이 바뀌거나 멈출 때 */
+  'tutorial:beat': (d: TutorialBeatInfo) => void;
   /** 협력전: 단계·체력·카드가 바뀜 */
   'coop:state': (d: CoopState) => void;
   /** 협력전: 누가 무엇에 맞아 생명이 줄었는지 (circleId: 놓친 공격 원) */
@@ -225,6 +247,8 @@ export interface ClientToServer {
   /** 혼자 하기: 봇과 하는 비공개 방 */
   'room:solo': (d: { name: string; key: string; timeAttack?: boolean; tutorial?: boolean }, ack: Ack<{ code: string; you: string }>) => void;
   'room:leave': () => void;
+  /** 튜토리얼: 설명 카드 넘기기 */
+  'tutorial:next': () => void;
   'lobby:color': (color: ColorIndex) => void;
   'lobby:options': (o: { fillBots?: boolean; botLevel?: BotLevel }) => void;
   /** 준비 / 준비 취소 (방장 아닌 사람) */

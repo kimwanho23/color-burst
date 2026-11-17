@@ -242,21 +242,23 @@ export const RULES = {
     sweepGapMs: 100,
   },
   /**
-   * 튜토리얼: 단계 순서, 단계별 목표(fever는 피버 시작 1회), 피버 단계 시작 게이지, 목표 달성 뒤 다음 단계까지 대기.
-   * spawn: 단계마다 원 생성 간격(ms)·판에 동시에 있는 최대 수·속도 배율
+   * 튜토리얼: 단계 순서, 콤보 단계 시작 콤보, 피버 단계 짚기 전 게이지(%), 짚은 원이 나온 뒤 멈출 때까지(ms),
+   * 견제 단계 봇의 시작 콤보, 단계 마지막 장면 뒤 다음 단계까지 대기, 점수 구역 연습 목표(사이·가장자리에서 잡은 수).
+   * spawn: 자유 연습 장면의 원 생성 간격(ms)·판에 동시에 있는 최대 수·속도 배율
    */
   tutorial: {
-    steps: ['own', 'combo', 'fever', 'steal'],
-    goal: { own: 3, combo: 5, fever: 1, steal: 1 },
-    feverStart: 50,
-    nextMs: 1000,
+    steps: ['own', 'combo', 'steal', 'fever', 'zones'],
+    comboStart: 9,
+    feverStart: 99,
+    focusDelayMs: 600,
     /** 견제 단계 봇의 시작 콤보 (끊을 콤보가 있어야 견제가 보인다) */
     botCombo: 5,
+    nextMs: 1000,
+    zoneGoal: 3,
     spawn: {
-      own: { gapMs: 1200, max: 3, speed: 0.5 },
-      combo: { gapMs: 450, max: 7, speed: 0.7 },
-      fever: { gapMs: 450, max: 7, speed: 0.7 },
       steal: { gapMs: 700, max: 5, speed: 0.7 },
+      fever: { gapMs: 450, max: 7, speed: 0.7 },
+      zones: { gapMs: 500, max: 6, speed: 0.7 },
     },
   },
 } as const;

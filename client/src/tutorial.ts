@@ -6,6 +6,7 @@ export const TUTORIAL_TEXT: Record<TutorialStep, { name: string; hint: string }>
   combo: { name: '콤보', hint: '놓치지 말고 연달아 잡으면 콤보가 올라요' },
   fever: { name: '피버', hint: '노란 원도 게이지를 채워요. 게이지가 차면 피버!' },
   steal: { name: '견제', hint: '다른 색 원을 잡으면 그 사람 콤보를 끊어요 (대신 잠깐 표적이 돼요)' },
+  zones: { name: '점수 구역', hint: '바깥쪽에서 잡을수록 점수가 커져요' },
 };
 
 let band: HTMLElement | null = null;
@@ -35,15 +36,12 @@ export function showTutorialStep(d: TutorialStatus, onSkip: () => void): void {
   const t = TUTORIAL_TEXT[d.step];
   band.querySelector('.tut-step')!.textContent = `${d.index + 1}/${d.total} ${t.name}`;
   band.querySelector('.tut-hint')!.textContent = t.hint;
-  band.querySelector('.tut-count')!.textContent = `${d.count}/${d.goal}`;
-  const reached = d.count >= d.goal && !(cur && cur.index === d.index && cur.count >= cur.goal);
   cur = d;
-  if (reached) flash('잘했어요!', 1000);
 }
 
 /** 콤보 단계에서 콤보가 끊기면 잠깐 안내 */
 export function noteTutorialCombo(before: number, after: number): void {
-  if (cur?.step === 'combo' && cur.count < cur.goal && before > 0 && after === 0) flash('다시 이어 보세요', 1200);
+  if (cur?.step === 'combo' && before > 0 && after === 0) flash('다시 이어 보세요', 1200);
 }
 
 /** 연습 완료 창 */
