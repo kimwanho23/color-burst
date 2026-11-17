@@ -173,7 +173,10 @@ export function scoreTable(r: RoomRules) {
     ${r.rainbowPct ? `<tr><td>${shapeSVG('rainbow', 16)} 무지개</td><td>+${P.rainbow}</td><td>+${P.rainbow * m}</td></tr>` : ''}
     <tr><td>남의 색 (견제)</td><td>${steal}</td><td>+${P.stealCalm * m}, 페널티 없음</td></tr>
     ${r.stealPenalty && r.markSec ? `<tr><td>표적의 색 (반격)</td><td>+${P.counter}</td><td>+${P.counter * m}</td></tr>` : ''}
-    ${r.boss ? `<tr><td>${shapeSVG('boss', 16)} 보스 원</td><td>때릴 때마다 +${RULES.boss.hit}, 막타 +${RULES.boss.kill}, 최다 타격 +${RULES.boss.mvp}, 독식(체력 ${RULES.boss.solo.pct}% 이상) +${RULES.boss.solo.points}·막타 ×${RULES.boss.solo.killMult}</td><td>×${m} (콤보·게이지도 참)</td></tr>` : ''}
+    ${r.boss ? `<tr><td>${shapeSVG('boss', 16)} 보스 원</td><td><ul class="tlist">
+      <li>때릴 때마다 <b>+${RULES.boss.hit}</b></li><li>막타 <b>+${RULES.boss.kill}</b></li><li>가장 많이 때림 <b>+${RULES.boss.mvp}</b></li>
+      <li>독식 <b>+${RULES.boss.solo.points}</b><small>체력 ${RULES.boss.solo.pct}% 이상 깎으면 · 막타까지 치면 막타 ×${RULES.boss.solo.killMult}</small></li></ul></td>
+      <td><ul class="tlist"><li><b>×${m}</b></li><li><small>콤보·피버 게이지도 참</small></li></ul></td></tr>` : ''}
     <tr><td>빈 공간</td>${r.missPenalty ? '<td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td>' : '<td>페널티 없음</td><td>페널티 없음</td>'}</tr>
     ${r.items ? '<tr><td>? 아이템 원</td><td colspan="2">잡으면 무작위 아이템이 바로 발동 (점수 없음)</td></tr>' : ''}
   </table>`;
