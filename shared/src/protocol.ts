@@ -3,22 +3,36 @@
  * 통신 라이브러리를 바꿔도 이 형식은 그대로 쓸 수 있다.
  */
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
-import type { TutorialStep, CoopCardId, CoopLevel } from './rules.ts';
+import type { TutorialStep, CoopLevel } from './rules.ts';
 import type { CoopPhase } from './coop.ts';
 
-/** 협력전 투표: 카드 3장, 마감 시각(서버), 지금까지의 표 (사람 id → 카드) */
-export interface CoopVote { options: CoopCardId[]; until: number; votes: Record<string, CoopCardId> }
 /** 협력전 진행 상태 */
-export interface CoopState { level: CoopLevel; phase: CoopPhase; bossId: number; hp: number; maxHp: number; cards: CoopCardId[]; voting: CoopVote | null }
+export interface CoopState {
+  level: CoopLevel; phase: CoopPhase; bossId: number; hp: number; maxHp: number;
+  /** 보호막: 제한 시간 끝, 몇 번째 보호막인지 */
+  shield: { until: number; no: 0 | 1 } | null;
+  /** 큰 피해 구간 끝 (0이면 아님) */
+  burstUntil: number;
+  /** 분노 공격 시각 (0이면 없음) */
+  rageAt: number;
+}
+/** 협력전 결과: 사람(봇 포함)마다 기여 */
+export interface CoopPlayerResult { dmg: number; burstDmg: number; crystals: number; threats: number }
 /** 협력전 결과 */
-export interface CoopResult { win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase; cards: CoopCardId[] }
-export type CoopHitBy = 'laser' | 'hazard' | 'threat';
+export interface CoopResult {
+  win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase;
+  maxHp: number; players: Record<string, CoopPlayerResult>;
+  /** 보호막마다 수정을 다 깨는 데 걸린 ms, 제한 시간 초과는 'rage' */
+  breaks: (number | 'rage')[];
+}
+export type CoopHitBy = 'laser' | 'hazard' | 'threat' | 'slam' | 'safe' | 'rage';
 import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
 import type { WavePattern } from './waves.ts';
 import type { Point } from './cursor.ts';
 import type { MapPattern } from './patterns.ts';
+import type { SafeZones, Slam } from './coop.ts';
 
 /** 커서 자석으로 끌려가는 원: at부터 ms 동안 by의 커서로 빨려 들어간 뒤 잡힌다 */
 export interface Pull { circleId: number; by: string; from: Point; at: number; ms: number }
@@ -227,12 +241,12 @@ export interface ServerToClient {
   'coop:state': (d: CoopState) => void;
   /** 협력전: 누가 무엇에 맞아 생명이 줄었는지 (circleId: 놓친 공격 원) */
   'coop:hit': (d: { playerId: string; by: CoopHitBy; lives: number; immuneUntil: number; circleId?: number }) => void;
-  /** 협력전: 투표 시작 */
-  'coop:vote': (d: CoopVote) => void;
-  /** 협력전: 투표 현황 */
-  'coop:votes': (d: Record<string, CoopCardId>) => void;
-  /** 협력전: 뽑힌 카드, 지금까지 받은 카드 */
-  'coop:card': (d: { card: CoopCardId; cards: CoopCardId[] }) => void;
+  /** 협력전: 내려찍기 경고 (사람마다) */
+  'coop:slam': (d: Slam[]) => void;
+  /** 협력전: 안전지대 경고 (끝나면 null) */
+  'coop:safe': (d: SafeZones | null) => void;
+  /** 협력전: 잡은 원이 보스에게 피해 (연출) */
+  'coop:orb': (d: { by: string; x: number; y: number; dmg: number }) => void;
   /** 협력전: 공격 원을 터뜨림 */
   'threat:popped': (d: { circleId: number; by: string; gained: number }) => void;
 }
@@ -281,7 +295,6 @@ export interface ClientToServer {
   /** circleId가 null이면 빈 공간 클릭. x, y는 필드 좌표 */
   'game:click': (d: { circleId: number | null; x: number; y: number }) => void;
   /** 협력전: 투표할 카드 (다시 고르면 표가 옮겨 간다) */
-  'coop:pick': (card: CoopCardId) => void;
   /** 서버 시각 맞추기 */
   'time:ping': (ack: (serverNow: number) => void) => void;
 }

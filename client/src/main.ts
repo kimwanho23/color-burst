@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type CoopVote, type CoopCardId, coopPhase, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
@@ -13,7 +13,7 @@ import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type Scor
 import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
-import { coopResultHtml, heartsHtml, renderCoopHud, renderVote, tickVote } from './coopUI.ts';
+import { coopResultHtml, heartsHtml, renderCoopHud } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, abilityIcon, icon, itemIcon } from './icons.ts';
 import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
@@ -107,11 +107,8 @@ let startAt = 0, endAt = 0, playing = false, lastCount = -1;
 let rules: RoomRules = DEFAULT_RULES;
 /** 협력전: 진행 상태, 열린 투표, 방금 뽑힌 카드(투표 창 강조) */
 let coopState: CoopState | null = null;
-let coopVote: CoopVote | null = null;
-let coopChosen: CoopCardId | null = null;
 function renderCoop() {
   renderCoopHud($('stage'), playing ? coopState : null);
-  renderVote($('stage'), playing ? coopVote : null, players, myId(), (c) => socket.emit('coop:pick', c), coopChosen);
 }
 /** 일시정지 중이면 멈춘 순간의 서버 시각. 화면은 이 시각에 멈춰 있다 */
 let pausedView = 0;
@@ -526,7 +523,7 @@ function resetToHome(err = '') {
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
   pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;
   arcade = null; offer = null;
-  coopState = null; coopVote = null; coopChosen = null; renderCoop();
+  coopState = null; renderCoop();
   $('pauseOv').hidden = true; $('pickOv').hidden = true; $('roundEnd').hidden = true;
   resetComboNotice();
   closeChipPop();
@@ -610,8 +607,6 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   mapPattern = d.pattern ?? null;
   popped = new Set(d.popped ?? []);
   coopState = d.coop ?? null;
-  coopVote = coopState?.voting ?? null;
-  if (!coopVote) coopChosen = null;
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
   playing = true;
@@ -635,25 +630,15 @@ socket.on('game:pause', ({ by, until, at }) => {
 // 일시정지가 풀림: 일시정지 화면을 닫고 at까지 카운트다운 (게임은 그때까지 멈춰 있음)
 socket.on('game:resuming', ({ at }) => {
   resumeAt = at; lastCount = -1; $('pauseOv').hidden = true;
-  if (coopVote || coopChosen) { coopVote = null; coopChosen = null; renderCoop(); if (room?.solo && document.hidden) socket.emit('game:pause'); }
 });
 // 협력전
 socket.on('coop:state', (s) => {
-  // 단계 경계에 닿았으면(전환 중) 레이저·공격 원·장판을 지운다 (서버도 지움)
-  if (coopPhase(s.hp, s.maxHp) !== s.phase && !s.voting) {
-    setLasers([]); mapPattern = null;
+  // 보호막이 올라오면 레이저·추적 원을 지운다 (서버도 지움)
+  if (s.shield && !coopState?.shield) {
+    setLasers([]);
     for (const [id, c] of circles) if (c.kind === 'threat') circles.delete(id);
-    if (!coopState || coopState.hp !== s.hp || coopState.phase === s.phase) renderer.banner('보스 분노!', '#c77dff');
   }
   coopState = s; renderCoop();
-});
-socket.on('coop:vote', (v) => { coopVote = v; coopChosen = null; renderCoop(); sfx.patternWarn(); });
-socket.on('coop:votes', (votes) => { if (coopVote) { coopVote = { ...coopVote, votes }; renderCoop(); } });
-socket.on('coop:card', ({ card, cards }) => {
-  coopChosen = card;
-  if (coopState) coopState = { ...coopState, cards };
-  renderCoop();
-  sfx.legend();
 });
 socket.on('coop:hit', ({ playerId, by, lives, circleId }) => {
   const p = players.find((x) => x.id === playerId);
@@ -1062,7 +1047,7 @@ socket.on('game:over', (d) => {
     : pos === 1 ? '1등!' : `${pos}등`;
   const r = renderResult(d, myId(), effects, startAt);
   $('rank').innerHTML = (d.coop ? coopResultHtml(d.coop) : '') + r.rank;
-  coopState = null; coopVote = null; coopChosen = null; renderCoop();
+  coopState = null; renderCoop();
   $('titleList').innerHTML = r.titles;
   $('graphBox').innerHTML = r.graph;
   $('srcBox').innerHTML = r.sources;
@@ -1337,7 +1322,6 @@ function frame() {
   vortexWarnHeard = vw;
   if (aura) gameCursor.pull(aura, RULES.aura.pullSpeed * dt);
   updateHud(now);
-  if (coopVote) tickVote(serverNow());
   // 협력전: 맞은 뒤 무적 동안 내 커서가 깜빡인다
   const blink = !!m && rules.coop && now < m.immuneUntil && Math.floor(now / 120) % 2 === 0;
   renderer.draw({

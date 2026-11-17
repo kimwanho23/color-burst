@@ -19,7 +19,7 @@ export class Bot {
   shift(ms: number) { if (this.next) this.next += ms; }
 
   /** 이번 틱에 가져갈 원을 고른다. 없으면 null */
-  /** team: 팀전이면 같은 팀 색도 내 색처럼 노린다. coop: 협력전이면 공격 원 → 내 색 → 레이드 보스 (피버 중엔 보스 먼저), 남의 색은 안 노린다 */
+  /** team: 팀전이면 같은 팀 색도 내 색처럼 노린다. coop: 협력전이면 추적 원 → 내 수정 → 내 색·노란 원, 보스·남의 색은 안 노린다 */
   think(me: PlayerState, circles: Circle[], players: PlayerState[], now: number, team = false, coop = false): Circle | null {
     const L = LEVELS[this.level];
     if (!this.next) this.next = now + 800 + Math.random() * 600;
@@ -37,7 +37,9 @@ export class Bot {
         const edge = Math.min(q.x, q.y, FIELD.w - q.x, FIELD.h - q.y);
         return 8 + 24 * (1 - Math.min(1, Math.max(0, edge) / 400));
       }
-      if (c.boss === 'raid') return fever ? 14 : 2;
+      // 협력전: 보스는 눌러도 소용없고, 보호막 중엔 내 수정이 먼저 (남의 수정은 못 깸)
+      if (c.boss === 'raid') return 0;
+      if (c.kind === 'crystal') return c.target === me.id ? 30 : 0;
       // 보스는 체력이 낮을수록 막타를 노리고 몰려든다
       if (c.kind === 'boss') {
         // 보호막이나 붉은 상태의 보스는 피한다 (보스 헌터 조합은 붉은 보스도 감점이 없어 때린다)

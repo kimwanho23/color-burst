@@ -9,8 +9,8 @@ import {
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
-  type BotLevel, type Circle, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
-  type CoopCardId, type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
+  type BotLevel, type Circle, type ClaimResult, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
+  type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
 import { logGame } from './gameLog.ts';
@@ -834,8 +834,11 @@ export class Room {
       else {
         got = true;
         if (this.G.coop && typeof c.kind === 'number' && !this.owns(c.kind, p)) { got = false; this.rejectTo(id, c.id); }
-        else if (c.boss === 'raid') this.hitRaid(p, c, now);
+        // 협력전: 보스를 눌러도 아무 일 없음 (헛클릭도 아님). 수정은 주인만, 내 색·노란 원은 보스 피해
+        else if (c.boss === 'raid') { /* 아무 일 없음 */ }
+        else if (c.kind === 'crystal') this.hitCrystal(p, c, now);
         else if (c.kind === 'threat') this.popThreat(p, c, now);
+        else if (this.coop && (c.kind === 'y' || typeof c.kind === 'number')) this.catchCoopOrb(p, c, now);
         else if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
         else if (c.kind === 'gold') this.claimGold(p, c, now);
@@ -1307,15 +1310,16 @@ export class Room {
 
     const kinds = this.spawnKinds();
     // 시간 정지 중에는 새 원이 나오지 않는다
-    if (now < this.freezeUntil) this.lastSpawn = Math.max(this.lastSpawn, now);
-    while (now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt, this.G)) {
+    if (now < this.freezeUntil || this.G.coop) this.lastSpawn = Math.max(this.lastSpawn, now);
+    // 협력전: 판 가운데에서는 아무것도 나오지 않는다 (원은 보스가 뿜는다)
+    while (!this.G.coop && now - this.lastSpawn >= spawnInterval(this.lastSpawn - this.startAt, this.G)) {
       this.lastSpawn += spawnInterval(this.lastSpawn - this.startAt, this.G);
       const c = makeCircle(this.nextCircleId++, this.lastSpawn, this.lastSpawn - this.startAt, kinds, this.G, Math.random, this.spawnOpts(now));
       if (this.theme === 'reverse') c.rev = true;
       this.circles.set(c.id, c);
       this.io.to(this.code).emit('circle:spawn', c);
     }
-    this.spawnWaves(now, kinds);
+    if (!this.G.coop) this.spawnWaves(now, kinds);
     this.coop?.tick(now);
     this.updateLaser(now);
     if (this.phase !== 'play') return;
@@ -1332,6 +1336,7 @@ export class Room {
       this.bossQueue.shift();
       this.spawnBosses(now);
     }
+    if (this.G.coop) this.goldQueue = [];
     while (now >= this.freezeUntil && this.goldQueue.length && now - this.startAt >= this.goldQueue[0]) {
       this.goldQueue.shift();
       const g = makeGold(this.nextCircleId++, now);
@@ -1366,8 +1371,10 @@ export class Room {
       if (!bot || p.outAt) continue;
       const target = bot.think(p, this.botCandidates(), this.players, now, this.rules.team, this.G.coop);
       if (!target) continue;
-      if (target.boss === 'raid') this.hitRaid(p, target, now);
+      if (target.boss === 'raid') continue;
+      else if (target.kind === 'crystal') this.hitCrystal(p, target, now);
       else if (target.kind === 'threat') this.popThreat(p, target, now);
+      else if (this.coop && (target.kind === 'y' || typeof target.kind === 'number')) this.catchCoopOrb(p, target, now);
       else if (target.kind === 'boss') this.hitBoss(p, target, now);
       else if (target.kind === 'item') this.claimItem(p, target, now);
       else if (target.kind === 'gold') this.claimGold(p, target, now);
@@ -1498,48 +1505,46 @@ export class Room {
       fireLaser: (lines, at) => { this.lasers.push({ lines, at, hit: new Set() }); this.io.to(this.code).emit('laser:warn', { lines, at }); },
       clearLasers: () => { this.lasers = []; },
       setPattern: (p) => { if (p) this.pendingPattern = p; else this.clearPattern(); },
-      pauseForVote: (now) => this.silentPause(now),
-      resumeAfterVote: () => {
-        // 빠른 충전 카드: 피버 게이지 충전 배율
-        if (this.coop) this.G = { ...this.G, feverGain: toGameRules(this.rules).feverGain * this.coop.feverGainMult() };
-        if (this.phase !== 'play' || !this.pausedAt) return;
-        // 혼자 하기에서 끊긴 채면 멈춘 상태로 둔다 (다시 들어와 풀면 이어서)
-        const away = this.solo ? this.humans.find((h) => !h.connected) : undefined;
-        if (away) { this.pausedBy = away.id; this.io.to(this.code).emit('game:pause', { by: away.id, until: 0, at: this.pausedAt }); return; }
-        this.beginResume();
-      },
       eliminate: (p, now) => this.eliminate(p, now),
       finish: (win) => { if (this.phase === 'play') this.end(win); },
       emitPlayers: () => this.emitPlayers(),
-      feverOn: (p, now) => isFever(p, now),
       laserHalf: () => this.G.laserHalf,
+      cursorOf: (id) => { const c = this.freshCursor(id, Date.now()); return c ? { x: c.x, y: c.y } : null; },
+      stun: (p, now) => {
+        const r = hazardStun(p, now, RULES.laser.stunMs, this.G, this.players);
+        if (r > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
+      },
     };
     this.coop = new CoopRun(host, this.rules.coopLevel);
+    this.coop.setCrystalSource(() => [...this.circles.values()].filter((c) => c.kind === 'crystal'));
     this.coop.start(this.startAt);
   }
 
-  /** 레이드 보스 타격: 콤보 +1·피버 게이지는 기존 보스와 같다. 피해·점수는 CoopRun */
-  private hitRaid(p: PlayerState, c: Circle, now: number) {
-    if (!this.coop) return;
-    settleFever(p, now);
-    const r = this.coop.hitRaid(p, c, now);
-    let feverStarted = false;
-    if (r.dealt > 0) {
-      p.combo++;
-      p.stats.maxCombo = Math.max(p.stats.maxCombo, p.combo);
-      p.roundMaxCombo = Math.max(p.roundMaxCombo, p.combo);
-      feverStarted = addFever(p, RULES.boss.feverGain, now, this.G, this.players);
-    }
-    this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: r.gained, jackpot: 1, ...(r.dealt > 0 ? { feverStarted } : { blocked: true }) });
-    if (r.killed) {
-      const { x, y } = circlePos(c, now);
-      this.circles.delete(c.id);
-      this.io.to(this.code).emit('boss:killed', { circleId: c.id, by: p.id, gained: r.gained, mvp: null, mvpGained: 0, x, y, jackpot: 1, solo: [], soloFever: [], feverStarted, comboBonus: false });
-      this.emitPlayers();
-      this.end(true);
-      return;
-    }
+  /** 협력전: 보스가 뿜은 내 색·노란 원을 잡음 → 콤보 +1, 보스 피해·점수는 CoopRun */
+  private catchCoopOrb(p: PlayerState, c: Circle, now: number) {
+    if (!this.coop || !this.circles.has(c.id)) return;
+    this.circles.delete(c.id);
+    const { x, y } = circlePos(c, now);
+    p.combo++;
+    p.stats.hits++;
+    p.stats.maxCombo = Math.max(p.stats.maxCombo, p.combo);
+    p.roundMaxCombo = Math.max(p.roundMaxCombo, p.combo);
+    const r = this.coop.catchOrb(p, c, now);
+    const result: ClaimResult = { type: 'own', gained: r.gained, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via: 'click', jackpot: 1, zone: 0 };
+    this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
     this.emitPlayers();
+    if (r.killed && this.phase === 'play') {
+      const b = this.coop.boss;
+      if (b) { this.circles.delete(b.id); const q = circlePos(b, now); this.io.to(this.code).emit('boss:killed', { circleId: b.id, by: p.id, gained: 0, mvp: null, mvpGained: 0, x: q.x, y: q.y, jackpot: 1, solo: [], soloFever: [], feverStarted: false, comboBonus: false }); }
+      this.end(true);
+    }
+  }
+
+  /** 협력전: 내 수정 누르기 */
+  private hitCrystal(p: PlayerState, c: Circle, now: number) {
+    if (!this.coop) return;
+    if (c.target !== p.id) { this.rejectTo(p.id, c.id); return; }
+    this.coop.hitCrystal(p, c, now);
   }
 
   /** 협력전 공격 원 터뜨리기 */
@@ -1550,9 +1555,6 @@ export class Room {
     this.io.to(this.code).emit('threat:popped', { circleId: c.id, by: p.id, gained });
     this.emitPlayers();
   }
-
-  /** 협력전 투표 */
-  coopPick(id: string, card: CoopCardId) { this.coop?.pick(id, card); }
 
   private eliminate(p: PlayerState, now: number) {
     const alive = this.players.filter((x) => !x.outAt).length;

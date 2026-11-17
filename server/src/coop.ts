@@ -1,13 +1,14 @@
 /**
- * 협력전 한 판: 생명·단계·받은 카드·투표·보스 공격 일정.
- * 방(room.ts)은 CoopHost를 넘기고 tick·클릭·원 이탈·피격·일시정지 시각 밀기·판 끝에서만 부른다.
+ * 협력전 한 판: 보스가 원을 뿜고, 잡은 원이 피해가 된다. 체력 구간마다 보호막·수정, 깨면 큰 피해 구간, 못 깨면 분노.
+ * 보스 패턴(레이저·추적 원·내려찍기·안전지대)과 맵 패턴 일정, 사람마다 기여 기록.
+ * 방(room.ts)은 CoopHost를 넘기고 tick·원 잡기·수정 클릭·원 이탈·피격·일시정지 시각 밀기·판 끝에서만 부른다.
  * 계산은 shared/src/coop.ts, 수치는 RULES.coop.
  */
 import {
-  RULES, applyRaidDamage, attackGap, circlePos, coopPhase, coopStars, drawCards, immuneMs, makePattern, makeRaid, makeThreat,
-  raidDamage, raidMaxHp, rollVolley, tallyVotes, threatSpeed, addSrc,
-  type Circle, type CoopCardId, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopResult, type CoopState, type CoopVote,
-  type LaserLine, type MapPattern, type PatternId, type PlayerState, type ServerToClient,
+  RULES, addSrc, applyRaidDamage, attackGap, circlePos, coopStars, crystalHits, immuneMs, inSafe, makeCrystal, makeOrb, makePattern,
+  makeRaid, makeThreat, orbDamage, placeCrystals, raidMaxHp, rollSafe, rollVolley, threatSpeed,
+  type Circle, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopPlayerResult, type CoopResult, type CoopState,
+  type LaserLine, type MapPattern, type PatternId, type PlayerState, type Point, type SafeZones, type ServerToClient, type Slam,
 } from '@color-burst/shared';
 
 const C = RULES.coop;
@@ -24,68 +25,91 @@ export interface CoopHost {
   clearLasers(): void;
   /** 맵 패턴 예약(경고 시각이 되면 나타남), null이면 지우기 */
   setPattern(p: MapPattern | null): void;
-  /** 판 시계 멈춤 (투표) */
-  pauseForVote(now: number): void;
-  /** 투표가 끝나 다시 시작 (카운트다운) */
-  resumeAfterVote(): void;
   eliminate(p: PlayerState, now: number): void;
   finish(win: boolean): void;
   emitPlayers(): void;
-  feverOn(p: PlayerState, now: number): boolean;
   /** 레이저 맞는 거리 (난이도 두께) */
   laserHalf(): number;
+  /** 사람 커서 (없으면 판정하지 않음) */
+  cursorOf(id: string): Point | null;
+  /** 피격 스턴 (레이저와 같은 처리) */
+  stun(p: PlayerState, now: number): void;
 }
 
-type Timer = ReturnType<typeof setTimeout>;
+type Pattern = 'laser' | 'threat' | 'slam' | 'safe' | 'map';
 
 export class CoopRun {
   phase: CoopPhase = 1;
-  cards: CoopCardId[] = [];
   boss: Circle | null = null;
-  private vote: { options: CoopCardId[]; until: number; votes: Map<string, CoopCardId> } | null = null;
-  /** 단계 전환 중 (보스 무적 ~ 투표 ~ 재개 전) */
-  private shifting = false;
-  private invulnUntil = 0;
-  private next: Record<'laser' | 'threat' | 'hazard', number> = { laser: 0, threat: 0, hazard: 0 };
+  private next: Record<Pattern, number> = { laser: 0, threat: 0, slam: 0, safe: 0, map: 0 };
+  /** 사람·봇마다 다음 원 시각 */
+  private nextOrb = new Map<string, number>();
   private targetTurn = 0;
-  /** 투표 뒤 재개되면 첫 tick에서 공격 일정을 다시 잡는다 */
-  private reschedule = false;
-  private timers = new Set<Timer>();
+  /** 보호막: 시작·제한 시간 끝·몇 번째 */
+  private shield: { from: number; until: number; no: 0 | 1 } | null = null;
+  private burstUntil = 0;
+  private rageAt = 0;
+  private slams: Slam[] = [];
+  private safe: SafeZones | null = null;
+  private stats = new Map<string, CoopPlayerResult>();
+  private breaks: (number | 'rage')[] = [];
+  /** 큰 피해 구간이 끝나면 다음 단계 패턴 일정을 잡는다 */
+  private afterBurst = false;
 
   constructor(private host: CoopHost, readonly level: CoopLevel, private rand: () => number = Math.random) {}
 
-  private later(ms: number, fn: () => void) {
-    const t = setTimeout(() => { this.timers.delete(t); fn(); }, ms);
-    this.timers.add(t);
-  }
-
   private humans() { return this.host.players().filter((p) => !p.bot); }
   private alive() { return this.humans().filter((p) => !p.outAt); }
+  private stat(id: string) {
+    let s = this.stats.get(id);
+    if (!s) { s = { dmg: 0, burstDmg: 0, crystals: 0, threats: 0 }; this.stats.set(id, s); }
+    return s;
+  }
 
-  /** 판 시작: 생명, 레이드 보스, 첫 공격 시각 */
+  /** 판 시작: 생명, 레이드 보스, 첫 원·공격 시각 */
   start(now: number) {
-    for (const p of this.host.players()) { p.lives = p.bot ? 0 : C.lives; p.immuneUntil = 0; }
+    for (const p of this.host.players()) { p.lives = p.bot ? 0 : C.lives; p.immuneUntil = 0; this.stat(p.id); }
     const ps = this.host.players();
     const hp = raidMaxHp(ps.filter((p) => !p.bot).length, ps.filter((p) => p.bot).length);
     this.boss = makeRaid(this.host.nextId(), now, hp);
     this.host.addCircle(this.boss);
+    for (const p of ps) this.nextOrb.set(p.id, now + this.rand() * this.orbGap());
     this.schedule(now);
     this.host.emit('coop:state', this.state());
   }
 
-  /** 지금 단계에서 쓰는 공격의 다음 시각을 정한다 (안 쓰는 공격은 0) */
+  isShielded() { return !!this.shield; }
+  inBurst(now: number) { return now < this.burstUntil; }
+  /** 투표가 없어져 늘 false (일시정지 요청을 막을 일이 없다) */
+  busy() { return false; }
+
+  private orbGap() { return C.orb.gapMs * C.levels[this.level].orbMult; }
+
+  /** 지금 단계에서 쓰는 패턴의 다음 시각 (안 쓰는 것은 0) */
   private schedule(now: number) {
-    const L = C.levels[this.level];
-    this.next.laser = now + RULES.laser.startQuietMs + attackGap('laser', this.level, this.phase, this.rand) * (this.phase === 1 ? 0.5 : 1);
-    this.next.threat = this.phase >= 2 ? now + attackGap('threat', this.level, this.phase, this.rand) * 0.5 : 0;
-    this.next.hazard = this.phase >= 3 ? now + Math.min(L.hazardEvery * 0.5, 4_000) : 0;
+    const g = (k: Pattern) => attackGap(k, this.level, this.phase, this.rand);
+    this.next.laser = now + RULES.laser.startQuietMs + g('laser') * (this.phase === 1 ? 0.5 : 1);
+    this.next.threat = now + g('threat') * 0.5;
+    this.next.slam = this.phase >= 2 ? now + g('slam') * 0.5 : 0;
+    this.next.safe = this.phase >= 3 ? now + g('safe') * 0.5 : 0;
+    this.next.map = this.phase >= 2 ? now + Math.min(g('map') * 0.5, 4_000) : 0;
   }
 
-  voting() { return !!this.vote; }
-
   tick(now: number) {
-    if (this.shifting || !this.boss) return;
-    if (this.reschedule) { this.reschedule = false; this.schedule(now); }
+    if (!this.boss) return;
+    // 큰 피해 구간이 끝남: 다음 단계
+    if (this.afterBurst && now >= this.burstUntil) {
+      this.afterBurst = false;
+      this.burstUntil = 0;
+      this.schedule(now);
+      this.host.emit('coop:state', this.state());
+    }
+    this.tickRage(now);
+    this.tickSlams(now);
+    this.tickSafe(now);
+    if (this.shield) { if (now >= this.shield.until && !this.rageAt) this.startRage(now); return; }
+    this.spawnOrbs(now);
+    if (this.inBurst(now)) return;
     if (this.next.laser && now >= this.next.laser) {
       const L = C.levels[this.level];
       this.host.fireLaser(rollVolley(this.rand, this.host.laserHalf(), L.volleyOdds).lines, now + L.laserWarnMs);
@@ -95,109 +119,210 @@ export class CoopRun {
       this.spawnThreats(now);
       this.next.threat = now + attackGap('threat', this.level, this.phase, this.rand);
     }
-    if (this.next.hazard && now >= this.next.hazard) {
-      const hz = C.levels[this.level].hazards as readonly PatternId[];
-      const id = hz[Math.floor(this.rand() * hz.length)];
-      this.host.setPattern(makePattern(id, now + RULES.patterns.warnMs, this.rand));
-      this.next.hazard = now + attackGap('hazard', this.level, this.phase, this.rand);
+    if (this.next.slam && now >= this.next.slam) {
+      this.startSlam(now);
+      this.next.slam = now + attackGap('slam', this.level, this.phase, this.rand);
+    }
+    if (this.next.safe && now >= this.next.safe && !this.safe) {
+      this.safe = rollSafe(C.levels[this.level].safeCount, now + C.safe.warnMs, this.rand);
+      this.host.emit('coop:safe', this.safe);
+      this.next.safe = now + attackGap('safe', this.level, this.phase, this.rand);
+    }
+    if (this.next.map && now >= this.next.map) {
+      const ids = (C.phasePatterns as Record<number, readonly string[]>)[this.phase] as readonly PatternId[] | undefined;
+      if (ids?.length) this.host.setPattern(makePattern(ids[Math.floor(this.rand() * ids.length)]!, now + RULES.patterns.warnMs, this.rand));
+      this.next.map = now + attackGap('map', this.level, this.phase, this.rand);
     }
   }
 
-  /** 공격 원: 보스 자리에서 아래쪽 반원으로 고르게 퍼진다. 표적은 살아 있는 사람 중 돌아가며 */
+  /** 보스가 원을 뿜는다: 사람·봇 한 명당 간격마다 그 색 원(가끔 노란 원). 탈락한 사람 색은 없음 */
+  private spawnOrbs(now: number) {
+    if (!this.boss) return;
+    const gap = this.inBurst(now) ? C.burst.orbGapMs : this.orbGap();
+    const from = circlePos(this.boss, now);
+    for (const p of this.host.players()) {
+      if (p.outAt) continue;
+      let at = this.nextOrb.get(p.id) ?? now;
+      if (at > now + gap) at = now + gap * this.rand(); // 큰 피해 구간이 시작되면 바로 촘촘하게
+      while (at <= now) {
+        const kind = this.rand() * 100 < C.orb.yellowPct ? 'y' as const : p.color;
+        this.host.addCircle(makeOrb(this.host.nextId(), at, from, this.rand() * Math.PI * 2, kind, C.orb.speed, this.rand));
+        at += gap;
+      }
+      this.nextOrb.set(p.id, at);
+    }
+  }
+
+  /** 추적 원: 보스 자리에서 아래쪽 반원으로 고르게 퍼진다. 표적은 살아 있는 사람 중 돌아가며 */
   private spawnThreats(now: number) {
     const alive = this.alive();
     if (!alive.length || !this.boss) return;
     const from = circlePos(this.boss, now);
     const n = C.levels[this.level].threatCount;
-    const sp = threatSpeed(this.level, this.cards);
+    const sp = threatSpeed(this.level);
     for (let i = 0; i < n; i++) {
       const a = Math.PI * (0.12 + 0.76 * ((i + 0.5) / n)) + (this.rand() - 0.5) * 0.15;
-      const target = alive[this.targetTurn++ % alive.length].id;
+      const target = alive[this.targetTurn++ % alive.length]!.id;
       this.host.addCircle(makeThreat(this.host.nextId(), now, from, a, sp, target));
     }
   }
 
-  /** 레이드 보스 타격. 점수 = 넣은 피해(반올림) × RULES.boss.hit */
-  /** killed면 호출 쪽이 이벤트를 보낸 뒤 판을 끝낸다(승리) */
-  hitRaid(p: PlayerState, c: Circle, now: number): { dealt: number; gained: number; killed: boolean } {
-    if (this.shifting || now < this.invulnUntil || p.outAt) return { dealt: 0, gained: 0, killed: false };
-    const fever = this.host.feverOn(p, now);
-    const { dealt, crossed } = applyRaidDamage(c, raidDamage(p, this.cards, fever), this.phase);
-    const gained = Math.round(dealt) * RULES.boss.hit;
-    if (gained) { p.score += gained; addSrc(p, 'boss', gained, { fever }); }
-    if (dealt > 0) p.stats.bossHits++;
-    const killed = crossed && (c.hp ?? 0) <= 0;
+  /** 잡은 원(내 색·노랑) → 보스 피해. 보호막이면 0. killed면 호출 쪽이 판을 끝낸다 */
+  catchOrb(p: PlayerState, c: Circle, now: number): { dmg: number; gained: number; killed: boolean } {
+    const boss = this.boss;
+    if (!boss || this.shield || p.outAt) return { dmg: 0, gained: 0, killed: false };
+    const burst = this.inBurst(now);
+    const { dealt, crossed } = applyRaidDamage(boss, orbDamage(p, c.kind, burst), this.phase);
+    const s = this.stat(p.id);
+    s.dmg += dealt;
+    if (burst) s.burstDmg += dealt;
+    const gained = Math.round(dealt * RULES.boss.hit);
+    if (gained) { p.score += gained; addSrc(p, 'boss', gained); }
+    if (dealt > 0) {
+      const q = circlePos(c, now);
+      this.host.emit('coop:orb', { by: p.id, x: q.x, y: q.y, dmg: dealt });
+    }
+    const killed = crossed && (boss.hp ?? 0) <= 0;
     if (killed) p.stats.bossKills++;
-    else if (crossed) this.beginShift(now);
-    return { dealt, gained, killed };
+    else if (crossed) this.beginShield(now);
+    else this.host.emit('coop:state', this.state());
+    return { dmg: dealt, gained, killed };
   }
 
-  /** 단계 전환 중이거나 투표 중 (일시정지 요청 무시) */
-  busy() { return this.shifting || !!this.vote; }
-
-  /** 사람이 나가거나 끊겼을 때: 남은 사람이 모두 투표했으면 마감 */
-  recheck() {
-    if (!this.alive().length) { this.host.finish(false); return; }
-    const v = this.vote;
-    if (v && !this.humans().some((x) => x.connected && !v.votes.has(x.id)) && v.votes.size > 0) this.closeVote(Date.now());
-  }
-
-  /** 단계 전환: 공격을 모두 지우고, 보스 무적 뒤 투표 */
-  private beginShift(now: number) {
-    this.shifting = true;
-    this.invulnUntil = now + C.phaseInvulnMs;
+  /** 보호막: 보스 무적, 원·패턴 멈춤, 살아 있고 연결된 사람·봇마다 자기 색 수정 */
+  private beginShield(now: number) {
+    const no = (this.phase === 1 ? 0 : 1) as 0 | 1;
+    this.shield = { from: now, until: now + C.levels[this.level].crystalSec * 1000, no };
+    this.burstUntil = 0;
     this.host.clearLasers();
     this.host.removeCircles((x) => x.kind === 'threat');
-    this.host.setPattern(null);
-    this.host.emit('coop:state', this.state());
-    this.later(C.phaseInvulnMs, () => this.openVote(Date.now()));
-  }
-
-  private openVote(now: number) {
-    this.vote = { options: drawCards(this.rand), until: now + C.voteSec * 1000, votes: new Map() };
-    this.host.pauseForVote(now);
-    this.host.emit('coop:vote', this.voteState()!);
-    this.host.emit('coop:state', this.state());
-    this.later(C.voteSec * 1000, () => this.closeVote(Date.now()));
-  }
-
-  pick(playerId: string, card: CoopCardId) {
-    const v = this.vote;
-    const p = this.humans().find((x) => x.id === playerId);
-    if (!v || !p || !v.options.includes(card)) return;
-    v.votes.set(playerId, card);
-    this.host.emit('coop:votes', Object.fromEntries(v.votes));
-    // 연결된 사람이 모두 골랐으면 바로 마감
-    const waiting = this.humans().filter((x) => x.connected && !v.votes.has(x.id));
-    if (!waiting.length) this.closeVote(Date.now());
-  }
-
-  /** 투표 마감: 카드 적용, 다음 단계, 결과를 잠깐 보여 준 뒤 재개 */
-  closeVote(_now: number) {
-    const v = this.vote;
-    if (!v) return;
-    for (const t of this.timers) clearTimeout(t);
-    this.timers.clear();
-    const card = tallyVotes(v.options, v.votes, this.rand);
-    this.vote = null;
-    this.cards.push(card);
-    if (card === 'heal') for (const p of this.alive()) p.lives = Math.min(C.maxLives, p.lives + 1);
-    this.phase = Math.min(3, this.phase + 1) as CoopPhase;
-    this.host.emit('coop:card', { card, cards: [...this.cards] });
-    this.host.emit('coop:state', this.state());
-    this.host.emitPlayers();
-    this.later(C.voteResultMs, () => {
-      this.shifting = false;
-      this.reschedule = true;
-      this.host.resumeAfterVote();
+    this.clearSlamsSafe();
+    const owners = this.host.players().filter((p) => !p.outAt && (p.bot || p.connected));
+    const spots = placeCrystals(owners.length, this.rand);
+    const hits = crystalHits(this.level, no);
+    owners.forEach((p, i) => {
+      const at = spots[i] ?? { x: 120 + i * 150, y: 980 };
+      this.host.addCircle(makeCrystal(this.host.nextId(), now, at, p.id, p.color, hits));
     });
+    this.host.emit('coop:state', this.state());
+    if (!owners.length) this.breakShield(now);
   }
 
-  /** 공격 원 터뜨림: 점수 threatPoints (점수 출처 threat) */
+  /** 수정 누르기: 주인만, 보호막 중에만. 깨면 true */
+  hitCrystal(p: PlayerState, c: Circle, now: number): boolean {
+    if (!this.shield || c.kind !== 'crystal' || c.target !== p.id || p.outAt) return false;
+    c.hp = Math.max(0, (c.hp ?? 1) - 1);
+    if (c.hp > 0) { this.host.emit('coop:state', this.state()); return false; }
+    this.host.removeCircles((x) => x.id === c.id);
+    this.stat(p.id).crystals++;
+    this.afterCrystalGone(now);
+    return true;
+  }
+
+  /** 수정이 사라졌을 때: 남은 수정이 없으면 보호막 풀림 */
+  private crystals: () => Circle[] = () => [];
+  /** 방이 지금 판의 수정 목록을 알려 준다 */
+  setCrystalSource(fn: () => Circle[]) { this.crystals = fn; }
+  private afterCrystalGone(now: number) {
+    if (this.shield && !this.crystals().length) this.breakShield(now);
+    else this.host.emit('coop:state', this.state());
+  }
+
+  /** 보호막이 풀림: 큰 피해 구간 (패턴 멈춤, 원이 촘촘), 끝나면 다음 단계 */
+  private breakShield(now: number) {
+    if (!this.shield) return;
+    this.breaks.push(now - this.shield.from);
+    this.shield = null;
+    this.rageAt = 0;
+    // 큰 피해는 다음 단계 몫이다 (그 단계의 아래 경계까지만 깎인다). 패턴은 큰 피해 구간이 끝난 뒤 다음 단계 것으로
+    this.phase = Math.min(3, this.phase + 1) as CoopPhase;
+    this.burstUntil = now + C.burst.ms;
+    this.afterBurst = true;
+    this.host.setPattern(null);
+    this.host.clearLasers();
+    this.host.emit('coop:state', this.state());
+  }
+
+  /** 제한 시간 초과: 경고 뒤 분노 공격 */
+  private startRage(now: number) {
+    this.rageAt = now + C.rageWarnMs;
+    this.host.emit('coop:state', this.state());
+  }
+
+  private tickRage(now: number) {
+    if (!this.rageAt || now < this.rageAt || !this.shield) return;
+    this.rageAt = 0;
+    this.breaks.push('rage');
+    for (const p of this.alive()) this.damage(p, 'rage', now);
+    if (!this.boss || !this.shield) return; // 판이 끝났거나 탈락으로 보호막이 풀림
+    // 남은 수정은 처음 횟수로, 제한 시간 다시
+    const hits = crystalHits(this.level, this.shield.no);
+    for (const c of this.crystals()) c.hp = c.maxHp = hits;
+    this.shield.until = now + C.levels[this.level].crystalSec * 1000;
+    this.host.emit('coop:state', this.state());
+  }
+
+  /** 내려찍기: 살아 있는 사람마다 지금 커서 자리 */
+  private startSlam(now: number) {
+    const at = now + C.slam.warnMs;
+    const made: Slam[] = [];
+    for (const p of this.alive()) {
+      const q = this.host.cursorOf(p.id);
+      if (!q) continue;
+      made.push({ id: this.host.nextId(), owner: p.id, x: q.x, y: q.y, r: C.slam.r, at });
+    }
+    if (!made.length) return;
+    this.slams.push(...made);
+    this.host.emit('coop:slam', made);
+  }
+
+  private tickSlams(now: number) {
+    const due = this.slams.filter((s) => now >= s.at);
+    if (!due.length) return;
+    this.slams = this.slams.filter((s) => now < s.at);
+    for (const s of due) {
+      for (const p of this.alive()) {
+        const q = this.host.cursorOf(p.id);
+        if (q && Math.hypot(q.x - s.x, q.y - s.y) <= s.r && this.damage(p, 'slam', now)) this.host.stun(p, now);
+      }
+    }
+  }
+
+  private tickSafe(now: number) {
+    const s = this.safe;
+    if (!s || now < s.at) return;
+    this.safe = null;
+    for (const p of this.alive()) {
+      const q = this.host.cursorOf(p.id);
+      if (q && !inSafe(q, s, now) && this.damage(p, 'safe', now)) this.host.stun(p, now);
+    }
+    this.host.emit('coop:safe', null);
+  }
+
+  private clearSlamsSafe() {
+    if (this.slams.length) { this.slams = []; this.host.emit('coop:slam', []); }
+    if (this.safe) { this.safe = null; this.host.emit('coop:safe', null); }
+  }
+
+  /** 사람이 나가거나 끊겼을 때: 모두 탈락이면 패배, 보호막 중이면 그 사람 수정을 치운다 */
+  recheck() {
+    if (!this.alive().length) { this.host.finish(false); return; }
+    if (!this.shield) return;
+    const gone = new Set(this.host.players().filter((p) => p.outAt || (!p.bot && !p.connected)).map((p) => p.id));
+    const mine = this.crystals().filter((c) => c.target && (gone.has(c.target) || !this.host.players().some((p) => p.id === c.target)));
+    if (mine.length) {
+      const ids = new Set(mine.map((c) => c.id));
+      this.host.removeCircles((x) => ids.has(x.id));
+      this.afterCrystalGone(Date.now());
+    }
+  }
+
+  /** 추적 원 터뜨림: 점수 threatPoints (점수 출처 threat) */
   popThreat(p: PlayerState, _c: Circle, _now: number): number {
     const g = C.threatPoints;
     p.score += g;
     addSrc(p, 'threat', g);
+    this.stat(p.id).threats++;
     return g;
   }
 
@@ -205,11 +330,16 @@ export class CoopRun {
   damage(p: PlayerState, by: CoopHitBy, now: number, circleId?: number): boolean {
     if (p.bot || p.outAt || now < p.immuneUntil || p.lives <= 0) return false;
     p.lives--;
-    p.immuneUntil = now + immuneMs(this.cards);
+    p.immuneUntil = now + immuneMs();
     this.host.emit('coop:hit', { playerId: p.id, by, lives: p.lives, immuneUntil: p.immuneUntil, ...(circleId !== undefined ? { circleId } : {}) });
     if (p.lives <= 0) {
       this.host.eliminate(p, now);
       if (!this.alive().length) { this.host.finish(false); return true; }
+      // 보호막 중이면 그 사람 수정은 깬 것으로 친다
+      if (this.shield) {
+        const ids = new Set(this.crystals().filter((c) => c.target === p.id).map((c) => c.id));
+        if (ids.size) { this.host.removeCircles((x) => ids.has(x.id)); this.afterCrystalGone(now); }
+      }
     }
     this.host.emitPlayers();
     return true;
@@ -222,22 +352,22 @@ export class CoopRun {
 
   /** 일시정지가 끝나 시각을 민다 (delta ms) */
   shift(delta: number) {
-    for (const k of ['laser', 'threat', 'hazard'] as const) if (this.next[k]) this.next[k] += delta;
-    if (this.invulnUntil) this.invulnUntil += delta;
-  }
-
-  /** 빠른 충전 카드: 피버 게이지 충전 배율 */
-  feverGainMult() { return 1 + C.chargePct * this.cards.filter((c) => c === 'charge').length; }
-
-  private voteState(): CoopVote | null {
-    const v = this.vote;
-    return v ? { options: [...v.options], until: v.until, votes: Object.fromEntries(v.votes) } : null;
+    for (const k of Object.keys(this.next) as Pattern[]) if (this.next[k]) this.next[k] += delta;
+    for (const [id, t] of this.nextOrb) this.nextOrb.set(id, t + delta);
+    if (this.shield) { this.shield.until += delta; this.shield.from += delta; }
+    if (this.burstUntil) this.burstUntil += delta;
+    if (this.rageAt) this.rageAt += delta;
+    for (const s of this.slams) s.at += delta;
+    if (this.safe) this.safe.at += delta;
+    if (this.slams.length) this.host.emit('coop:slam', this.slams);
+    if (this.safe) this.host.emit('coop:safe', this.safe);
+    this.host.emit('coop:state', this.state());
   }
 
   state(): CoopState {
     return {
       level: this.level, phase: this.phase, bossId: this.boss?.id ?? -1, hp: this.boss?.hp ?? 0, maxHp: this.boss?.maxHp ?? 0,
-      cards: [...this.cards], voting: this.voteState(),
+      shield: this.shield ? { until: this.shield.until, no: this.shield.no } : null, burstUntil: this.burstUntil, rageAt: this.rageAt,
     };
   }
 
@@ -245,16 +375,17 @@ export class CoopRun {
     const hs = this.humans();
     const ratio = hs.length ? hs.filter((p) => !p.outAt).length / hs.length : 0;
     const timeMs = Math.max(0, Math.min(C.timeSec * 1000, now - startAt));
+    const players: Record<string, CoopPlayerResult> = {};
+    for (const p of this.host.players()) players[p.id] = { ...this.stat(p.id) };
     return {
       win, stars: coopStars(win, ratio, C.timeSec * 1000 - timeMs), timeMs,
       bossHpPct: this.boss ? Math.round(((this.boss.hp ?? 0) / (this.boss.maxHp || 1)) * 100) : 0,
-      phase: this.phase, cards: [...this.cards],
+      phase: this.phase, maxHp: this.boss?.maxHp ?? 0, players, breaks: [...this.breaks],
     };
   }
 
   dispose() {
-    for (const t of this.timers) clearTimeout(t);
-    this.timers.clear();
-    this.vote = null;
+    this.slams = [];
+    this.safe = null;
   }
 }

@@ -50,41 +50,49 @@ export const RULES = {
    * 난이도(levels)는 보스 공격 세기만 바꾼다. 생명·시간·보스 체력은 공통
    */
   coop: {
-    timeSec: 180, lives: 3, maxLives: 5, immuneMs: 2_000, toughMs: 1_000,
-    /** 단계 경계 (체력 비율) */
+    timeSec: 180, lives: 3, immuneMs: 2_000,
+    /** 단계 경계 (체력 비율). 경계에 닿으면 보호막 */
     phaseAt: [0.67, 0.33],
-    /** 단계가 넘어가는 순간 보스 무적, 그 뒤 투표(초), 결과 표시 */
-    phaseInvulnMs: 1_000, voteSec: 30, voteResultMs: 1_000,
     /** 레이드 보스: 반지름, 높이(y), 좌우 한 번 왕복 시간, 체력 = hpBase × (사람 + 봇 × botWeight) */
-    bossR: 145, bossY: 190, swingMs: 9_000, hpBase: 300, botWeight: 0.5,
-    /** 피해: 피버 ×feverDmg(+달아오름마다 heatStep), 콤보 comboStep마다 +comboPer (상한 comboCap + 연속 공격마다 chainCap) */
-    feverDmg: 2, heatStep: 0.5, comboStep: 10, comboPer: 0.1, comboCap: 0.5, chainCap: 0.25,
-    powerPct: 0.25, chargePct: 0.3, slowPct: 0.25,
+    bossR: 145, bossY: 190, swingMs: 9_000, hpBase: 150, botWeight: 0.5,
+    /** 보스가 뿜는 원: 사람·봇 한 명당 간격(ms), 속도, 노란 원 확률(%), 원 하나 피해(노랑은 yellowDmg) */
+    orb: { gapMs: 900, speed: 230, yellowPct: 20, dmg: 1, yellowDmg: 0.7 },
+    /** 피해 콤보 보너스: comboStep마다 +comboPer, 상한 comboCap */
+    comboStep: 10, comboPer: 0.1, comboCap: 0.5,
+    /** 큰 피해 구간: 길이, 피해 배율, 그동안 원 간격 */
+    burst: { ms: 5_000, mult: 2, orbGapMs: 400 },
+    /** 수정: 반지름, 서로 떨어진 거리 */
+    crystal: { r: 46, minGap: 140 },
+    /** 수정을 다 못 깼을 때 분노 공격 경고 */
+    rageWarnMs: 2_000,
+    /** 내려찍기: 경고 시간, 반지름 */
+    slam: { warnMs: 1_500, r: 110 },
+    /** 안전지대: 경고 시간, 시작·끝 반지름, 경고 동안 옮겨 가는 최대 거리 */
+    safe: { warnMs: 3_500, r0: 230, r1: 150, move: 180 },
+    /** 단계마다 쓰는 맵 패턴 (1단계는 없음) */
+    phasePatterns: { 2: ['spikes', 'ice'], 3: ['ring', 'vortex', 'bar'] },
     threatR: 30, threatPoints: 3,
     /** 별: 살아남은 사람 비율 ≥ alive 이고 남은 시간 ≥ leftSec */
     stars: { three: { alive: 1, leftSec: 60 }, two: { alive: 0.5, leftSec: 0 } },
-    cards: {
-      power: { name: '강타', desc: '보스 피해 +25%' },
-      heat: { name: '달아오름', desc: '피버 중 보스 피해 배율 +0.5' },
-      chain: { name: '연속 공격', desc: '콤보 보너스 상한 +25%' },
-      charge: { name: '빠른 충전', desc: '피버 게이지 충전 +30%' },
-      heal: { name: '응급 처치', desc: '살아 있는 사람 생명 +1 (최대 5)' },
-      slow: { name: '느린 공격 원', desc: '공격 원 속도 −25%' },
-      tough: { name: '단단한 몸', desc: '맞은 뒤 무적 +1초' },
-    },
-    /** 난이도: laserWidth는 화면 높이 %(RoomRules.laserWidth와 같은 단위), 간격은 ms, 3단계는 간격 × phase3Mult */
+    /**
+     * 난이도: laserWidth는 화면 높이 %(RoomRules.laserWidth와 같은 단위), 간격은 ms, 3단계는 간격 × phase3Mult.
+     * crystalHits: [첫 보호막, 두 번째 보호막] 수정 횟수, crystalSec: 보호막 제한 시간(초), orbMult: 원 간격 배율
+     */
     levels: {
       easy: {
         laserEvery: [9_000, 12_000], laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
-        threatEvery: 6_000, threatCount: 2, threatSpeed: 160, hazardEvery: 20_000, hazards: ['spikes'], phase3Mult: 0.85,
+        threatEvery: 6_000, threatCount: 2, threatSpeed: 160, phase3Mult: 0.85,
+        crystalHits: [6, 9], crystalSec: 15, slamEvery: 11_000, safeEvery: 22_000, safeCount: 2, mapEvery: 20_000, orbMult: 1.1,
       },
       normal: {
         laserEvery: [7_000, 10_000], laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
-        threatEvery: 5_000, threatCount: 3, threatSpeed: 200, hazardEvery: 16_000, hazards: ['spikes', 'ring'], phase3Mult: 0.75,
+        threatEvery: 5_000, threatCount: 3, threatSpeed: 200, phase3Mult: 0.75,
+        crystalHits: [8, 12], crystalSec: 12, slamEvery: 9_000, safeEvery: 18_000, safeCount: 2, mapEvery: 16_000, orbMult: 1,
       },
       hard: {
         laserEvery: [5_000, 7_500], laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
-        threatEvery: 4_000, threatCount: 4, threatSpeed: 250, hazardEvery: 12_000, hazards: ['spikes', 'ring'], phase3Mult: 0.65,
+        threatEvery: 4_000, threatCount: 4, threatSpeed: 250, phase3Mult: 0.65,
+        crystalHits: [10, 15], crystalSec: 10, slamEvery: 7_000, safeEvery: 14_000, safeCount: 1, mapEvery: 12_000, orbMult: 0.9,
       },
     },
   },
@@ -329,8 +337,6 @@ export interface RoomRules {
 
 export type CoopLevel = 'easy' | 'normal' | 'hard';
 export const COOP_LEVELS: readonly CoopLevel[] = ['easy', 'normal', 'hard'];
-export type CoopCardId = keyof typeof RULES.coop.cards;
-export const COOP_CARD_IDS = Object.keys(RULES.coop.cards) as CoopCardId[];
 
 /** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
 export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'team', 'survival', 'coop', 'coopLevel'] as const;
@@ -478,7 +484,7 @@ export function toGameRules(r: RoomRules): GameRules {
   // 협력전: 판 시간 고정, 견제·표적·방해·일반 보스·일반 레이저·맵 패턴·꼴찌 보정 끔, 레이저 두께는 난이도
   return {
     ...G, roundMs: RULES.coop.timeSec * 1000, arcade: false, team: false, survival: false, stealPenalty: false, markMs: 0,
-    sabotage: false, boss: false, laser: false, mapChance: 0, comeback: false, eventChance: 0, themeChance: 0,
+    sabotage: false, boss: false, laser: false, mapChance: 0, comeback: false, eventChance: 0, themeChance: 0, feverGain: 0,
     laserHalf: (RULES.coop.levels[r.coopLevel].laserWidth / 100) * FIELD.h / 2,
   };
 }
@@ -520,7 +526,7 @@ export type ColorIndex = 0 | 1 | 2 | 3;
 export type BossType = 'normal' | 'guard' | 'rage' | 'runner' | 'raid';
 /** 아케이드 라운드 테마 */
 export type ThemeId = 'goldRush' | 'bossRush' | 'reverse' | 'rainbowRain' | 'itemRush' | 'allYellow';
-export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold' | 'threat';
+export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold' | 'threat' | 'crystal';
 
 export interface Circle {
   id: number;
@@ -545,8 +551,10 @@ export interface Circle {
   rev?: boolean;
   /** 출발점 (없으면 필드 가운데). 협력전 공격 원은 보스 자리에서 출발 */
   from?: { x: number; y: number };
-  /** 협력전 공격 원: 놓치면 생명이 줄어드는 사람 */
+  /** 협력전 공격 원: 놓치면 생명이 줄어드는 사람. 협력전 수정: 주인 */
   target?: string;
+  /** 협력전 수정: 주인의 색 */
+  colorOf?: ColorIndex;
 }
 
 /** 결과 화면 칭호 계산용 기록 (한 판 단위) */

@@ -44,7 +44,7 @@ const SCORE_TIER: Record<ScoreTier, { col: string; size: number }> = {
 /** 보스 처치 배너 높이: 판 중앙에서 220 위 (화면 문구와 안 겹치게) */
 const BANNER_Y = FIELD.h / 2 - 220, BANNER_LIFE = 1.2;
 
-type BasicKind = Exclude<CircleKind, 'boss' | 'item' | 'threat'>;
+type BasicKind = Exclude<CircleKind, 'boss' | 'item' | 'threat' | 'crystal'>;
 const GOLD_TRAIL = [40, 80, 120];
 
 type Fx =
@@ -314,6 +314,7 @@ export class Renderer {
       if (c.kind === 'gold' && !this.warp) this.drawGoldTrail(c, s.now);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
       else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, now, s);
+      else if (c.kind === 'crystal') this.drawCrystal(c, p.x, p.y, r, s);
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
     ctx.globalAlpha = base;
@@ -729,6 +730,25 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** 협력전 수정: 주인 색 육각 결정, 남은 횟수, 금 (내 수정은 굵은 테두리) */
+  private drawCrystal(c: Circle, x: number, y: number, r: number, s: DrawState) {
+    const ctx = this.ctx, col = c.colorOf ?? 0, mine = c.target === s.meId;
+    const left = (c.hp ?? 0) / (c.maxHp || 1);
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = COLORS[col].hex; ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) { const a = Math.PI / 6 + (i / 6) * Math.PI * 2; if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1; ctx.lineWidth = mine ? 6 : 3; ctx.strokeStyle = mine ? '#fff' : 'rgba(255,255,255,.6)'; ctx.stroke();
+    // 금: 깎인 만큼 선이 늘어난다
+    const cracks = Math.round((1 - left) * 6);
+    ctx.strokeStyle = 'rgba(16,18,42,.75)'; ctx.lineWidth = 2;
+    for (let i = 0; i < cracks; i++) { const a = (i / 6) * Math.PI * 2 + 0.4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9); ctx.stroke(); }
+    ctx.fillStyle = '#fff'; ctx.font = `400 ${Math.round(r * 0.7)}px Jua, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(c.hp ?? 0), 0, 2);
+    ctx.restore();
+  }
+
   /** 멈춘 원 위의 시계 바늘 */
   private drawClock(p: { x: number; y: number }, r: number, frameNow: number) {
     const ctx = this.ctx, a = frameNow / 400;
@@ -798,7 +818,7 @@ export class Renderer {
 }
 
 /** 점수판, 버튼 등에 쓰는 작은 SVG 아이콘 */
-export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat'>, size = 22) {
+export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat' | 'crystal'>, size = 22) {
   const s = size, h = s / 2;
   if (color === 'boss') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h - 1}" fill="#ffc23a" stroke="#fff" stroke-width="1.5"/><path d="M${s * .28} ${s * .62}V${s * .36}L${s * .39} ${s * .5}L${h} ${s * .3}L${s * .61} ${s * .5}L${s * .72} ${s * .36}V${s * .62}Z" fill="#502d00" fill-opacity=".6"/></svg>`;
   if (color === 'rainbow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><defs><linearGradient id="rg${s}" x1="0" x2="1"><stop offset="0" stop-color="#ff5d73"/><stop offset=".5" stop-color="#ffd43b"/><stop offset="1" stop-color="#4dabf7"/></linearGradient></defs><circle cx="${h}" cy="${h}" r="${h - 1}" fill="url(#rg${s})"/></svg>`;

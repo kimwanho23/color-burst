@@ -30,7 +30,7 @@ export function gameRecord(g: GameInfo) {
     team: rules.team,
     survival: rules.survival,
     coop: !!rules.coop,
-    ...(g.coop ? { coopResult: { level: rules.coopLevel, result: g.coop.win ? 'win' : 'lose', phase: g.coop.phase, bossHpPct: g.coop.bossHpPct, timeMs: g.coop.timeMs, cards: g.coop.cards } } : {}),
+    ...(g.coop ? { coopResult: { level: rules.coopLevel, result: g.coop.win ? 'win' : 'lose', phase: g.coop.phase, bossHpPct: g.coop.bossHpPct, timeMs: g.coop.timeMs, breaks: g.coop.breaks, damage: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, Math.round(r.dmg * 10) / 10])) } } : {}),
     solo: g.solo,
     /** 아케이드는 라운드 하나 길이 × rounds */
     roundSec: Math.round(g.roundMs / 1000),
