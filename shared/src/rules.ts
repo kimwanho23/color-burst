@@ -323,6 +323,8 @@ export interface RoomRules {
   mapPct: number;
   /** 레이저 두께 (화면 높이 %) */
   laserWidth: number;
+  /** 레이저 빈도 배율 (0.5 드물게 · 1 보통 · 2 자주). 카오스는 따로 */
+  laserFreq: number;
   /** 원 크기 배율 (색 원·노랑·무지개) */
   circleScale: number;
   /** 팀전 2:2: 같은 팀 색 = 내 색, 팀 점수 합으로 승패 */
@@ -356,6 +358,7 @@ export const RULE_CHOICES = {
   themePct: [0, 15, 30],
   mapPct: [0, 20, 35, 50, 80, 100],
   laserWidth: [15, 22, 30],
+  laserFreq: [0.5, 1, 2],
   circleScale: [1, 0.75],
 } as const satisfies Partial<Record<keyof RoomRules, readonly number[]>>;
 
@@ -365,7 +368,7 @@ export const DEFAULT_RULES: RoomRules = {
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
   mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, sabotage: true, chaos: false,
-  eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, circleScale: 1, team: false, survival: false,
+  eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, laserFreq: 1, circleScale: 1, team: false, survival: false,
   coop: false, coopLevel: 'normal',
 };
 
@@ -469,6 +472,8 @@ export interface GameRules {
   themeChance: number;
   mapChance: number;
   /** 레이저 맞는 거리(중심선에서, 빔 폭의 절반) */
+  /** 레이저 빈도 배율 */
+  laserFreq: number;
   laserHalf: number;
   circleScale: number;
   /** 팀전: 같은 팀 색 = 내 색, 견제는 상대 팀만 */
@@ -515,6 +520,7 @@ function baseGameRules(r: RoomRules): GameRules {
     themeChance: r.themePct / 100,
     mapChance: r.mapPct / 100,
     laserHalf: ((r.laserWidth ?? 30) / 100) * FIELD.h / 2,
+    laserFreq: r.laserFreq ?? 1,
     circleScale: r.circleScale ?? 1,
     coop: !!r.coop,
     coopLevel: r.coopLevel ?? 'normal',

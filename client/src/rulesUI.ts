@@ -19,6 +19,7 @@ const NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => string }[] =
   { key: 'markSec', label: '표적 시간', fmt: (v) => (v ? `${v}초` : '없음') },
   { key: 'mapPct', label: '맵 패턴', fmt: (v) => `${MAP_LABEL[v] ?? v} (${v}%)` },
   { key: 'laserWidth', label: '레이저 두께', fmt: (v) => (v <= 15 ? '얇게' : v >= 30 ? '굵게' : '보통') },
+  { key: 'laserFreq', label: '레이저 빈도', fmt: (v) => (v < 1 ? '드물게' : v > 1 ? '자주' : '보통') },
   { key: 'circleScale', label: '원 크기', fmt: (v) => (v < 1 ? '작게' : '보통') },
 ];
 /** 아케이드에서만 보이는 설정 */
@@ -37,7 +38,7 @@ const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'sabotage', label: '방해 아이템 (감도·반대·시야·저격)' },
 ];
 /** 협력전에서 쓰지 않는 설정 (고급 설정에서 숨김) */
-const COOP_OFF = new Set<string>(['roundSec', 'markSec', 'mapPct', 'laserWidth', 'boss', 'stealPenalty', 'comeback', 'laser', 'sabotage']);
+const COOP_OFF = new Set<string>(['roundSec', 'markSec', 'mapPct', 'laserWidth', 'laserFreq', 'boss', 'stealPenalty', 'comeback', 'laser', 'sabotage']);
 const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string]> = {
   easy: ['이지', '레이저가 얇고 공격이 느려요'],
   normal: ['노말', '보통 세기의 공격'],

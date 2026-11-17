@@ -1112,7 +1112,7 @@ export class Room {
     this.freezeUntil = 0;
     this.nextWaveAt = nextWaveIn(Math.random, this.G.chaos);
     this.lasers = [];
-    this.nextLaserAt = nextLaserIn(Math.random, this.G.chaos);
+    this.nextLaserAt = nextLaserIn(Math.random, this.G.chaos, this.G.laserFreq);
     this.clearPattern();
     this.pulls.clear();
     this.pullLog.clear();
@@ -1443,7 +1443,7 @@ export class Room {
       const v = { lines: rollVolley(Math.random, this.G.laserHalf).lines, at: now + L.warnMs };
       this.lasers.push({ ...v, hit: new Set() });
       this.io.to(this.code).emit('laser:warn', v);
-      this.nextLaserAt = el + nextLaserIn(Math.random, this.G.chaos);
+      this.nextLaserAt = el + nextLaserIn(Math.random, this.G.chaos, this.G.laserFreq);
     }
     this.lasers = this.lasers.filter((l) => now < l.at + L.fireMs);
     let stunned = false;

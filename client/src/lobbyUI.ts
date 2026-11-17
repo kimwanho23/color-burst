@@ -59,7 +59,8 @@ export function rulesChips(r: RoomRules): RuleChip[] {
     chips.push({ icon: 'miss', text: '빈 곳 감점', off: !r.missPenalty });
     chips.push({ icon: 'boss', text: '보스', off: !r.boss });
     chips.push({ icon: 'item', text: '아이템', off: !r.items });
-    chips.push({ icon: 'laser', text: '레이저', off: !r.laser });
+    const freq = (r.laserFreq ?? 1) < 1 ? '드물게' : (r.laserFreq ?? 1) > 1 ? '자주' : '보통';
+    chips.push(r.laser ? { icon: 'laser', text: `레이저 · ${r.chaos ? '카오스' : freq}` } : { icon: 'laser', text: '레이저', off: true });
     chips.push(r.mapPct > 0 ? { icon: 'map', text: `맵 패턴 ${r.mapPct}%` } : { icon: 'map', text: '맵 패턴', off: true });
     chips.push(r.rainbowPct > 0 ? { icon: 'rainbow', text: `무지개 ${r.rainbowPct}%` } : { icon: 'rainbow', text: '무지개', off: true });
     chips.push({ icon: 'up', text: '꼴찌 보정', off: !r.comeback });
