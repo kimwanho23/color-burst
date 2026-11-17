@@ -11,7 +11,7 @@ import { closeGuide, openGuide } from './guide.ts';
 import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules, scoreTable } from './rulesUI.ts';
-import { lobbySlots, rulesSummary, type Slot } from './lobbyUI.ts';
+import { lobbySlots, roomLink, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, heartsHtml, renderCoopHud, renderVote, tickVote } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
@@ -75,6 +75,7 @@ socket.on('connect', async () => {
   await syncTime();
   // 방에 있던 중이면 같은 키로 자동 복귀
   const code = store('cb-room');
+  if (!code) joinFromLink();
   if (code) {
     socket.emit('room:join', { code, name: getName(), key: KEY }, (r) => {
       // 방 상태가 답보다 먼저 올 수 있어서, 내 id를 안 뒤 대기실·점수판을 다시 그린다 (안 그러면 내 칸이 남의 칸처럼 보임)
@@ -253,13 +254,15 @@ let slotPanel: { kind: 'color' } | { kind: 'member'; id: string } | null = null;
 function show(id: 'home' | 'lobby' | 'result' | null) {
   for (const s of ['home', 'lobby', 'result']) $(s).hidden = s !== id;
   // 대기실을 떠나면 규칙 창·자리 아래 칸도 닫는다
-  if (id !== 'lobby') { $('rulesModal').hidden = true; slotPanel = null; }
+  if (id !== 'lobby') { $('rulesModal').hidden = true; $('linkBox').hidden = true; slotPanel = null; }
 }
 
 // ---------- 처음 화면 ----------
 const nameInput = $<HTMLInputElement>('nameInput');
 const codeInput = $<HTMLInputElement>('codeInput');
 try { nameInput.value = localStorage.getItem('cb-name') ?? ''; } catch {}
+/** 이 브라우저에 이름이 저장돼 있는지 (링크로 열 때 바로 들어갈지) */
+const savedName = nameInput.value.trim() !== '';
 const getName = () => {
   const n = nameInput.value.trim() || '플레이어';
   try { localStorage.setItem('cb-name', n); } catch {}
@@ -316,8 +319,31 @@ $('soloBtn').onclick = () => { initAudio(); socket.emit('room:solo', { name: get
 const join = () => socket.emit('room:join', { code: codeInput.value, name: getName(), key: KEY }, entered);
 $('joinBtn').onclick = join;
 codeInput.onkeydown = (e) => { if (e.key === 'Enter') join(); };
-// 주소에 #ABCD 처럼 방 코드를 붙여 공유할 수 있게
-if (location.hash.length === 5) codeInput.value = location.hash.slice(1).toUpperCase();
+// 주소에 #ABCD 처럼 방 코드를 붙여 공유할 수 있게. 이름이 저장돼 있으면 연결되자마자 그 방으로 (한 번만)
+const linkCode = location.hash.length === 5 ? location.hash.slice(1).toUpperCase() : '';
+if (linkCode) codeInput.value = linkCode;
+let linkJoinTried = false;
+function joinFromLink() {
+  if (linkJoinTried || !linkCode || !savedName || store('cb-room')) return;
+  linkJoinTried = true;
+  join();
+}
+// 대기실 [링크 복사]: 주소/#방코드. 클립보드를 못 쓰면 링크를 보여 준다
+$('copyLinkBtn').innerHTML = `${icon(UI.copy, 16)}<span>링크 복사</span>`;
+$('copyLinkBtn').onclick = async () => {
+  if (!room) return;
+  const link = roomLink(location.origin, location.pathname, room.code);
+  const box = $<HTMLInputElement>('linkBox');
+  let ok = false;
+  try { await navigator.clipboard.writeText(link); ok = true; } catch {
+    // 클립보드 권한이 없으면 링크 칸을 보여 주고 골라 둔다 (예전 방식 복사도 한 번 시도)
+    box.value = link; box.hidden = false; box.select();
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+  }
+  const label = $('copyLinkBtn').querySelector('span')!;
+  label.textContent = ok ? '복사했어요' : '링크를 복사해 주세요';
+  setTimeout(() => { label.textContent = '링크 복사'; }, 1500);
+};
 
 // ---------- 대기실 ----------
 const LEVELS = ['쉬움', '보통', '어려움'];

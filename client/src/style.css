@@ -726,6 +726,7 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .card.lobby-card { width: min(780px, 100%); gap: 18px; }
 .lobby-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .lobby-head .sp { flex: 1; }
+.linkbox { flex: 1 1 220px; min-width: 0; padding: 8px 12px; font-size: 14px; }
 .lobby-name { font: 400 26px var(--display); letter-spacing: .04em; }
 .slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .slots.teams2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
