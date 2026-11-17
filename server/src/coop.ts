@@ -150,7 +150,9 @@ export class CoopRun {
       if (at > now + gap) at = now + gap * this.rand(); // 큰 피해 구간이 시작되면 바로 촘촘하게
       while (at <= now) {
         const kind = this.rand() * 100 < C.orb.yellowPct ? 'y' as const : p.color;
-        this.host.addCircle(makeOrb(this.host.nextId(), at, from, this.rand() * Math.PI * 2, kind, C.orb.speed, this.rand));
+        // 보스는 위쪽에 있으니 아래쪽 반원(양옆 조금 남김)으로만 뿜는다 (위로 가면 보스 몸 위를 지나 곧 판 밖으로 나가 잡을 수 없다)
+        const angle = Math.PI * (0.08 + 0.84 * this.rand());
+        this.host.addCircle(makeOrb(this.host.nextId(), at, from, angle, kind, C.orb.speed, this.rand));
         at += gap;
       }
       this.nextOrb.set(p.id, at);

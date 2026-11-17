@@ -650,3 +650,13 @@ test('coop 검토: 파훼 기록은 보호막마다 하나 (분노 횟수 포함
   assert.deepEqual(r.coop.result(end + 6000, r.startAt, false).breaks, [{ ms: end + 5000 - now, rages: 1 }]);
   room.destroy();
 });
+
+test('coop 원은 보스 아래쪽으로만 날아감 (위로 가서 바로 사라지는 원 없음)', () => {
+  const { room, r } = coopRoom(1, 3);
+  const t = r.startAt + 1000;
+  for (let k = 0; k < 40; k++) r.coop.tick(t + k * 500);
+  const orbs = [...r.circles.values()].filter((c) => c.from && c.boss !== 'raid' && c.kind !== 'threat' && c.kind !== 'crystal');
+  room.destroy();
+  assert.ok(orbs.length > 20);
+  for (const o of orbs) assert.ok(Math.sin(o.angle) > 0.2, String(o.angle));
+});
