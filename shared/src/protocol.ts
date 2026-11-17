@@ -83,8 +83,8 @@ export interface RoomSnapshot {
 
 export interface TutorialStatus { step: TutorialStep; index: number; total: number; done: boolean }
 
-/** 튜토리얼 장면: focus 짚기(멈춤, 받을 동작 하나), card 설명 카드(멈춤), free 자유 연습 */
-export type TutorialBeatKind = 'focus' | 'card' | 'free';
+/** 튜토리얼 장면: focus 짚기(멈춤, 받을 동작 하나), card 설명 카드(멈춤), free 자유 연습, wait 판은 움직이지만 클릭을 받지 않음(단계 끝 대기·봇 견제) */
+export type TutorialBeatKind = 'focus' | 'card' | 'free' | 'wait';
 export interface TutorialBeatInfo {
   step: TutorialStep;
   /** 화면이 문구를 찾는 장면 id (예: own.mine) */

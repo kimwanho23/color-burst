@@ -174,8 +174,10 @@ export class Room {
   }
 
   private beatInfo(): TutorialBeatInfo {
-    const t = this.tut!, b = this.tutBeat()!;
-    const d: TutorialBeatInfo = { step: this.tutStep(), beat: b.id, kind: b.kind === 'botSteal' ? 'free' : b.kind };
+    const t = this.tut!, b = this.tutBeat();
+    // 단계 끝 대기: 클릭을 받지 않는 장면으로 알린다 (화면이 클릭을 보내거나 원을 숨기지 않게)
+    if (!b) return { step: this.tutStep(), beat: 'wait', kind: 'wait' };
+    const d: TutorialBeatInfo = { step: this.tutStep(), beat: b.id, kind: b.kind === 'botSteal' ? 'wait' : b.kind };
     if (b.kind === 'focus') d.accept = b.accept;
     if (b.kind === 'card' && b.point) d.point = b.point;
     if (t.target !== null && b.kind === 'focus') d.circleId = t.target;
@@ -251,6 +253,7 @@ export class Room {
       this.releaseTutorial();
       t.advancing = true; t.target = null;
       t.timer = setTimeout(() => this.advanceTutorial(), RULES.tutorial.nextMs);
+      this.emitBeat();
       return;
     }
     const b = this.tutBeat()!;
@@ -393,7 +396,7 @@ export class Room {
       if (this.tut) {
         const step = this.tutStep();
         this.io.to(socketId).emit('tutorial:step', { step, index: this.tut.i, total: RULES.tutorial.steps.length, done: this.tut.done });
-        if (!this.tut.done && this.tutBeat()) this.io.to(socketId).emit('tutorial:beat', this.beatInfo());
+        if (!this.tut.done && this.tut.started) this.io.to(socketId).emit('tutorial:beat', this.beatInfo());
       }
       this.broadcastState();
       return { id: p.id };

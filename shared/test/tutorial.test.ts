@@ -337,3 +337,21 @@ test('멈춤 중 클릭 판단', () => {
   assert.equal(holdAccepts({ step: 'zones', beat: 'zones.play', kind: 'free' }, 7), 'pass');
   assert.equal(holdAccepts(null, 7), 'pass');
 });
+
+test('단계 끝 대기·봇 견제 장면은 wait 장면으로 알려 화면이 클릭을 보내지 않게', (t) => {
+  const { room, me, beats, beat, runTo, wait } = tutorialRoom(t);
+  try {
+    runTo('own.yellowCard');
+    room.tutorialNext(me.id);
+    assert.equal(beat().kind, 'wait', '단계 마지막 카드 뒤 대기');
+    runTo('steal.wait');
+    wait(4500, 100);
+    assert.deepEqual([beat().beat, beat().kind], ['steal.bot', 'wait']);
+    assert.ok(beats().every((b) => b.kind !== 'free' || b.beat !== 'steal.bot'));
+  } finally { room.destroy(); }
+});
+
+test('wait 장면의 판 클릭은 효과 없이 무시', () => {
+  assert.equal(holdAccepts({ step: 'own', beat: 'wait', kind: 'wait' }, 7), 'hint');
+  assert.equal(holdAccepts({ step: 'own', beat: 'wait', kind: 'wait' }, null), 'hint');
+});

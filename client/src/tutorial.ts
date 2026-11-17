@@ -45,7 +45,7 @@ export const BEAT_TEXT: Record<string, string> = {
  */
 export function holdAccepts(d: TutorialBeatInfo | null, hitId: number | null): 'send' | 'hint' | 'pass' {
   if (!d || d.kind === 'free') return 'pass';
-  if (d.kind === 'card') return 'hint';
+  if (d.kind === 'card' || d.kind === 'wait') return 'hint';
   if (d.accept === 'empty') return hitId === null ? 'send' : 'hint';
   return hitId !== null && hitId === d.circleId ? 'send' : 'hint';
 }
@@ -110,7 +110,7 @@ export function showBeat(d: TutorialBeatInfo, h: BeatHost): void {
   renderBand();
   document.body.dataset.tutPoint = d.kind === 'card' && d.point ? d.point : '';
   clearLayer();
-  if (d.kind === 'free') return;
+  if (d.kind === 'free' || d.kind === 'wait') return;
   layer = document.createElement('div');
   layer.className = 'tut-layer';
   if (d.kind === 'card') {
@@ -153,6 +153,7 @@ function bubble(text: string, at: { x: number; y: number } | null) {
 function next() {
   if (sentNext || beat?.kind !== 'card') return;
   sentNext = true;
+  clearLayer(); // 다음 장면이 올 때까지 지난 카드를 남겨 두지 않는다
   host?.onNext();
 }
 
