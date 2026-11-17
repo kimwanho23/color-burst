@@ -167,12 +167,12 @@ type CRoom = {
   updateLaser(now: number): void; hitRaid(p: PlayerState, c: Circle, now: number): void; tick(): void;
 };
 
-function coopRoom(humans = 1) {
+function coopRoom(humans = 1, bots = 4 - humans) {
   const room = new Room(fakeIo(), 'COOP', () => {});
   const ids: string[] = [];
   for (let i = 0; i < humans; i++) ids.push((room.join(`s${i}`, `k${i}`, `P${i}`) as { id: string }).id);
   room.setRules(ids[0], { rules: { coop: true } });
-  room.fillBots = false;
+  for (let i = 0; i < bots; i++) room.addBot(ids[0]); // 협력전도 빈 칸을 채우지 않는다: 대기실에서 봇 (봇을 넣으면 준비가 풀리므로 먼저)
   for (const id of ids.slice(1)) room.setReady(id, true);
   sent.length = 0;
   assert.equal(room.start(ids[0]), null);
@@ -182,7 +182,7 @@ function coopRoom(humans = 1) {
 }
 const overOf = () => sent.find((s) => s.ev === 'game:over')?.d as GameOver | undefined;
 
-test('coop 시작: 레이드 보스 1마리, 사람 생명 3·봇 0, 봇 채우기 자동, 판 180초', () => {
+test('coop 시작: 레이드 보스 1마리, 사람 생명 3·봇 0, 판 180초', () => {
   const { room, r, me } = coopRoom();
   assert.equal(room.players.length, 4);
   const raids = [...r.circles.values()].filter((c) => c.boss === 'raid');

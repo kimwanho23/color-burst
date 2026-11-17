@@ -68,8 +68,6 @@ export interface RoomSnapshot {
   hostId: string;
   phase: Phase;
   players: PlayerState[];
-  fillBots: boolean;
-  botLevel: BotLevel;
   rules: RoomRules;
   /** 혼자 하기 방 (다른 사람 입장 불가, 빈 자리는 항상 봇) */
   solo: boolean;
@@ -252,7 +250,12 @@ export interface ClientToServer {
   /** 튜토리얼: 설명 카드 넘기기 */
   'tutorial:next': () => void;
   'lobby:color': (color: ColorIndex) => void;
-  'lobby:options': (o: { fillBots?: boolean; botLevel?: BotLevel }) => void;
+  /** 방장: 빈 칸에 봇 추가 (팀전이면 그 팀) */
+  'lobby:addBot': (d: { team?: 0 | 1 }) => void;
+  /** 방장: 봇 빼기 */
+  'lobby:removeBot': (botId: string) => void;
+  /** 방장: 봇 난이도 */
+  'lobby:botLevel': (d: { id: string; level: BotLevel }) => void;
   /** 준비 / 준비 취소 (방장 아닌 사람) */
   'lobby:ready': (on: boolean) => void;
   /** 방장 넘기기 (방장) */

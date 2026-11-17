@@ -62,7 +62,6 @@ function teamRoom() {
   const room = new Room(fakeIo(), 'TEAM', () => {});
   const ids = ['A', 'B', 'C'].map((n, i) => (room.join(`s${i}`, `k${i}`, n) as { id: string }).id);
   room.setRules(ids[0], { rules: { team: true } });
-  room.fillBots = false;
   for (const id of ids.slice(1)) room.setReady(id, true);
   return { room, ids, P: (id: string) => room.players.find((p) => p.id === id)! };
 }

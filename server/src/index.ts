@@ -105,7 +105,9 @@ io.on('connection', (socket) => {
 
   socket.on('room:leave', leaveCurrent);
   socket.on('lobby:color', (c) => { const s = here(); if (s && [0, 1, 2, 3].includes(c)) s.room.setColor(s.id, c as ColorIndex); });
-  socket.on('lobby:options', (o) => { const s = here(); if (s) s.room.setOptions(s.id, o ?? {}); });
+  socket.on('lobby:addBot', (d) => { const s = here(); if (s) s.room.addBot(s.id, d?.team === 0 || d?.team === 1 ? d.team : undefined); });
+  socket.on('lobby:removeBot', (botId) => { const s = here(); if (s && typeof botId === 'string') s.room.removeBot(s.id, botId); });
+  socket.on('lobby:botLevel', (d) => { const s = here(); if (s && typeof d?.id === 'string') s.room.setBotLevel(s.id, d.id, d.level); });
   socket.on('lobby:team', (t) => { const s = here(); if (s && (t === 0 || t === 1)) s.room.setTeam(s.id, t); });
   socket.on('lobby:ready', (on) => { const s = here(); if (s) s.room.setReady(s.id, on === true); });
   socket.on('lobby:host', (to) => { const s = here(); if (s && typeof to === 'string') s.room.giveHost(s.id, to); });

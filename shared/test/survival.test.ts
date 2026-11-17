@@ -39,13 +39,13 @@ function survivalRoom(mode: 'classic' | 'arcade' = 'classic') {
   const room = new Room(fakeIo(), 'SURV', () => {});
   const a = (room.join('s1', 'k1', 'A') as { id: string }).id;
   room.setRules(a, { rules: { survival: true, mode } });
-  room.fillBots = false;
+  for (let i = 0; i < 3; i++) room.addBot(a); // 서바이벌도 이제 빈 칸을 채우지 않는다: 대기실에서 봇 3명
   assert.equal(room.start(a), null);
   const r = room as unknown as SRoom;
   return { room, r, me: room.players.find((p) => p.id === a)! };
 }
 
-test('서바이벌: 봇 채우기가 꺼져 있어도 4명으로 시작, 클래식 판 시간은 90초', () => {
+test('서바이벌: 봇 3명을 넣으면 4명으로 시작, 클래식 판 시간은 90초', () => {
   const { room, r } = survivalRoom();
   assert.equal(room.players.length, 4);
   assert.equal(r.G.roundMs, 90_000);

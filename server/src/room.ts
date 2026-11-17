@@ -32,8 +32,6 @@ export class Room {
   hostId = '';
   phase: 'lobby' | 'play' = 'lobby';
   players: PlayerState[] = [];
-  fillBots = true;
-  botLevel: BotLevel = 0;
   rules: RoomRules = { ...DEFAULT_RULES };
   /** 이번 판에 쓰는 계산용 규칙 (시작할 때 고정) */
   private G: GameRules = toGameRules(DEFAULT_RULES);
@@ -141,9 +139,8 @@ export class Room {
   /** timeAttack: 혼자·봇 없이 기록 도전 (규칙 고정) */
   /** tutorial: 혼자 단계별 연습 (단계별 판만, 결과·기록 없음) */
   constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly timeAttack = false, readonly tutorial = false) {
-    if (solo) this.fillBots = true;
-    if (timeAttack) { this.fillBots = false; this.rules = { ...TIME_ATTACK_RULES }; }
-    if (tutorial) { this.fillBots = false; this.rules = { ...TUTORIAL_RULES }; }
+    if (timeAttack) this.rules = { ...TIME_ATTACK_RULES };
+    if (tutorial) this.rules = { ...TUTORIAL_RULES };
   }
 
   // ---------- 튜토리얼 ----------
@@ -405,10 +402,9 @@ export class Room {
     if (this.kicked.has(key)) return { error: '이 방에서 내보내졌어요.' };
     if (this.solo && this.humans.length) return { error: '혼자 하기 방에는 들어갈 수 없어요.' };
     if (this.phase !== 'lobby') return { error: '이미 게임이 진행 중이에요. 끝나면 다시 들어와 주세요.' };
-    this.players = this.players.filter((x) => !x.bot);
-    if (this.humans.length >= MAX_PLAYERS) return { error: '방이 가득 찼어요.' };
-    const color = this.freeColor();
-    if (color === null) return { error: '방이 가득 찼어요.' };
+    // 봇까지 합쳐 4칸이 다 차면 가득 참 (방장이 봇을 빼야 들어올 수 있다)
+    if (!this.hasSeat()) return { error: '방이 가득 찼어요.' };
+    const color = this.freeColor()!;
 
     const np = newPlayer(randomUUID().slice(0, 8), name.slice(0, 12) || '플레이어', color);
     // 팀: 들어온 순서대로 인원이 적은 팀 (같으면 0팀)
@@ -418,6 +414,8 @@ export class Room {
     this.keyToId.set(key, np.id);
     this.attach(np, socketId);
     if (!this.hostId) this.hostId = np.id;
+    // 혼자 하기: 처음부터 보통 봇 3명 (타임어택·연습 제외)
+    if (this.solo && !this.timeAttack && !this.tutorial && this.humans.length === 1) while (this.hasSeat() && this.pushBot(1));
     this.broadcastState();
     return { id: np.id };
   }
@@ -460,7 +458,7 @@ export class Room {
     p.bot = true;
     p.connected = true;
     p.name = `${name} (봇)`;
-    this.bots.set(p.id, new Bot(this.botLevel));
+    this.bots.set(p.id, new Bot(1));
     for (const [k, id] of this.keyToId) if (id === p.id) this.keyToId.delete(k);
     this.socketOf.delete(p.id);
     this.cursors.delete(p.id);
@@ -499,15 +497,60 @@ export class Room {
     if (this.phase !== 'lobby') return;
     const p = this.players.find((x) => x.id === id);
     if (!p || this.players.some((x) => x.color === color && x.id !== id && !x.bot)) return;
+    // 봇이 가진 색이면 그 봇과 맞바꾼다
+    const bot = this.players.find((x) => x.color === color && x.bot);
+    if (bot) bot.color = p.color;
     p.color = color;
     this.broadcastState();
   }
 
-  setOptions(id: string, o: { fillBots?: boolean; botLevel?: BotLevel }) {
-    if (id !== this.hostId || this.phase !== 'lobby') return;
-    if (typeof o.fillBots === 'boolean' && !this.solo && !this.timeAttack) this.fillBots = o.fillBots;
-    if (o.botLevel === 0 || o.botLevel === 1 || o.botLevel === 2) this.botLevel = o.botLevel;
+  /** 봇까지 합친 자리가 남았는지 */
+  private hasSeat() { return this.players.length < MAX_PLAYERS && this.freeColor() !== null; }
+
+  /** 비어 있는 가장 앞 봇 이름 (봇 A, B, C) */
+  private botName() {
+    for (let i = 0; i < 26; i++) {
+      const name = `봇 ${String.fromCharCode(65 + i)}`;
+      if (!this.players.some((p) => p.name === name)) return { id: `bot-${i + 1}`, name };
+    }
+    return { id: `bot-${randomUUID().slice(0, 6)}`, name: '봇' };
+  }
+
+  /** 봇 하나를 넣는다 (팀을 정하지 않으면 인원이 적은 팀) */
+  private pushBot(level: 0 | 1 | 2, team?: 0 | 1, filler = false) {
+    const color = this.freeColor();
+    if (color === null) return null;
+    const { id, name } = this.botName();
+    const bot = newPlayer(id, name, color, true);
+    bot.botLevel = level;
+    if (filler) bot.filler = true;
+    bot.team = team ?? this.smallerTeam();
+    this.players.push(bot);
+    return bot;
+  }
+
+  /** 방장: 빈 칸에 보통 봇 (팀전이면 그 팀에 자리가 있을 때만) */
+  addBot(id: string, team?: 0 | 1) {
+    if (id !== this.hostId || this.phase !== 'lobby' || this.timeAttack || this.tutorial || !this.hasSeat()) return;
+    if (this.rules.team && team !== undefined && this.players.filter((p) => p.team === team).length >= RULES.team.size) return;
+    if (!this.pushBot(1, this.rules.team ? team : undefined)) return;
     this.unready();
+    this.broadcastState();
+  }
+
+  /** 방장: 봇 빼기 (대기실에서만) */
+  removeBot(id: string, botId: string) {
+    if (id !== this.hostId || this.phase !== 'lobby' || !this.players.some((p) => p.id === botId && p.bot)) return;
+    this.players = this.players.filter((p) => p.id !== botId);
+    this.unready();
+    this.broadcastState();
+  }
+
+  /** 방장: 봇 난이도 (대기실에서만) */
+  setBotLevel(id: string, botId: string, level: BotLevel) {
+    const bot = this.players.find((p) => p.id === botId && p.bot);
+    if (id !== this.hostId || this.phase !== 'lobby' || !bot || (level !== 0 && level !== 1 && level !== 2)) return;
+    bot.botLevel = level;
     this.broadcastState();
   }
 
@@ -589,24 +632,16 @@ export class Room {
 
     // 대기실에서 끊긴 채로 남아 있던 사람은 이번 판에서 제외
     for (const p of this.humans.filter((h) => !h.connected)) this.remove(p.id, false);
-    this.players = this.players.filter((p) => !p.bot);
+    // 대기실 봇은 그대로, 지난 판의 채운 봇·이어받은 봇은 뺀다
+    this.players = this.players.filter((p) => !p.bot || (p.botLevel !== undefined && !p.filler));
+    // 팀전(2:2)만 빈 칸을 보통 봇으로 채운다. 서바이벌·협력전·개인전은 있는 인원 그대로
+    if (this.rules.team) while (this.hasSeat() && this.pushBot(1, undefined, true));
+    if (this.players.length < 2 && !this.timeAttack && !this.tutorial && !this.rules.coop) {
+      this.players = this.players.filter((p) => !p.filler);
+      return '혼자서는 시작할 수 없어요. 친구를 부르거나 봇을 추가해 주세요.';
+    }
     this.bots.clear();
-    // 팀전·서바이벌은 늘 4명이 되게 봇으로 채운다
-    if (this.fillBots || this.rules.team || this.rules.survival || this.rules.coop) {
-      let n = 1;
-      for (let c = this.freeColor(); c !== null && this.players.length < MAX_PLAYERS; c = this.freeColor()) {
-        const bot = newPlayer(`bot-${n}`, `봇 ${String.fromCharCode(64 + n)}`, c, true);
-        bot.team = this.smallerTeam();
-        this.players.push(bot);
-        this.bots.set(bot.id, new Bot(this.botLevel));
-        n++;
-      }
-    }
-    if (this.players.length < 2 && !this.timeAttack && !this.tutorial) {
-      this.players = this.players.filter((p) => !p.bot);
-      this.bots.clear();
-      return '혼자서는 시작할 수 없어요. 친구를 부르거나 봇 채우기를 켜 주세요.';
-    }
+    for (const p of this.players) if (p.bot) this.bots.set(p.id, new Bot(p.botLevel ?? 1));
 
     this.players.forEach(resetForRound);
     this.G = toGameRules(this.rules);
@@ -929,7 +964,7 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, fillBots: this.fillBots, botLevel: this.botLevel, rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, tutorial: this.tutorial, wins: Object.fromEntries(this.wins) };
+    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, tutorial: this.tutorial, wins: Object.fromEntries(this.wins) };
   }
 
   destroy() {
@@ -1773,7 +1808,8 @@ export class Room {
       history: { stepMs: HISTORY_STEP_MS, scores: this.history },
       wins: Object.fromEntries(this.wins),
     });
-    this.players = this.players.filter((p) => !p.bot);
+    // 대기실에서 넣은 봇만 남긴다 (팀전 채운 봇·게임 중 나간 사람을 이어받은 봇은 뺀다)
+    this.players = this.players.filter((p) => !p.bot || (p.botLevel !== undefined && !p.filler));
     this.bots.clear();
     this.phase = 'lobby';
     this.unready();

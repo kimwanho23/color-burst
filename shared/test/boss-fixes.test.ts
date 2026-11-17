@@ -15,7 +15,6 @@ function playingRoom() {
   const room = new Room(fakeIo(), 'TEST', () => {});
   const a = room.join('s1', 'k1', 'A') as { id: string };
   room.join('s2', 'k2', 'B');
-  room.fillBots = false;
   for (const p of room.players) if (!p.bot && p.id !== a.id) room.setReady(p.id, true);
   assert.equal(room.start(a.id), null);
   const r = room as unknown as { startAt: number; circles: Map<number, Circle> };

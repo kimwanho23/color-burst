@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
+import { DEFAULT_RULES } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -10,7 +11,6 @@ function lobby() {
   const room = new Room(fakeIo(), 'TEST', () => {});
   const a = (room.join('s1', 'k1', 'A') as { id: string }).id;
   const b = (room.join('s2', 'k2', 'B') as { id: string }).id;
-  room.fillBots = false;
   const P = (id: string) => room.players.find((p) => p.id === id)!;
   return { room, a, b, P };
 }
@@ -31,7 +31,7 @@ test('준비: 규칙·옵션 변경이나 게임이 끝나 대기실로 오면 �
   room.setRules(a, { rules: { feverSec: 10 } });
   assert.equal(P(b).ready, false);
   room.setReady(b, true);
-  room.setOptions(a, { botLevel: 2 });
+  room.addBot(a);
   assert.equal(P(b).ready, false);
   room.setReady(b, true);
   assert.equal(room.start(a), null);
@@ -114,5 +114,128 @@ test('준비 확인은 접속 중인 사람만 센다 (끊긴 사람은 시작�
   const { room, a, b, P } = lobby();
   P(b).connected = false;
   assert.equal(room.notReady(), 0);
+  room.destroy();
+});
+
+// ---------- 대기실 봇 ----------
+const bots = (room: Room) => room.players.filter((p) => p.bot);
+const endGame = (room: Room) => (room as unknown as { end(): void }).end();
+
+test('봇 추가: 방장만, 보통으로, 봇까지 4칸이면 더 못 넣음', () => {
+  const { room, a, b } = lobby();
+  room.addBot(b);
+  assert.equal(room.players.length, 2, '방장이 아니면 무시');
+  room.addBot(a); room.addBot(a);
+  assert.equal(room.players.length, 4);
+  assert.deepEqual(bots(room).map((p) => [p.name, p.botLevel]), [['봇 A', 1], ['봇 B', 1]]);
+  room.addBot(a);
+  assert.equal(room.players.length, 4, '4칸이면 무시');
+  room.destroy();
+});
+
+test('봇까지 4칸이면 사람은 가득 참, 봇을 빼면 들어옴', () => {
+  const { room, a } = lobby();
+  room.addBot(a); room.addBot(a);
+  assert.deepEqual(room.join('s3', 'k3', 'C'), { error: '방이 가득 찼어요.' });
+  room.removeBot(a, bots(room)[0]!.id);
+  assert.ok('id' in room.join('s3', 'k3', 'C'));
+  assert.equal(room.players.length, 4);
+  room.destroy();
+});
+
+test('봇 빼기·난이도: 방장만, 대기실에서만', () => {
+  const { room, a, b } = lobby();
+  room.addBot(a);
+  const bot = bots(room)[0]!;
+  room.setBotLevel(b, bot.id, 2);
+  assert.equal(bot.botLevel, 1);
+  room.setBotLevel(a, bot.id, 2);
+  assert.equal(bot.botLevel, 2);
+  room.removeBot(b, bot.id);
+  assert.equal(bots(room).length, 1);
+  room.setReady(b, true);
+  assert.equal(room.start(a), null);
+  room.removeBot(a, bot.id);
+  room.setBotLevel(a, bot.id, 0);
+  assert.equal(bots(room).length, 1, '게임 중에는 못 뺌');
+  assert.equal(bot.botLevel, 2, '게임 중에는 난이도도 그대로');
+  room.destroy();
+});
+
+test('봇 색을 고르면 봇과 맞바꿈', () => {
+  const { room, a, P } = lobby();
+  room.addBot(a);
+  const bot = bots(room)[0]!;
+  const mine = P(a).color, its = bot.color;
+  room.setColor(a, its);
+  assert.deepEqual([P(a).color, bot.color], [its, mine]);
+  room.destroy();
+});
+
+test('팀전 봇 추가는 그 팀 자리가 있을 때만', () => {
+  const { room, a, P } = lobby();
+  room.setRules(a, { rules: { team: true } });
+  assert.equal(P(a).team, 0);
+  room.addBot(a, 0);
+  assert.equal(bots(room)[0]!.team, 0);
+  room.addBot(a, 0);
+  assert.equal(bots(room).length, 1, '팀 0이 2명이면 무시');
+  room.addBot(a, 1);
+  assert.equal(bots(room)[1]!.team, 1);
+  room.destroy();
+});
+
+test('시작: 봇마다 난이도로 Bot을 만들고, 개인전은 빈 칸을 채우지 않음', () => {
+  const { room, a, b } = lobby();
+  room.addBot(a);
+  const bot = bots(room)[0]!;
+  room.setBotLevel(a, bot.id, 2);
+  room.setReady(b, true);
+  assert.equal(room.start(a), null);
+  assert.equal(room.players.length, 3);
+  const made = (room as unknown as { bots: Map<string, { level: number }> }).bots.get(bot.id);
+  assert.equal(made?.level, 2);
+  room.destroy();
+});
+
+test('팀전 시작은 빈 칸을 채우고 판이 끝나면 채운 봇은 빠짐', () => {
+  const { room, a, b } = lobby();
+  room.setRules(a, { rules: { team: true } });
+  room.setReady(b, true);
+  assert.equal(room.start(a), null);
+  assert.equal(room.players.length, 4);
+  assert.equal(bots(room).filter((p) => p.filler).length, 2);
+  endGame(room);
+  assert.equal(room.players.length, 2);
+  room.destroy();
+});
+
+test('판이 끝나면 대기실 봇만 남음', () => {
+  const { room, a, b } = lobby();
+  room.addBot(a);
+  room.setBotLevel(a, bots(room)[0]!.id, 0);
+  room.setReady(b, true);
+  assert.equal(room.start(a), null);
+  room.leave(b, 's2');
+  assert.equal(bots(room).length, 2, '나간 사람 자리를 봇이 이어받음');
+  endGame(room);
+  assert.deepEqual(bots(room).map((p) => [p.name, p.botLevel]), [['봇 A', 0]]);
+  room.destroy();
+});
+
+test('혼자 하기 방은 보통 봇 3명으로 시작', () => {
+  const room = new Room(fakeIo(), 'S', () => {}, true);
+  room.join('s1', 'k1', 'A');
+  assert.equal(bots(room).length, 3);
+  assert.ok(bots(room).every((p) => p.botLevel === 1));
+  room.destroy();
+});
+
+test('협력전은 1명도 시작, 개인전은 봇 추가 안내', () => {
+  const room = new Room(fakeIo(), 'C1', () => {});
+  const a = (room.join('s1', 'k1', 'A') as { id: string }).id;
+  assert.equal(room.start(a), '혼자서는 시작할 수 없어요. 친구를 부르거나 봇을 추가해 주세요.');
+  room.setRules(a, { rules: { ...DEFAULT_RULES, coop: true } });
+  assert.equal(room.start(a), null);
   room.destroy();
 });

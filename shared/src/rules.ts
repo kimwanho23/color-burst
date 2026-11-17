@@ -599,6 +599,10 @@ export interface PlayerState {
   name: string;
   color: ColorIndex;
   bot: boolean;
+  /** 대기실에서 넣은 봇의 난이도 (0 쉬움 · 1 보통 · 2 어려움). 게임 중 나간 사람을 이어받은 봇은 없음 */
+  botLevel?: 0 | 1 | 2;
+  /** 팀전 시작 때 빈 칸을 채운 봇 (판이 끝나면 빠진다) */
+  filler?: boolean;
   connected: boolean;
   score: number;
   combo: number;

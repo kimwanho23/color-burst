@@ -354,17 +354,8 @@ function renderLobby() {
   });
 
   $('codeBlock').hidden = room.solo;
-  $('fillBotsRow').hidden = room.solo;
   $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>${room.solo ? '처음으로' : '방 나가기'}</span>`;
-  $('hostOpts').hidden = !host;
-  // 팀전·서바이벌은 늘 4명이 되게 봇으로 채운다 (체크박스는 바꿀 수 없음)
-  const forceBots = room.rules.team || room.rules.survival || room.rules.coop;
-  $<HTMLInputElement>('fillBots').checked = room.fillBots || forceBots;
-  $<HTMLInputElement>('fillBots').disabled = forceBots;
-  $('botLevel').innerHTML = LEVELS.map((l, i) => `<button type="button" data-l="${i}" aria-pressed="${room!.botLevel === i}">${i === 0 ? icon(UI.bot, 15) : ''}${i === 0 ? '봇 ' : ''}${l}</button>`).join('');
-  $('botLevel').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
-    b.onclick = () => socket.emit('lobby:options', { botLevel: Number(b.dataset.l) as BotLevel });
-  });
+  $('hostOpts').hidden = true; // 봇은 대기실 칸에서 (화면 개편 전 임시)
 
   // 타임어택 방: 규칙은 고정이라 보여 주기만. 혼자 하기 대기실에서 타임어택을 고르면 고정 규칙 안내 + [타임어택 시작]
   if (!room.solo || room.timeAttack) taPick = false;
@@ -394,7 +385,7 @@ function renderLobby() {
   rb.textContent = meP?.ready ? '준비 취소' : '준비';
   rb.classList.toggle('ghost', !!meP?.ready);
   $('lobbyHint').textContent = taPick ? '봇 없이 혼자 60초 동안 최고 점수에 도전해요' : room.timeAttack ? '' : room.solo ? '봇 3명과 대결해요' : host
-    ? waiting > 0 ? `${waiting}명이 아직 준비 안 했어요` : `참가자 ${humans}명${(room.fillBots || forceBots) && humans < 4 ? ` · 빈 자리 ${4 - humans}개는 봇이 채워요` : ''}`
+    ? waiting > 0 ? `${waiting}명이 아직 준비 안 했어요` : `참가자 ${humans}명`
     : meP?.ready ? `준비 완료 · 방장이 시작하기를 기다리는 중` : `준비를 누르면 방장이 시작할 수 있어요 · 참가자 ${humans}명`;
 }
 
@@ -448,7 +439,6 @@ $('members').addEventListener('click', async (e) => {
 });
 $('readyBtn').onclick = () => { const m = room?.players.find((p) => p.id === myId()); socket.emit('lobby:ready', !m?.ready); };
 socket.on('room:kicked', () => { store('cb-room', null); resetToHome('방장이 내보냈어요'); });
-$<HTMLInputElement>('fillBots').onchange = (e) => socket.emit('lobby:options', { fillBots: (e.target as HTMLInputElement).checked });
 $('startBtn').onclick = () => { if (taPick) { startTimeAttack(); return; } initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
 function resetToHome(err = '') {
   closeConfirm();

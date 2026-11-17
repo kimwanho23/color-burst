@@ -28,7 +28,6 @@ test('판이 끝나면 서버 로그에 [game] 한 줄, 접속 키 없음', (t) 
   const room = new Room(fakeIo(), 'LOG', () => {});
   const a = room.join('s1', 'secret-key-1', '영희') as { id: string };
   room.join('s2', 'secret-key-2', '민수');
-  room.fillBots = false;
   for (const p of room.players) if (p.id !== a.id) room.setReady(p.id, true);
   try {
     assert.equal(room.start(a.id), null);
