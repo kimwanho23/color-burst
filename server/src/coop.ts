@@ -46,13 +46,15 @@ export class CoopRun {
   private nextOrb = new Map<string, number>();
   private targetTurn = 0;
   /** 보호막: 시작·제한 시간 끝·몇 번째 */
-  private shield: { from: number; until: number; no: 0 | 1 } | null = null;
+  private shield: { from: number; until: number; no: 0 | 1; rages: number } | null = null;
+  /** 봇 수정을 두드릴 다음 시각 (봇은 제한 시간 안에 반드시 깬다) */
+  private botNext = new Map<number, number>();
   private burstUntil = 0;
   private rageAt = 0;
   private slams: Slam[] = [];
   private safe: SafeZones | null = null;
   private stats = new Map<string, CoopPlayerResult>();
-  private breaks: (number | 'rage')[] = [];
+  private breaks: { ms: number; rages: number }[] = [];
   /** 큰 피해 구간이 끝나면 다음 단계 패턴 일정을 잡는다 */
   private afterBurst = false;
 
@@ -107,7 +109,7 @@ export class CoopRun {
     this.tickRage(now);
     this.tickSlams(now);
     this.tickSafe(now);
-    if (this.shield) { if (now >= this.shield.until && !this.rageAt) this.startRage(now); return; }
+    if (this.shield) { this.tickBotCrystals(now); if (this.shield && now >= this.shield.until && !this.rageAt) this.startRage(now); return; }
     this.spawnOrbs(now);
     if (this.inBurst(now)) return;
     if (this.next.laser && now >= this.next.laser) {
@@ -194,7 +196,8 @@ export class CoopRun {
   /** 보호막: 보스 무적, 원·패턴 멈춤, 살아 있고 연결된 사람·봇마다 자기 색 수정 */
   private beginShield(now: number) {
     const no = (this.phase === 1 ? 0 : 1) as 0 | 1;
-    this.shield = { from: now, until: now + C.levels[this.level].crystalSec * 1000, no };
+    this.shield = { from: now, until: now + C.levels[this.level].crystalSec * 1000, no, rages: 0 };
+    this.botNext.clear();
     this.burstUntil = 0;
     this.host.clearLasers();
     this.host.removeCircles((x) => x.kind === 'threat');
@@ -234,7 +237,7 @@ export class CoopRun {
   /** 보호막이 풀림: 큰 피해 구간 (패턴 멈춤, 원이 촘촘), 끝나면 다음 단계 */
   private breakShield(now: number) {
     if (!this.shield) return;
-    this.breaks.push(now - this.shield.from);
+    this.breaks.push({ ms: now - this.shield.from, rages: this.shield.rages });
     this.shield = null;
     this.rageAt = 0;
     // 큰 피해는 다음 단계 몫이다 (그 단계의 아래 경계까지만 깎인다). 패턴은 큰 피해 구간이 끝난 뒤 다음 단계 것으로
@@ -246,6 +249,23 @@ export class CoopRun {
     this.host.emit('coop:state', this.state());
   }
 
+  /** 봇 수정: 제한 시간의 55% 안에 깨지도록 고르게 두드린다 (봇 반응 속도와 상관없이 판이 막히지 않게) */
+  private tickBotCrystals(now: number) {
+    const sh = this.shield;
+    if (!sh) return;
+    const limit = C.levels[this.level].crystalSec * 1000;
+    for (const c of this.crystals()) {
+      const bot = this.host.players().find((p) => p.id === c.target && p.bot);
+      if (!bot) continue;
+      const gap = (limit * 0.55) / Math.max(1, c.maxHp ?? 1);
+      const next = this.botNext.get(c.id) ?? now + gap;
+      if (now < next) { this.botNext.set(c.id, next); continue; }
+      this.botNext.set(c.id, next + gap);
+      this.hitCrystal(bot, c, now);
+      if (!this.shield) return;
+    }
+  }
+
   /** 제한 시간 초과: 경고 뒤 분노 공격 */
   private startRage(now: number) {
     this.rageAt = now + C.rageWarnMs;
@@ -255,7 +275,8 @@ export class CoopRun {
   private tickRage(now: number) {
     if (!this.rageAt || now < this.rageAt || !this.shield) return;
     this.rageAt = 0;
-    this.breaks.push('rage');
+    this.shield.rages++;
+    this.botNext.clear();
     for (const p of this.alive()) this.damage(p, 'rage', now);
     if (!this.boss || !this.shield) return; // 판이 끝났거나 탈락으로 보호막이 풀림
     // 남은 수정은 처음 횟수로, 제한 시간 다시
@@ -311,7 +332,8 @@ export class CoopRun {
   recheck() {
     if (!this.alive().length) { this.host.finish(false); return; }
     if (!this.shield) return;
-    const gone = new Set(this.host.players().filter((p) => p.outAt || (!p.bot && !p.connected)).map((p) => p.id));
+    // 탈락했거나 방에서 빠진 사람만 (잠깐 끊긴 사람은 돌아와서 깰 수 있게 수정을 남긴다)
+    const gone = new Set(this.host.players().filter((p) => p.outAt).map((p) => p.id));
     const mine = this.crystals().filter((c) => c.target && (gone.has(c.target) || !this.host.players().some((p) => p.id === c.target)));
     if (mine.length) {
       const ids = new Set(mine.map((c) => c.id));
@@ -376,6 +398,7 @@ export class CoopRun {
     return {
       level: this.level, phase: this.phase, bossId: this.boss?.id ?? -1, hp: this.boss?.hp ?? 0, maxHp: this.boss?.maxHp ?? 0,
       shield: this.shield ? { until: this.shield.until, no: this.shield.no } : null, burstUntil: this.burstUntil, rageAt: this.rageAt,
+      slams: this.slams.map((s) => ({ ...s })), safe: this.safe,
     };
   }
 

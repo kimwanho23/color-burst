@@ -610,7 +610,8 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   mapPattern = d.pattern ?? null;
   popped = new Set(d.popped ?? []);
   coopState = d.coop ?? null;
-  coopSlams = []; coopSafe = null;
+  // 다시 접속·재개: 서버 상태에서 내려찍기·안전지대를 이어서 그린다
+  coopSlams = coopState?.slams ?? []; coopSafe = coopState?.safe ?? null;
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
   playing = true;
@@ -643,9 +644,10 @@ socket.on('coop:state', (s) => {
     for (const [id, c] of circles) if (c.kind === 'threat') circles.delete(id);
     renderer.banner('보호막! 내 색 수정을 깨세요', '#7fd3ff'); sfx.patternWarn();
   }
-  if (s.burstUntil > (coopState?.burstUntil ?? 0) && !s.shield) { renderer.banner('보스가 무너졌다!', '#ffd43b'); sfx.fever(); }
+  // 큰 피해 구간 시작: 서버가 맵 패턴을 지우므로 화면도 지운다 (커서 물리가 어긋나지 않게)
+  if (s.burstUntil > (coopState?.burstUntil ?? 0) && !s.shield && !coopState?.burstUntil) { renderer.banner('보스가 무너졌다!', '#ffd43b'); sfx.fever(); mapPattern = null; popped = new Set(); }
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
-  coopState = s; renderCoop();
+  coopState = s; coopSlams = s.slams; coopSafe = s.safe; renderCoop();
 });
 socket.on('coop:hit', ({ playerId, by, lives, circleId }) => {
   const p = players.find((x) => x.id === playerId);

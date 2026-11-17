@@ -25,6 +25,6 @@ test('coopResultRows: 아무도 대미지가 없으면 최다 대미지 표시 �
   assert.equal(rows[0]!.top, false);
 });
 
-test('coopBreaksText: 보호막마다 걸린 초, 실패는 분노', () => {
-  assert.deepEqual(coopBreaksText([6200, 'rage', 9800]), ['1번째 보호막 6.2초', '2번째 보호막 분노', '3번째 보호막 9.8초']);
+test('coopBreaksText: 보호막마다 걸린 초, 분노 횟수', () => {
+  assert.deepEqual(coopBreaksText([{ ms: 6200, rages: 0 }, { ms: 21800, rages: 1 }]), ['1번째 보호막 6.2초', '2번째 보호막 21.8초 (분노 1번)']);
 });

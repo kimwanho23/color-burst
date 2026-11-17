@@ -15,6 +15,9 @@ export interface CoopState {
   burstUntil: number;
   /** 분노 공격 시각 (0이면 없음) */
   rageAt: number;
+  /** 대기 중인 내려찍기, 안전지대 (다시 접속·재개해도 화면이 이어서 그리도록) */
+  slams: Slam[];
+  safe: SafeZones | null;
 }
 /** 협력전 결과: 사람(봇 포함)마다 기여 */
 export interface CoopPlayerResult { dmg: number; burstDmg: number; crystals: number; threats: number }
@@ -22,8 +25,8 @@ export interface CoopPlayerResult { dmg: number; burstDmg: number; crystals: num
 export interface CoopResult {
   win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase;
   maxHp: number; players: Record<string, CoopPlayerResult>;
-  /** 보호막마다 수정을 다 깨는 데 걸린 ms, 제한 시간 초과는 'rage' */
-  breaks: (number | 'rage')[];
+  /** 보호막마다 수정을 다 깨는 데 걸린 ms (처음 나온 때부터)와 그동안 분노 횟수 */
+  breaks: { ms: number; rages: number }[];
 }
 export type CoopHitBy = 'laser' | 'hazard' | 'threat' | 'slam' | 'safe' | 'rage';
 import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';

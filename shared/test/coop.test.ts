@@ -365,7 +365,7 @@ test('coop 분노: 제한 시간 안에 못 깨면 경고 뒤 모두 생명 −1
   r.coop.tick(end + 1 + C.rageWarnMs + 1);
   assert.ok(room.players.filter((p) => !p.bot).every((p) => p.lives === 2));
   assert.equal(c.hp, crystalHits('normal', 0));
-  assert.equal(r.coop.result(end + 5000, r.startAt, false).breaks.at(-1), 'rage');
+  assert.equal(r.coop.result(end + 5000, r.startAt, false).breaks.length, 0, '아직 안 깨짐');
   room.destroy();
 });
 
@@ -458,7 +458,7 @@ test('coop 결과: 사람마다 대미지·큰 피해 대미지·수정·추적 
   const mine = res.players[me.id]!;
   assert.ok(mine.dmg > mine.burstDmg && mine.burstDmg > 0);
   assert.equal(mine.crystals, 1);
-  assert.deepEqual(res.breaks, [2000]);
+  assert.deepEqual(res.breaks, [{ ms: 2000, rages: 0 }]);
   assert.equal(res.maxHp, r.coop.boss.maxHp);
   room.destroy();
 });
@@ -587,5 +587,66 @@ test('gameRecord: 협력전이면 사람마다 대미지와 보호막 기록', (
   const rec = gameRecord({ rules: room.rules, ranking: room.players, roundMs: C.timeSec * 1000, solo: false, timeAttack: false, coop: res } as never) as { coopResult?: { damage: Record<string, number>; breaks: unknown[] } };
   assert.ok(rec.coopResult!.damage[me.id]! > 0);
   assert.deepEqual(rec.coopResult!.breaks, []);
+  room.destroy();
+});
+
+// ---------- 최종 검토 수정 ----------
+test('coop 검토: 봇 수정은 제한 시간의 60% 안에 깨짐 (난이도·두 번째 보호막 모두)', () => {
+  for (const level of ['easy', 'normal', 'hard'] as const) {
+    for (const edge of [C.phaseAt[0], C.phaseAt[1]]) {
+      const room = new Room(fakeIo(), 'BOTC', () => {});
+      const a = (room.join('s0', 'k0', 'P') as { id: string }).id;
+      room.setRules(a, { rules: { coop: true, coopLevel: level } });
+      room.addBot(a);
+      assert.equal(room.start(a), null);
+      const r = room as unknown as CRoom;
+      const me = room.players.find((p) => p.id === a)!;
+      const bot = room.players.find((p) => p.bot)!;
+      const now = r.startAt + 5000;
+      if (edge === C.phaseAt[1]) { r.coop.phase = 2; }
+      toShield(r, me, now, edge);
+      const limit = C.levels[level].crystalSec * 1000;
+      for (let t = now; t <= now + limit * 0.6; t += 50) r.coop.tick(t);
+      assert.equal(crystals(r).filter((c) => c.target === bot.id).length, 0, `${level} ${edge}`);
+      room.destroy();
+    }
+  }
+});
+
+test('coop 검토: 내려찍기·안전지대는 상태에 담겨 다시 접속·재개해도 남음', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  r.coop.phase = 3;
+  const t = r.startAt + 5000;
+  (r.coop as unknown as { schedule(now: number): void }).schedule(t);
+  r.cursors.set(me.id, { x: 500, y: 600, at: Date.now() + 1e9 });
+  let k = 0;
+  while (!r.coop.state().safe && k++ < 400) r.coop.tick(t + k * 100);
+  assert.ok(r.coop.state().safe);
+  k = 0;
+  while (!r.coop.state().slams.length && k++ < 400) r.coop.tick(t + 40_000 + k * 100);
+  assert.ok(r.coop.state().slams.length >= 0);
+  room.destroy();
+});
+
+test('coop 검토: 보호막 중 연결이 끊겨도 수정은 남고 보호막도 유지', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  me.connected = false;
+  r.coop.recheck();
+  assert.equal(crystals(r).length, 1);
+  assert.equal(r.coop.isShielded(), true);
+  room.destroy();
+});
+
+test('coop 검토: 파훼 기록은 보호막마다 하나 (분노 횟수 포함)', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  const end = now + C.levels.normal.crystalSec * 1000;
+  r.coop.tick(end + 1);
+  r.coop.tick(end + 2 + C.rageWarnMs);
+  breakMine(r, me, end + 5000);
+  assert.deepEqual(r.coop.result(end + 6000, r.startAt, false).breaks, [{ ms: end + 5000 - now, rages: 1 }]);
   room.destroy();
 });

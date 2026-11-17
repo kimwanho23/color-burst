@@ -45,9 +45,9 @@ export function coopResultRows(r: CoopResult, players: readonly PlayerState[]): 
   return rows.map(({ raw: _raw, ...row }) => row);
 }
 
-/** 보호막마다 수정을 다 깨는 데 걸린 시간 (실패는 분노) */
-export function coopBreaksText(breaks: readonly (number | 'rage')[]): string[] {
-  return breaks.map((b, i) => `${i + 1}번째 보호막 ${b === 'rage' ? '분노' : `${(Math.round(b / 100) / 10).toFixed(1)}초`}`);
+/** 보호막마다 수정을 다 깨는 데 걸린 시간 (그 사이 분노 횟수) */
+export function coopBreaksText(breaks: readonly { ms: number; rages: number }[]): string[] {
+  return breaks.map((b, i) => `${i + 1}번째 보호막 ${(Math.round(b.ms / 100) / 10).toFixed(1)}초${b.rages ? ` (분노 ${b.rages}번)` : ''}`);
 }
 
 /** 결과 화면 맨 위 요약: 별, 걸린 시간/남은 체력, 파훼 기록 */
