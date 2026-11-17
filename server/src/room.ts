@@ -155,6 +155,8 @@ export class Room {
   private tut: {
     i: number; b: number; started: boolean; done: boolean; target: number | null; spawnedAt: number; held: boolean;
     zoneCatches: number; advancing: boolean; timer: ReturnType<typeof setTimeout> | null;
+    /** 바로 앞 짚기에서 받은 점수 (다음 설명 카드에 보여 줌) */
+    gain: { base: number; bonus: number } | null;
   } | null = null;
   private tutLastSpawn = 0;
 
@@ -179,13 +181,14 @@ export class Room {
     if (t.target !== null && b.kind === 'focus') d.circleId = t.target;
     if (t.held) d.at = this.pausedAt;
     if (b.kind === 'free' && b.until === 'zoneCatch') { d.count = t.zoneCatches; d.goal = RULES.tutorial.zoneGoal; }
+    if (b.kind === 'card' && t.gain) d.gain = t.gain;
     return d;
   }
 
   private emitBeat() { this.io.to(this.code).emit('tutorial:beat', this.beatInfo()); }
 
   private startTutorial(now: number) {
-    this.tut = { i: 0, b: 0, started: false, done: false, target: null, spawnedAt: 0, held: false, zoneCatches: 0, advancing: false, timer: null };
+    this.tut = { i: 0, b: 0, started: false, done: false, target: null, spawnedAt: 0, held: false, zoneCatches: 0, advancing: false, timer: null, gain: null };
     this.tutLastSpawn = now;
     enterTutorialStep(this.tutStep(), this.tutMe());
     this.emitTutorial();
@@ -195,6 +198,7 @@ export class Room {
   private startBeat(now: number) {
     const t = this.tut!, b = this.tutBeat()!, me = this.tutMe(), bot = this.tutBot();
     t.target = null; t.zoneCatches = 0;
+    if (b.kind !== 'card') t.gain = null;
     if (b.kind === 'focus' && b.accept === 'circle') {
       if (b.prep?.combo !== undefined) me.combo = b.prep.combo;
       if (b.prep?.fever !== undefined) me.fever = b.prep.fever;
@@ -268,7 +272,9 @@ export class Room {
       const c = t.target !== null ? this.circles.get(t.target) : undefined;
       if (!c || d.circleId !== c.id || !this.hitWithLag(c, at, d.x, d.y)) return;
       this.releaseTutorial();
+      const src = p.stats.src, before = { base: src.circle + src.steal, bonus: src.combo };
       this.claim(p, c, Date.now(), 'click');
+      t.gain = { base: src.circle + src.steal - before.base, bonus: src.combo - before.bonus };
       this.nextBeat();
       return;
     }

@@ -101,6 +101,8 @@ export interface TutorialBeatInfo {
   /** 자유 연습 진행 */
   count?: number;
   goal?: number;
+  /** 설명 카드: 바로 앞 짚기에서 받은 점수 (원 점수 + 콤보 보너스) */
+  gain?: { base: number; bonus: number };
 }
 
 export interface GameOver {

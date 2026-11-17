@@ -2,6 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
 import { BEATS, enterStep, freeDone, freeKinds } from '../../server/src/tutorial.ts';
+import { BEAT_TEXT, TUTORIAL_TEXT, holdAccepts } from '../../client/src/tutorial.ts';
 import { FIELD, RULES, circlePos, isFever, isGuarded, newPlayer, zoneOf, type Circle, type PlayerState, type TutorialBeatInfo, type TutorialStatus } from '../src/index.ts';
 
 const CX = FIELD.w / 2, CY = FIELD.h / 2;
@@ -37,7 +38,7 @@ function tutorialRoom(t: TestContext) {
   /** 짚기 장면이 멈출 때까지 (원이 발사 보호 구역을 벗어나고 focusDelayMs가 지나면) */
   const waitHold = () => { for (let k = 0; k < 200 && !r.pausedAt; k++) wait(50); assert.ok(r.pausedAt > 0, '멈춤'); };
   const doFocus = () => { waitHold(); clickCircle(target()); };
-  const claimed = () => log.filter((x) => x.ev === 'circle:claimed').map((x) => x.d as { by: string; result: { gained: number; comboBonus: number; type: string } });
+  const claimed = () => log.filter((x) => x.ev === 'circle:claimed').map((x) => x.d as { by: string; result: { gained: number; comboBonus: boolean; type: string } });
   /** 지금 단계를 끝내고 다음 단계 첫 장면까지 */
   const runTo = (id: string) => {
     for (let guard = 0; guard < 80 && beats().at(-1)?.beat !== id; guard++) {
@@ -185,8 +186,12 @@ test('콤보 단계: 콤보 9에서 시작, 짚은 원으로 10이 되며 콤보
     assert.equal(beat().beat, 'combo.ten');
     doFocus();
     assert.equal(me.combo, 10);
-    assert.ok(claimed().at(-1)!.result.comboBonus > 0);
+    assert.ok(claimed().at(-1)!.result.comboBonus);
     assert.equal(beat().beat, 'combo.tenCard');
+    // 카드가 보여 줄 점수: 원 점수 + 콤보 보너스 = 방금 받은 점수
+    const g = beat().gain!;
+    assert.ok(g.base > 0 && g.bonus > 0);
+    assert.equal(g.base + g.bonus, claimed().at(-1)!.result.gained);
   } finally { room.destroy(); }
 });
 
@@ -306,4 +311,29 @@ test('나가면 단계 타이머가 정리됨', (t) => {
   room.tutorialNext(me.id);
   room.destroy();
   assert.equal(r.tut, null);
+});
+
+test('튜토리얼 문구: 모든 장면에 문구가 있고 점수·배율 숫자를 쓰지 않음 (콤보 카드는 받은 값 자리 표시)', () => {
+  for (const b of Object.values(BEATS).flat()) {
+    if (b.kind === 'botSteal') continue; // 봇 견제는 문구 없이 바로 다음 카드
+    const t = BEAT_TEXT[b.id];
+    assert.ok(t, b.id);
+    // 콤보 수(9, 10)는 규칙과 상관없는 사실이라 쓸 수 있다. 점수(+3)·배율(×3, 3배)은 안 됨
+    assert.ok(!/[×x]\s*\d|\d\s*배|\+\s*\d|\d\s*점/.test(t), `${b.id}: ${t}`);
+  }
+  assert.ok(BEAT_TEXT['combo.tenCard']!.includes('{base}') && BEAT_TEXT['combo.tenCard']!.includes('{bonus}'));
+  for (const s of RULES.tutorial.steps) assert.ok(TUTORIAL_TEXT[s].name, s);
+});
+
+test('멈춤 중 클릭 판단', () => {
+  const focus = { step: 'own', beat: 'own.mine', kind: 'focus', accept: 'circle', circleId: 7 } as const;
+  assert.equal(holdAccepts(focus, 7), 'send');
+  assert.equal(holdAccepts(focus, 8), 'hint');
+  assert.equal(holdAccepts(focus, null), 'hint');
+  const empty = { step: 'combo', beat: 'combo.empty', kind: 'focus', accept: 'empty' } as const;
+  assert.equal(holdAccepts(empty, null), 'send');
+  assert.equal(holdAccepts(empty, 3), 'hint');
+  assert.equal(holdAccepts({ step: 'own', beat: 'own.mineCard', kind: 'card' }, 7), 'hint');
+  assert.equal(holdAccepts({ step: 'zones', beat: 'zones.play', kind: 'free' }, 7), 'pass');
+  assert.equal(holdAccepts(null, 7), 'pass');
 });

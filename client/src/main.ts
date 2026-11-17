@@ -8,7 +8,7 @@ import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
 import { taVerdict } from './timeAttack.ts';
 import { closeGuide, openGuide } from './guide.ts';
-import { hideTutorial, noteTutorialCombo, showTutorialDone, showTutorialStep } from './tutorial.ts';
+import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules } from './rulesUI.ts';
 import { renderResult } from './results.ts';
@@ -468,11 +468,18 @@ socket.on('tutorial:step', (d) => {
   if (d.done) showTutorialDone(() => { leaveRoom(); $('soloBtn').click(); }, leaveRoom);
   else showTutorialStep(d, leaveRoom);
 });
+// 튜토리얼 장면: 짚기 표시·설명 카드 (카드 넘기기는 tutorial:next)
+socket.on('tutorial:beat', (d) => showBeat(d, {
+  onNext: () => socket.emit('tutorial:next'),
+  toScreen: (x, y) => renderer.toScreen(x, y),
+  scale: () => renderer.toScreen(1, 0).x - renderer.toScreen(0, 0).x,
+  circle: (id) => circles.get(id),
+}));
 /** 게임 중 나가기: 확인 창 뒤 나간다 (여럿이면 봇이 이어받음, 혼자 하기는 게임 끝) */
 async function askLeave() {
   const ok = await confirmDialog($('stage'), {
-    title: '게임에서 나갈까요?',
-    text: room?.solo ? '게임이 끝나요.' : '봇이 이어서 플레이하고, 다시 들어올 수 없어요.',
+    title: room?.tutorial ? '연습을 그만할까요?' : '게임에서 나갈까요?',
+    text: room?.tutorial ? '처음 화면으로 돌아가요.' : room?.solo ? '게임이 끝나요.' : '봇이 이어서 플레이하고, 다시 들어올 수 없어요.',
     ok: '나가기', cancel: '계속하기',
   });
   if (ok && playing) leaveRoom();
@@ -642,7 +649,7 @@ let pauseBtnSig = '';
 function renderPauseBtn() {
   const m = me();
   const b = $<HTMLButtonElement>('pauseBtn');
-  b.hidden = !(playing && room && m && !picking());
+  b.hidden = !(playing && room && m && !picking()) || !!room?.tutorial;
   $('leaveTop').hidden = !(playing && room);
   const multi = !!room && !room.solo;
   const sig = multi && m ? `${m.pausesLeft}` : 'solo';
@@ -655,6 +662,13 @@ $('pauseBtn').onclick = togglePause;
 $('resumeBtn').onclick = () => { initAudio(); socket.emit('game:resume'); };
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('settingsPanel').hidden) return; // Esc는 설정 창 닫기가 먼저
+  // 튜토리얼: Enter·Space로 설명 카드 넘기기, Esc는 나가기 확인, P는 쓰지 않음
+  if (playing && room?.tutorial && !isTyping(e)) {
+    if (e.repeat || document.querySelector('.codex, .confirm, .guide-screen')) return;
+    if (tutorialKey(e)) return;
+    if (e.key === 'Escape') { void askLeave(); return; }
+    if (e.key === 'p' || e.key === 'P') return;
+  }
   // 꾹 눌러 반복되는 키는 무시하고, 도감·확인 창·게임 방법이 열려 있으면 P로 멈추거나 풀지 않는다
   if (e.repeat || document.querySelector('.codex, .confirm, .guide-screen')) return;
   if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && !isTyping(e)) togglePause();
@@ -768,10 +782,8 @@ socket.on('boss:escaped', ({ circleId }) => {
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => {
   const before = me()?.stacks ?? {};
-  const comboBefore = me()?.combo ?? 0;
   players = p; renderScores(); if (picking()) showPick();
   const m = me();
-  if (room?.tutorial && m) noteTutorialCombo(comboBefore, m.combo);
   // 스택형 증강: 내 칸이 오르면 한 줄 알림
   for (const id of STACK_IDS) {
     const n = m?.stacks?.[id] ?? 0;
@@ -1035,9 +1047,23 @@ const auraUnder = (pt: { x: number; y: number }, t: number) => {
 let lastFrameAt = performance.now();
 // 캔버스 밖으로 나가도 계속 받는다: 게임 커서는 사라지지 않고 가장자리에 붙어 있다 (창 밖이면 마지막 위치)
 window.addEventListener('pointermove', moveCursor);
+/** 튜토리얼 멈춤 장면의 판 클릭 (멈췄으면 멈춘 시각 기준으로 원 위치를 본다) */
+function tutorialClick(e: PointerEvent, tb: NonNullable<ReturnType<typeof currentBeat>>) {
+  moveCursor(e);
+  gameCursor.snap(cursorMode);
+  const { x, y } = gameCursor.pos ?? (locked() ? lockPos : renderer.toField(e.clientX, e.clientY));
+  const t = tb.at ?? serverNow();
+  const hit = [...circles.values()].reverse().find((c) => isHit(c, t, x, y));
+  const v = holdAccepts(tb, hit?.id ?? null);
+  if (v === 'send') socket.emit('game:click', { circleId: hit?.id ?? null, x, y });
+  else hintBeat();
+}
 $('cv').addEventListener('pointerdown', (e) => {
   // 고정한 빌드 카드가 열려 있으면 이 클릭은 닫기만 한다 (빈 곳 감점이 되지 않게)
   if (popPinned) { closeChipPop(); return; }
+  // 튜토리얼 짚기·설명 장면: 받을 동작만 서버로, 그 밖에는 효과·소리 없이 짚은 곳만 다시 알린다
+  const tb = playing && room?.tutorial ? currentBeat() : null;
+  if (tb && tb.kind !== 'free') { tutorialClick(e, tb); return; }
   if (!playing || pausedView || picking() || roundOver) return;
   // 감도가 1.0이 아니면 이 클릭으로 마우스를 잠근다 (클릭은 그대로 판정)
   if (wantLock() && !locked() && e.pointerType === 'mouse') requestLock(gameCursor.pos ?? renderer.toField(e.clientX, e.clientY));

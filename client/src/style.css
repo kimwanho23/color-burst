@@ -696,3 +696,20 @@ body.tutorial #pauseBtn, body.tutorial #timer, body.tutorial #leaveTop { display
 .tut-done { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--bg) 70%, transparent); }
 .tut-card { display: grid; gap: 10px; width: min(360px, 100%); padding: 20px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); text-align: center; }
 .tut-card b { font-size: 22px; } .tut-card p { margin: 0; color: var(--muted); }
+
+/* 튜토리얼 장면: 판을 어둡게 덮는 층(클릭은 판으로 통과), 짚은 원만 밝게, 말풍선, 설명 카드 */
+.tut-layer { position: absolute; inset: 0; z-index: 19; pointer-events: none; }
+.tut-layer.dim { background: rgb(0 0 0 / 0.5); }
+.tut-spot { position: absolute; border-radius: 50%; box-shadow: 0 0 0 200vmax rgb(0 0 0 / 0.55); outline: 3px solid var(--gain); outline-offset: 2px; }
+.tut-bubble { position: absolute; transform: translateX(-50%); max-width: min(320px, calc(100% - 32px)); padding: 8px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--fg); font-size: 15px; text-align: center; }
+.tut-bubble.center { left: 50%; bottom: 22%; }
+.tut-explain { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer; width: min(380px, calc(100% - 32px)); }
+.tut-explain p { color: var(--fg); font-size: 16px; line-height: 1.5; }
+.tut-art { display: grid; place-items: center; color: var(--fg); }
+.tut-spot.nudge, .tut-bubble.nudge, .tut-explain.nudge { animation: tut-nudge 0.35s ease; }
+@keyframes tut-nudge { 0%, 100% { scale: 1; } 50% { scale: 1.08; } }
+@media (prefers-reduced-motion: reduce) { .tut-spot.nudge, .tut-bubble.nudge, .tut-explain.nudge { animation: none; } }
+/* 설명 카드가 짚는 곳 */
+body[data-tut-point="me"] #scores .chip.me,
+body[data-tut-point="bot"] #scores .chip:not(.me),
+body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); outline-offset: 3px; position: relative; z-index: 21; }
