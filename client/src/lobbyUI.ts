@@ -35,8 +35,12 @@ export function rulesSummary(r: RoomRules): { title: string; detail: string } {
   const who = r.coop ? `협력전 ${COOP_NAME[r.coopLevel]}` : r.team ? '팀전 2:2' : r.survival ? '서바이벌' : '개인전';
   const preset = matchPreset(r);
   const title = `${who} · ${r.mode === 'arcade' ? '아케이드' : '클래식'} · ${preset ? PRESETS[preset].name : '커스텀'}`;
-  const time = r.mode === 'arcade' ? `${ARCADE.rounds}라운드 · 라운드 ${r.arcadeRoundSec}초` : `${r.coop ? RULES.coop.timeSec : r.roundSec}초`;
-  const on = [r.boss && '보스', r.items && '아이템', r.laser && '레이저', r.mapPct > 0 && '맵 패턴'].filter(Boolean);
+  // 판 길이: 아케이드는 라운드, 클래식 서바이벌은 인원에 따라 길어지므로 탈락 간격, 협력전은 고정 시간
+  const time = r.mode === 'arcade' ? `${ARCADE.rounds}라운드 · 라운드 ${r.arcadeRoundSec}초`
+    : r.coop ? `${RULES.coop.timeSec}초`
+    : r.survival ? `${RULES.survival.everyMs / 1000}초마다 꼴찌 탈락` : `${r.roundSec}초`;
+  // 협력전은 일반 보스·레이저·맵 패턴을 끈다 (toGameRules)
+  const on = [!r.coop && r.boss && '보스', r.items && '아이템', !r.coop && r.laser && '레이저', !r.coop && r.mapPct > 0 && '맵 패턴'].filter(Boolean);
   return { title, detail: [time, `피버 ×${r.feverMult} ${r.feverSec}초`, ...on].join(' · ') };
 }
 

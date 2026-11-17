@@ -57,3 +57,12 @@ test('roomLink: 주소 뒤에 #방코드', () => {
   assert.equal(roomLink('http://x.com', '/', 'K7QZ'), 'http://x.com/#K7QZ');
   assert.equal(roomLink('https://a.b', '/game/', 'AB12'), 'https://a.b/game/#AB12');
 });
+
+test('rulesSummary: 협력전은 꺼지는 보스·레이저·맵 패턴을 적지 않고, 클래식 서바이벌은 탈락 간격을 적음', () => {
+  const coop = rulesSummary({ ...DEFAULT_RULES, coop: true }).detail;
+  for (const w of ['보스', '레이저', '맵 패턴']) assert.ok(!coop.includes(w), coop);
+  assert.ok(coop.includes('아이템'), coop);
+  const surv = rulesSummary({ ...DEFAULT_RULES, survival: true }).detail;
+  assert.ok(surv.startsWith('30초마다 꼴찌 탈락'), surv);
+  assert.ok(!surv.startsWith('60초'), surv);
+});
