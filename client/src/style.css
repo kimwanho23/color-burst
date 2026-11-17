@@ -713,3 +713,11 @@ body.tutorial #pauseBtn, body.tutorial #timer, body.tutorial #leaveTop { display
 body[data-tut-point="me"] #scores .chip.me,
 body[data-tut-point="bot"] #scores .chip:not(.me),
 body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); outline-offset: 3px; position: relative; z-index: 21; }
+
+/* 대기실 [이 방 점수표] */
+#scoreBtn { justify-self: start; }
+.scorepop { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); }
+.scorepop .hint { margin: 0; }
+.scorepop td:first-child { white-space: nowrap; }
+/* 대기실 카드는 좁아서 점수 칸도 줄바꿈 (보스 줄이 길다) */
+.scorepop td:nth-child(2), .scorepop td:nth-child(3) { white-space: normal; }

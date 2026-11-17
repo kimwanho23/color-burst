@@ -10,7 +10,7 @@ import { taVerdict } from './timeAttack.ts';
 import { closeGuide, openGuide } from './guide.ts';
 import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
-import { renderRules } from './rulesUI.ts';
+import { renderRules, scoreTable } from './rulesUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, heartsHtml, renderCoopHud, renderVote, tickVote } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
@@ -287,7 +287,7 @@ const entered = (r: { ok: true; code: string; you: string } | { ok: false; error
 };
 $('createBtn').onclick = () => socket.emit('room:create', { name: getName(), key: KEY }, entered);
 /** 도감 열기: 방 규칙(점수표)과 내 증강(조합 진행도)을 넘긴다 */
-const openCodexHere = () => openCodex($('stage'), { rules: room ? rules : DEFAULT_RULES, picks: me()?.picks });
+const openCodexHere = () => openCodex($('stage'), { picks: me()?.picks });
 $('codexBtn').onclick = $('codexBtn2').onclick = $('codexTop').onclick = openCodexHere;
 $('codexTop').innerHTML = `${icon(UI.codex, 16)}<span class="bt">도감</span>`;
 $('codexBtn').innerHTML = $('codexBtn2').innerHTML = `${icon(UI.codex, 16)}<span>도감</span>`;
@@ -328,6 +328,18 @@ socket.on('room:state', (s) => {
   if (s.phase === 'lobby' && !playing && $('result').hidden) show('lobby');
 });
 
+/** 대기실의 [이 방 점수표]: 이 방 규칙으로 계산한 점수 (열려 있으면 규칙이 바뀔 때마다 다시 채운다) */
+function renderScorePop() {
+  const pop = $('scorePop');
+  if (!pop.hidden && room) pop.innerHTML = `<p class="hint">이 방 규칙으로 계산한 점수예요</p>${scoreTable(room.rules)}`;
+}
+$('scoreBtn').onclick = () => {
+  const pop = $('scorePop');
+  pop.hidden = !pop.hidden;
+  $('scoreBtn').setAttribute('aria-expanded', String(!pop.hidden));
+  renderScorePop();
+};
+
 function renderLobby() {
   if (!room) return;
   const host = room.hostId === myId();
@@ -366,6 +378,8 @@ function renderLobby() {
     change: (patch) => { if (taPick && 'mode' in patch) { taPick = false; renderLobby(); } socket.emit('lobby:rules', { rules: patch }); },
     ...(room.solo && !room.timeAttack ? { timeAttack: { selected: taPick, best: taBest(), select: () => { taPick = true; renderLobby(); } } } : {}),
   });
+
+  renderScorePop();
 
   const humans = room.players.filter((p) => !p.bot).length;
   // 준비: 방장 뺀 사람이 모두 준비해야 시작할 수 있다

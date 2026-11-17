@@ -1,10 +1,10 @@
 /** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, COMBOS, CURSES, EVOLVE, SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, comboProgress, type AbilityCategory, type Pick, type RoomRules } from '@color-burst/shared';
+import { ABILITIES, ABILITY, COMBOS, CURSES, EVOLVE, SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, DEFAULT_RULES, comboProgress, type AbilityCategory, type Pick } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, icon, itemIcon } from './icons.ts';
 import { scoreTable } from './rulesUI.ts';
 
-/** 도감을 여는 곳의 상태: 방 규칙(점수표), 내 증강(조합 진행도) */
-export interface CodexCtx { rules: RoomRules; picks?: readonly Pick[] }
+/** 도감을 여는 곳의 상태: 내 증강(조합 진행도) */
+export interface CodexCtx { picks?: readonly Pick[] }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -65,11 +65,12 @@ function bossTab() {
   return `<ul class="cx-list">${BOSSES.map(([n, d]) => `<li><div><b>${n}</b><p>${esc(d)}</p></div></li>`).join('')}</ul>`;
 }
 
-function rulesTab(ctx: CodexCtx) {
-  return `<p class="hint">지금 방 규칙 기준 점수예요. 점수 구역(중앙 ×1 · 사이 ×2 · 가장자리 ×3)·잭팟 등은 이 위에 곱해져요</p>${scoreTable(ctx.rules)}`;
+/** 규칙 탭: 늘 기본 규칙 기준 점수표 (방마다 다른 점수는 대기실의 [이 방 점수표]) */
+export function rulesTabHTML() {
+  return `<p class="hint">기본 규칙 기준이에요. 방 규칙과 증강에 따라 달라질 수 있어요. 이 방의 점수는 대기실에서 볼 수 있어요. 점수 구역(중앙 ×1 · 사이 ×2 · 가장자리 ×3)·잭팟 등은 이 위에 곱해져요</p>${scoreTable(DEFAULT_RULES)}`;
 }
 
-const BODY: Record<Tab, (ctx: CodexCtx) => string> = { ability: abilityTab, combo: comboTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTab, rules: rulesTab };
+const BODY: Record<Tab, (ctx: CodexCtx) => string> = { ability: abilityTab, combo: comboTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTab, rules: rulesTabHTML };
 
 /** 열려 있는 도감을 닫는 함수 */
 let closeCurrent: (() => void) | null = null;

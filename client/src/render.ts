@@ -67,7 +67,7 @@ const GOLD = '#ffd166';
 const ITEM_TIER_COLOR = ['#ffffff', '#4d9bff'] as const;
 const PRISM = ['#ff5d73', '#ffb347', '#ffd43b', '#51cf66', '#4dabf7', '#b26cff'];
 
-const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const prefersReduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches; // 테스트(node)에서는 matchMedia가 없다
 let reduceMotion = prefersReduced;
 /** 설정의 '화면 효과 줄이기' (흔들림, 파티클 끔). 운영체제 설정이 켜져 있으면 항상 줄인다 */
 export function setReduceFx(on: boolean) { reduceMotion = prefersReduced || on; }
