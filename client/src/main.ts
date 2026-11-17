@@ -253,6 +253,8 @@ const renderer = new Renderer($<HTMLCanvasElement>('cv'), $('stage'));
 let slotPanel: { kind: 'color' } | { kind: 'member'; id: string } | null = null;
 function show(id: 'home' | 'lobby' | 'result' | null) {
   for (const s of ['home', 'lobby', 'result']) $(s).hidden = s !== id;
+  // 대기실에서는 위쪽 점수판을 숨긴다 (자리 칸과 겹쳐 보여 헷갈림). 자리는 그대로 두어 판 위치가 흔들리지 않게
+  document.body.classList.toggle('lobby-on', id === 'lobby');
   // 대기실을 떠나면 규칙 창·자리 아래 칸도 닫는다
   if (id !== 'lobby') { $('rulesModal').hidden = true; $('linkBox').hidden = true; slotPanel = null; }
 }

@@ -782,3 +782,11 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .cd-bar i { display: block; height: 100%; background: var(--yellow); }
 .cd-top { font-style: normal; font: 700 11px var(--body); color: var(--yellow); border: 1px solid var(--yellow); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 .cr-breaks { font-size: 13px; color: var(--muted); }
+
+/* 대기실에서는 위쪽 점수판·아래 피버 줄 숨김 */
+.lobby-on #scores, .lobby-on .bottom { visibility: hidden; }
+/* 점수표(도감·대기실): 첫 칸(대상)은 한 줄, 점수 칸은 줄바꿈 — 좁은 창에서 첫 칸이 글자 하나씩 세로로 꺾이던 문제 */
+.cx-body td:first-child, .cx-body th:first-child { white-space: nowrap; }
+.cx-body td:nth-child(2), .cx-body td:nth-child(3), .cx-body th:nth-child(2), .cx-body th:nth-child(3) { white-space: normal; }
+/* 도감 창: 대기실 위에 열려도 뒤가 비치지 않게 단단한 바탕 */
+.codex .cx-card { padding: 18px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg); }
