@@ -128,6 +128,7 @@ io.on('connection', (socket) => {
   });
   socket.on('game:pause', () => { const s = here(); if (s) s.room.pause(s.id); });
   socket.on('game:resume', () => { const s = here(); if (s) s.room.resume(s.id); });
+  socket.on('tutorial:next', () => { const s = here(); if (s) s.room.tutorialNext(s.id); });
   socket.on('arcade:choose', (i, cardId, deal) => { const s = here(); if (s && Number.isInteger(i)) s.room.choose(s.id, i, typeof cardId === 'string' ? cardId as AbilityId : undefined, Number.isInteger(deal) ? deal : undefined); });
   socket.on('arcade:reroll', () => { const s = here(); if (s) s.room.reroll(s.id); });
   socket.on('coop:pick', (card) => { const s = here(); if (s && typeof card === 'string' && COOP_CARD_IDS.includes(card)) s.room.coopPick(s.id, card); });

@@ -251,6 +251,8 @@ export const RULES = {
     comboStart: 9,
     feverStart: 99,
     focusDelayMs: 600,
+    /** 짚는 원의 속도 배율 (천천히 나와 보기 쉽게) */
+    focusSpeed: 0.6,
     /** 견제 단계 봇의 시작 콤보 (끊을 콤보가 있어야 견제가 보인다) */
     botCombo: 5,
     nextMs: 1000,
