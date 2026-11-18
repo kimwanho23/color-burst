@@ -5,4 +5,5 @@
 - 규칙·밸런스 수치는 `shared/src/rules.ts`의 `RULES`에서만 바꾼다.
 - 커밋 전에 `npm run typecheck`와 `npm run build`가 통과해야 한다.
 - `main` 푸시는 곧 Render 배포다. `render.yaml`의 `plan: free`는 사용자 확인 없이 바꾸지 않는다.
+- 원격 푸시는 사용자가 명시적으로 요청했을 때만 수행한다.
 - 버전을 올릴 때는 루트·shared·server·client의 `package.json`을 모두 맞추고 `CHANGELOG.md`를 갱신한다.
