@@ -70,8 +70,8 @@ export const RULES = {
     orb: { gapMs: 450, botGapMult: 1.5, speed: 280, yellowPct: 20, dmg: 1, yellowDmg: 0.7 },
     /** 피해 콤보 보너스: comboStep마다 +comboPer, 상한 comboCap */
     comboStep: 10, comboPer: 0.1, comboCap: 0.5,
-    /** 큰 피해 구간: 길이, 피해 배율, 그동안 원 간격 */
-    burst: { ms: 5_000, mult: 2, orbGapMs: 400 },
+    /** 큰 피해 구간: 길이 = min(maxMs, baseMs + 보호막 남은 시간 × leftRatio), 피해 배율, 그동안 원 간격 */
+    burst: { baseMs: 4_000, leftRatio: 0.5, maxMs: 10_000, mult: 2, orbGapMs: 400 },
     /**
      * 탄막: 탄 반지름, 단계 배율(탄의 양: 서버가 발사 간격을 나눔, 속도 아님), 수정 구간 배율(양), 겹쳐 쏠 확률(단계별), 무늬별 발 수·간격.
      * spiralMs 발 사이 지연, aimedSpread 부채꼴 한쪽 각(라디안), wallGap 벽 탄 간격, gapW 벽 틈 폭, wallDy 보스 중심에서 벽까지 거리
@@ -81,8 +81,8 @@ export const RULES = {
       spiralCount: 12, spiralMs: 80, ringCount: 14, aimedCount: 5, aimedSpread: Math.PI / 9, scatterCount: 10,
       wallGap: 20, gapW: 120, wallDy: 190,
     },
-    /** 수정: 반지름, 서로 떨어진 거리 */
-    crystal: { r: 46, minGap: 140 },
+    /** 수정: 반지름, 서로 떨어진 거리, 피할 부채꼴(보스 아래로 ±dangerDeg도, 거리 dangerR 안) */
+    crystal: { r: 46, minGap: 140, dangerDeg: 35, dangerR: 600 },
     /** 수정을 다 못 깼을 때 분노 공격 경고 */
     rageWarnMs: 2_000,
     /** 내려찍기: 경고 시간, 반지름 */

@@ -74,7 +74,20 @@ export function crystalHits(level: CoopLevel, shieldNo: 0 | 1): number {
   return C.levels[level].crystalHits[shieldNo];
 }
 
-/** 수정 자리 n개: 가장자리 구역, 판 안, 서로 minGap 이상, 보스와 겹치지 않게 */
+/** 큰 피해 구간 길이: 수정을 빨리 깰수록(보호막이 많이 남을수록) 길다 */
+export function burstMsFor(shieldLeftMs: number): number {
+  const b = C.burst;
+  return Math.min(b.maxMs, b.baseMs + Math.max(0, shieldLeftMs) * b.leftRatio);
+}
+
+/** 수정이 놓이면 안 되는 자리: 보스 바로 아래 부채꼴 (탄막이 가장 촘촘한 곳) */
+export function inCrystalDanger(p: Point, boss: Point = { x: FIELD.w / 2, y: C.bossY }): boolean {
+  const dx = p.x - boss.x, dy = p.y - boss.y;
+  if (dy <= 0 || Math.hypot(dx, dy) > C.crystal.dangerR) return false;
+  return Math.abs(Math.atan2(dx, dy)) <= (C.crystal.dangerDeg * Math.PI) / 180;
+}
+
+/** 수정 자리 n개: 가장자리 구역, 판 안, 서로 minGap 이상, 보스와 겹치지 않게, 보스 아래 부채꼴은 피해서 */
 export function placeCrystals(n: number, rand: () => number): Point[] {
   const r = C.crystal.r, out: Point[] = [];
   const bossBottom = C.bossY + C.bossR + r;
@@ -84,7 +97,7 @@ export function placeCrystals(n: number, rand: () => number): Point[] {
       x: Math.min(FIELD.w - r, Math.max(r, FIELD.w / 2 + Math.cos(a) * e * FIELD.w / 2)),
       y: Math.min(FIELD.h - r, Math.max(r, FIELD.h / 2 + Math.sin(a) * e * FIELD.h / 2)),
     };
-    if (zoneOf(p) !== 2 || p.y < bossBottom) continue;
+    if (zoneOf(p) !== 2 || p.y < bossBottom || inCrystalDanger(p)) continue;
     if (out.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < C.crystal.minGap)) continue;
     out.push(p);
   }

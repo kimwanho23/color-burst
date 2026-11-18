@@ -634,6 +634,8 @@ socket.on('coop:state', (s) => {
   }
   // 큰 피해 구간 시작
   if (s.burstUntil > (coopState?.burstUntil ?? 0) && !s.shield && !coopState?.burstUntil) { renderer.banner('보스가 무너졌다!', '#ffd43b'); sfx.fever(); }
+  // 큰 피해 구간이 끝나 다음 단계가 시작됨
+  if (coopState?.burstUntil && !s.burstUntil && !s.shield && s.phase > 1) renderer.banner(`${s.phase}단계`, '#ff8a95');
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
   coopState = s; coopSlams = s.slams; coopSafe = s.safe; coopSeal = s.seal; coopBeam = s.beam; renderCoop();
   // 탄막 목록은 실려 올 때만 바꾼다 (평소 상태에는 없다)
@@ -1428,6 +1430,8 @@ function frame() {
     trapped: gameCursor.trapped,
     colorOf: rules.coop ? new Map(players.map((p) => [p.id, p.color])) : undefined,
     coop: !!rules.coop,
+    coopShield: rules.coop && !!coopState?.shield,
+    coopPhase: rules.coop ? coopState?.phase : undefined,
     slams: rules.coop ? coopSlams : undefined,
     safe: rules.coop ? coopSafe : undefined,
     seal: rules.coop ? coopSeal : undefined,

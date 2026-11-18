@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, inSafe, isGuarded, isHit, isOut,
   COOP_BOSSES, beamHits, hitShot, inSeal, pickSkill, rollSeal,
-  makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, shotGone, shotPos, toGameRules, zoneOf,
+  burstMsFor, makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, inCrystalDanger, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, shotGone, shotPos, toGameRules, zoneOf,
   type Beam, type Circle, type CoopHitBy, type CoopSkill, type Seal, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones, type Volley,
 } from '../src/index.ts';
 import { Room } from '../../server/src/room.ts';
@@ -100,6 +100,58 @@ test('placeCrystals: 가장자리 구역, 서로 떨어짐, 판 안', () => {
     }
     for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) assert.ok(Math.hypot(ps[i]!.x - ps[j]!.x, ps[i]!.y - ps[j]!.y) >= C.crystal.minGap);
   }
+});
+
+test('큰 피해 구간 길이: 남은 12초 → 10초(상한), 남은 2초 → 5초, 남은 0초 → 4초', () => {
+  assert.equal(burstMsFor(12_000), 10_000);
+  assert.equal(burstMsFor(2_000), 5_000);
+  assert.equal(burstMsFor(0), 4_000);
+  assert.equal(burstMsFor(-500), 4_000);
+});
+
+test('수정 자리: 보스 아래 부채꼴에 놓이지 않음', () => {
+  const lim = (C.crystal.dangerDeg * Math.PI) / 180;
+  let n = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    let a = seed * 7919;
+    const rand = () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    for (const p of placeCrystals(4, rand)) {
+      n++;
+      const dx = p.x - FIELD.w / 2, dy = p.y - C.bossY;
+      const inside = dy > 0 && Math.hypot(dx, dy) <= C.crystal.dangerR && Math.abs(Math.atan2(dx, dy)) <= lim;
+      assert.equal(inside, false, JSON.stringify(p));
+    }
+  }
+  assert.ok(n >= 200, String(n));
+  // 부채꼴 한가운데로만 나오는 난수는 건너뛰고 다른 곳을 찾는다
+  assert.equal(inCrystalDanger({ x: FIELD.w / 2, y: C.bossY + 400 }), true);
+  assert.equal(inCrystalDanger({ x: FIELD.w / 2, y: C.bossY + 700 }), false);
+  assert.equal(inCrystalDanger({ x: FIELD.w / 2, y: C.bossY - 100 }), false);
+});
+
+test('수정 구간: 잡을 원은 안 나오고 탄막은 나온다', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  const before = [...r.circles.values()].filter((c) => c.kind !== 'crystal' && c.kind !== 'boss').length;
+  sent.length = 0;
+  for (let t = now; t <= now + 5000; t += 50) r.coop.tick(t);
+  const orbs = [...r.circles.values()].filter((c) => c.kind !== 'crystal' && c.kind !== 'boss').length;
+  assert.ok(orbs <= before, '새 원 없음');
+  assert.ok(volleysSent().length > 0, '탄막은 나옴');
+  room.destroy();
+});
+
+test('breaks에 burstMs가 남는다', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  breakMine(r, me, now + 9_000); // 남은 3초 → 4초 + 1.5초
+  const res = r.coop.result(now + 9_000, r.startAt, false, 'time');
+  assert.equal(res.breaks.length, 1);
+  assert.equal(res.breaks[0]!.burstMs, 5_500);
+  assert.equal(r.coop.state().burstUntil, now + 9_000 + 5_500);
+  room.destroy();
 });
 
 test('makeCrystal: 움직이지 않고 체력 = 횟수, 주인과 색', () => {
@@ -353,7 +405,7 @@ test('coop 큰 피해가 끝나면 2단계', () => {
   const now = r.startAt + 5000;
   toShield(r, me, now);
   breakMine(r, me, now);
-  r.coop.tick(now + C.burst.ms + 10);
+  r.coop.tick(now + C.burst.maxMs + 10);
   assert.equal(r.coop.phase, 2);
   assert.equal(r.coop.state().shield, null);
   room.destroy();
@@ -364,22 +416,22 @@ test('coop 큰 피해 구간에도 단계 경계에서 멈추고 보호막', () 
   const now = r.startAt + 5000;
   toShield(r, me, now);
   breakMine(r, me, now);
-  r.coop.tick(now + C.burst.ms + 10); // 2단계
-  const t2 = now + C.burst.ms + 100;
+  r.coop.tick(now + C.burst.maxMs + 10); // 2단계
+  const t2 = now + C.burst.maxMs + 100;
   toShield(r, me, t2, C.phaseAt[1]);
   breakMine(r, me, t2);
-  r.coop.tick(t2 + C.burst.ms + 10);
+  r.coop.tick(t2 + C.burst.maxMs + 10);
   assert.equal(r.coop.phase, 3);
   // 다시: 2단계에서 큰 피해 중 경계 → 33%에서 멈춤
   const { room: room2, r: r2, me: me2 } = coopRoom(1, 0);
   const n2 = r2.startAt + 5000;
   toShield(r2, me2, n2);
   breakMine(r2, me2, n2);
-  r2.coop.tick(n2 + C.burst.ms + 10);
+  r2.coop.tick(n2 + C.burst.maxMs + 10);
   const b = r2.coop.boss;
   // 2단계 시작 직후 큰 피해 구간을 흉내: 경계 바로 위에서 큰 피해 원
   b.hp = b.maxHp! * C.phaseAt[1] + 1;
-  const t3 = n2 + C.burst.ms + 200;
+  const t3 = n2 + C.burst.maxMs + 200;
   r2.coop.catchOrb(me2, orbOf(me2.color, t3), t3);
   assert.ok(Math.abs(b.hp! - b.maxHp! * C.phaseAt[1]) < 1e-9);
   assert.equal(r2.coop.state().shield?.no, 1);
@@ -433,7 +485,7 @@ test('coop 내려찍기: 경고 원 안에 그대로 있으면 −1, 피하면 �
   toShield(r, me, now);
   breakMine(r, me, now);
   breakMine(r, other, now);
-  const t = now + C.burst.ms + 10;
+  const t = now + C.burst.maxMs + 10;
   r.coop.tick(t); // 2단계
   r.cursors.set(me.id, { x: 500, y: 600, at: Date.now() + 1e9 });
   r.cursors.set(other.id, { x: 300, y: 800, at: Date.now() + 1e9 });
@@ -491,7 +543,7 @@ test('coop 결과: 사람마다 대미지·큰 피해 대미지·수정·추적 
   const mine = res.players[me.id]!;
   assert.ok(mine.dmg > mine.burstDmg && mine.burstDmg > 0);
   assert.equal(mine.crystals, 1);
-  assert.deepEqual(res.breaks, [{ ms: 2000, rages: 0 }]);
+  assert.deepEqual(res.breaks, [{ ms: 2000, rages: 0, burstMs: 9000 }]);
   assert.equal(res.maxHp, r.coop.boss.maxHp);
   room.destroy();
 });
@@ -771,7 +823,9 @@ test('coop 검토: 파훼 기록은 보호막마다 하나 (분노 횟수 포함
   r.coop.tick(end + 1);
   r.coop.tick(end + 2 + C.rageWarnMs);
   breakMine(r, me, end + 5000);
-  assert.deepEqual(r.coop.result(end + 6000, r.startAt, false).breaks, [{ ms: end + 5000 - now, rages: 1 }]);
+  const br = r.coop.result(end + 6000, r.startAt, false).breaks;
+  assert.deepEqual(br.map((b) => [b.ms, b.rages]), [[end + 5000 - now, 1]]);
+  assert.ok(br[0]!.burstMs >= C.burst.baseMs && br[0]!.burstMs <= C.burst.maxMs);
   room.destroy();
 });
 
@@ -867,9 +921,10 @@ test('탄막: 보호막 중에도 shieldBullets로 발사, 큰 피해 구간에�
   assert.deepEqual(sent.find((s) => s.ev === 'coop:clear')?.d, { before: tb });
   assert.deepEqual(r.coop.state(true).volleys, []);
   sent.length = 0;
-  for (let t = tb; t < tb + C.burst.ms; t += 50) r.coop.tick(t);
+  const bms = burstMsFor(C.levels.normal.crystalSec * 1000 - 6010);
+  for (let t = tb; t < tb + bms; t += 50) r.coop.tick(t);
   assert.equal(volleysSent().length, 0, '큰 피해 구간에는 쏘지 않음');
-  for (let t = tb + C.burst.ms; t <= tb + C.burst.ms + 3000; t += 50) r.coop.tick(t);
+  for (let t = tb + bms; t <= tb + bms + 3000; t += 50) r.coop.tick(t);
   assert.ok(volleysSent().length > 0, '끝나면 다시 쏨');
   room.destroy();
 });
@@ -1073,7 +1128,7 @@ test('고유 패턴: 보호막·큰 피해 구간에는 안 나오고, 끝난 �
   for (let t = now; t <= now + 8000; t += 50) r.coop.tick(t);
   assert.equal(calls.length, 0, '보호막 중 없음');
   breakMine(r, me, now + 8000);
-  const end = now + 8000 + C.burst.ms;
+  const end = now + 8000 + burstMsFor((C.levels.normal.crystalSec - 8) * 1000);
   for (let t = now + 8000; t < end; t += 50) r.coop.tick(t);
   assert.equal(calls.length, 0, '큰 피해 구간 중 없음');
   for (let t = end; t <= end + 12_000; t += 50) r.coop.tick(t);

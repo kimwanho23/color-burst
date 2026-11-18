@@ -8,7 +8,7 @@
  */
 import {
   COOP_BOSSES, RULES, addSrc, applyRaidDamage, beamHits, circlePos, coopStars, crystalHits, inSafe, inSeal, makeCrystal, makeOrb,
-  makeRaid, makeThreat, makeVolley, orbDamage, pickSkill, placeCrystals, raidMaxHp, rollSafe, rollSeal, rollVolley, hitShot, shotGone, shotPos, threatSpeed, volleyDone,
+  burstMsFor, makeRaid, makeThreat, makeVolley, orbDamage, pickSkill, placeCrystals, raidMaxHp, rollSafe, rollSeal, rollVolley, hitShot, shotGone, shotPos, threatSpeed, volleyDone,
   type Beam, type Circle, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopPlayerResult, type CoopResult, type CoopSkill, type CoopState,
   type LaserLine, type PlayerState, type Point, type SafeZones, type Seal, type ServerToClient, type Slam,
   type BulletShape, type Volley,
@@ -61,7 +61,7 @@ export class CoopRun {
   private beam: Beam | null = null;
   private beamHit = new Set<string>();
   private stats = new Map<string, CoopPlayerResult>();
-  private breaks: { ms: number; rages: number }[] = [];
+  private breaks: { ms: number; rages: number; burstMs: number }[] = [];
   /** 큰 피해 구간이 끝나면 고유 패턴·탄막 일정을 다시 잡는다 */
   private afterBurst = false;
   /** 진 이유 (결과에 실림) */
@@ -378,12 +378,13 @@ export class CoopRun {
   /** 보호막이 풀림: 큰 피해 구간 (고유 패턴 멈춤, 원이 촘촘), 끝나면 다음 단계 */
   private breakShield(now: number) {
     if (!this.shield) return;
-    this.breaks.push({ ms: now - this.shield.from, rages: this.shield.rages });
+    const burstMs = burstMsFor(this.shield.until - now);
+    this.breaks.push({ ms: now - this.shield.from, rages: this.shield.rages, burstMs });
     this.shield = null;
     this.rageAt = 0;
     // 큰 피해는 다음 단계 몫이다 (그 단계의 아래 경계까지만 깎인다). 패턴은 큰 피해 구간이 끝난 뒤 다음 단계 것으로
     this.phase = Math.min(3, this.phase + 1) as CoopPhase;
-    this.burstUntil = now + C.burst.ms;
+    this.burstUntil = now + burstMs;
     this.afterBurst = true;
     // 큰 피해 구간 시작: 살아 있는 사람 회복 (엑스퍼트는 없음)
     if (this.level !== 'expert') {

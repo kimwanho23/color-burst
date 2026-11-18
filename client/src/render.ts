@@ -3,7 +3,7 @@
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
 import {
-  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, beamAngles, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
+  COLORS, COOP_BOSSES, FIELD, RULES, YELLOW, auraAt, barSegment, beamAngles, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
   type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam } from '@color-burst/shared';
 
 /** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
@@ -74,6 +74,10 @@ export function setReduceFx(on: boolean) { reduceMotion = prefersReduced || on; 
 export interface DrawState {
   /** 협력전이면 가운데 보호 구역 점선을 안 그린다 */
   coop?: boolean;
+  /** 협력전 보호막이 올라와 있음 (판 테두리가 붉게 맥동, 보스가 떨림) */
+  coopShield?: boolean;
+  /** 협력전 단계 (보스 테두리 색) */
+  coopPhase?: 1 | 2 | 3;
   circles: Iterable<Circle>;
   hidden: Set<number>;
   myColor: ColorIndex | null;
@@ -314,7 +318,7 @@ export class Renderer {
       const a = auraAt(c, s.now);
       if (a) this.drawAura(a, !!s.myAura, now);
     }
-    for (const c of list) if (c.kind === 'boss') { fade(c); this.drawBoss(c, s.now, now); }
+    for (const c of list) if (c.kind === 'boss') { fade(c); this.drawBoss(c, s.now, now, s); }
     // 수정은 탄막 위에 그린다
     const crystals: { c: Circle; x: number; y: number; r: number }[] = [];
     for (const c of list) {
@@ -341,6 +345,12 @@ export class Renderer {
     for (const k of crystals) { fade(k.c); this.drawCrystal(k.c, k.x, k.y, k.r, s); }
     ctx.globalAlpha = base;
     ctx.filter = 'none'; ctx.globalAlpha = 1;
+    // 보호막 중: 판 테두리가 0.5초 주기로 붉게 맥동 (맥동은 효과 줄이기에도 남는다)
+    if (s.coopShield) {
+      const k = 0.5 + 0.5 * Math.sin((now / 500) * Math.PI * 2);
+      ctx.lineWidth = 10; ctx.strokeStyle = `rgba(255, 45, 61, ${0.25 + 0.55 * k})`;
+      ctx.strokeRect(5, 5, FIELD.w - 10, FIELD.h - 10);
+    }
     // 안개는 원 위에 덮는다
     if (s.pattern?.id === 'fog' && s.now >= s.pattern.warnAt && s.now < s.pattern.until) this.drawFog(s.pattern, s.now);
     if (s.frozen) for (const c of list) if (c.holds?.some(([a, ms]) => s.now >= a && s.now < a + ms)) this.drawClock(circlePos(c, s.now), c.r, now);
@@ -415,13 +425,15 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawBoss(c: Circle, t: number, frameNow: number) {
+  private drawBoss(c: Circle, t: number, frameNow: number, s?: DrawState) {
     const ctx = this.ctx;
     let { x, y } = circlePos(c, t);
     let size = c.r;
     if (this.warp) { const w = this.warp({ x, y }, c.r); x = w.x; y = w.y; size = w.size; }
     const poked = frameNow - (this.bossPoked.get(c.id) ?? -1e9);
     if (poked < 120 && !reduceMotion) { x += (Math.random() - 0.5) * 10; y += (Math.random() - 0.5) * 10; }
+    // 보호막 중에는 보스가 떨린다 (효과 줄이기면 안 떨림)
+    if (s?.coopShield && !reduceMotion) { x += Math.sin(frameNow / 24) * 4; y += Math.cos(frameNow / 31) * 3; }
     const r = size * (poked < 120 ? 0.96 : 1);
     const frac = (c.hp ?? 0) / (c.maxHp ?? 1);
     const low = frac <= 0.2;
@@ -436,7 +448,7 @@ export class Renderer {
     g.addColorStop(0, c0); g.addColorStop(0.55, c1); g.addColorStop(1, c2);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 4; ctx.strokeStyle = st.enraged ? '#ff4d4d' : '#fff'; ctx.stroke();
+    ctx.lineWidth = s?.coop && s.coopPhase ? 7 : 4; ctx.strokeStyle = st.enraged ? '#ff4d4d' : s?.coop && s.coopPhase ? COOP_BOSSES.core.rims[s.coopPhase - 1] : '#fff'; ctx.stroke();
     this.bossEmblem(type, r, st.enraged);
     // 체력 숫자
     ctx.fillStyle = 'rgba(30,20,10,.85)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
