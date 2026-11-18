@@ -3,8 +3,8 @@
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
 import {
-  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
-  type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones } from '@color-burst/shared';
+  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, beamAngles, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
+  type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam } from '@color-burst/shared';
 
 /** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
 function seeded(seed: number) {
@@ -108,6 +108,9 @@ export interface DrawState {
   /** 협력전: 내려찍기 경고, 안전지대 */
   slams?: readonly Slam[];
   safe?: SafeZones | null;
+  /** 협력전: 구역 봉인, 회전 빔(보스 중심 from에서) */
+  seal?: Seal | null;
+  beam?: { b: Beam; from: { x: number; y: number } } | null;
   /** 협력전: 탄막 (원보다 위, 수정보다 아래) */
   volleys?: readonly Volley[];
 }
@@ -297,6 +300,8 @@ export class Renderer {
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
     for (const l of s.lasers ?? []) this.drawLaser(l, s.now, now);
     if (s.safe) this.drawSafe(s.safe, s.now);
+    if (s.seal) this.drawSeal(s.seal, s.now, now);
+    if (s.beam) this.drawBeam(s.beam.b, s.beam.from, s.now, now);
     for (const sl of s.slams ?? []) this.drawSlam(sl, s.now, s);
     if (s.pattern) this.drawPattern(s.pattern, s.popped ?? new Set(), s.now, now, s.trapped ?? -1);
     const base = ctx.globalAlpha;
@@ -781,9 +786,94 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** 구역 봉인: 판을 세로 3등분한 막힐 줄에 붉은 빗금 (경고 중엔 옅게 흐르고, 막히면 진하게) */
+  private drawSeal(sl: Seal, t: number, frameNow: number) {
+    if (t >= sl.until) return;
+    const ctx = this.ctx, w = FIELD.w / 3, live = t >= sl.at;
+    const f = live ? 1 : Math.min(1, Math.max(0, (t - sl.warnAt) / Math.max(1, sl.at - sl.warnAt)));
+    ctx.save();
+    for (const l of sl.lanes) {
+      const x0 = l * w;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0, 0, w, FIELD.h); ctx.clip();
+      ctx.fillStyle = live ? 'rgba(255, 45, 61, .28)' : `rgba(255, 60, 80, ${0.06 + 0.1 * f})`;
+      ctx.fillRect(x0, 0, w, FIELD.h);
+      // 빗금: 경고 중에는 흘러내린다
+      const step = 46, off = live ? 0 : (frameNow / 20) % step;
+      ctx.strokeStyle = live ? 'rgba(255, 70, 90, .75)' : `rgba(255, 93, 115, ${0.35 + 0.4 * f})`;
+      ctx.lineWidth = live ? 10 : 6;
+      ctx.beginPath();
+      for (let k = -FIELD.h; k < w + FIELD.h; k += step) { ctx.moveTo(x0 + k + off, 0); ctx.lineTo(x0 + k + off - FIELD.h, FIELD.h); }
+      ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = '#ff5d73'; ctx.lineWidth = 4; ctx.setLineDash(live ? [] : [14, 10]);
+      ctx.strokeRect(x0 + 2, 2, w - 4, FIELD.h - 4);
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  /** 회전 빔: 경고 중엔 보스에서 뻗는 얇은 선 + 도는 방향 화살표, 나오면 굵은 빔 */
+  private drawBeam(b: Beam, from: { x: number; y: number }, t: number, frameNow: number) {
+    if (t >= b.until) return;
+    const ctx = this.ctx, live = t >= b.at, len = Math.hypot(FIELD.w, FIELD.h) + 50;
+    const half = RULES.coop.beam.halfWidth;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const a of beamAngles(b, t)) {
+      const ex = from.x + Math.cos(a) * len, ey = from.y + Math.sin(a) * len;
+      if (live) {
+        ctx.strokeStyle = 'rgba(255, 45, 61, .35)'; ctx.lineWidth = half * 2 + 14;
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.strokeStyle = '#ff5d73'; ctx.lineWidth = half * 2;
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 240, 240, .9)'; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(ex, ey); ctx.stroke();
+      } else {
+        ctx.strokeStyle = `rgba(255, 93, 115, ${0.5 + 0.3 * Math.sin(frameNow / 90)})`; ctx.lineWidth = 3; ctx.setLineDash([16, 12]);
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.setLineDash([]);
+        // 도는 방향 화살표: 빔 끝쪽 원호 + 화살촉
+        const R = 330, dir = Math.sign(b.w) || 1, sweep = 0.35 * dir;
+        ctx.strokeStyle = '#ffb3a0'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(from.x, from.y, R, a + 0.06 * dir, a + sweep, dir < 0); ctx.stroke();
+        const ta = a + sweep, tx = from.x + Math.cos(ta) * R, ty = from.y + Math.sin(ta) * R;
+        const fwd = ta + (Math.PI / 2) * dir, hl = 18;
+        ctx.fillStyle = '#ffb3a0';
+        ctx.beginPath();
+        ctx.moveTo(tx + Math.cos(fwd) * hl, ty + Math.sin(fwd) * hl);
+        ctx.lineTo(tx + Math.cos(fwd + 2.4) * hl, ty + Math.sin(fwd + 2.4) * hl);
+        ctx.lineTo(tx + Math.cos(fwd - 2.4) * hl, ty + Math.sin(fwd - 2.4) * hl);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** 내려오는 벽 미리보기: 벽 줄을 판 너비로 옅게 잇고, 틈에서 아래로 초록 길을 낸다 */
+  private drawWallGuide(v: Volley, t: number) {
+    const p0 = shotPos(v, 0, t);
+    if (!p0 || p0.y > FIELD.h + v.r) return;
+    const ctx = this.ctx, y = p0.y, gap = RULES.coop.bullets.wallGap;
+    const xs = v.shots.map((q) => q.x).sort((a, b) => a - b);
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 60, 80, .16)';
+    ctx.fillRect(0, y - v.r * 1.6, FIELD.w, v.r * 3.2);
+    ctx.fillStyle = 'rgba(120, 255, 170, .12)'; ctx.strokeStyle = 'rgba(120, 255, 170, .55)'; ctx.lineWidth = 2; ctx.setLineDash([10, 10]);
+    for (let i = 1; i < xs.length; i++) {
+      const a = xs[i - 1]!, b = xs[i]!;
+      if (b - a <= gap + 0.01) continue;
+      const x0 = a + v.r, x1 = b - v.r;
+      ctx.fillRect(x0, y, x1 - x0, FIELD.h - y);
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0, FIELD.h); ctx.moveTo(x1, y); ctx.lineTo(x1, FIELD.h); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /** 협력전 탄: 어두운 빨강 몸통 + 밝은 테두리 + 도는 가시 4개 */
   private drawBullets(vs: readonly Volley[], t: number, frameNow: number) {
     const ctx = this.ctx, spin = frameNow / 260;
+    for (const v of vs) if (v.wall) this.drawWallGuide(v, t);
     ctx.save();
     ctx.lineJoin = 'round';
     for (const v of vs) {

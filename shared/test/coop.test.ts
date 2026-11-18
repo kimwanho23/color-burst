@@ -2,8 +2,9 @@ import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, inSafe, isGuarded, isHit, isOut,
+  COOP_BOSSES, beamHits, inSeal, pickSkill, rollSeal,
   makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, shotGone, shotPos, toGameRules, zoneOf,
-  type Circle, type CoopHitBy, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones, type Volley,
+  type Beam, type Circle, type CoopHitBy, type CoopSkill, type Seal, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones, type Volley,
 } from '../src/index.ts';
 import { Room } from '../../server/src/room.ts';
 import { gameRecord } from '../../server/src/gameLog.ts';
@@ -162,17 +163,20 @@ test('엑스퍼트 난이도: 규칙 정리를 통과하고 하드보다 한 칸
   assert.equal(sanitizeRules(DEFAULT_RULES, { coop: true, coopLevel: 'expert' }).coopLevel, 'expert');
   assert.equal(Object.keys(C.levels).length, 4);
   const { hard: h, expert: x } = C.levels;
-  assert.ok(x.laserEvery[0] < h.laserEvery[0] && x.laserEvery[1] < h.laserEvery[1] && x.laserWarnMs <= h.laserWarnMs && x.laserWidth > h.laserWidth);
-  assert.ok(x.threatEvery < h.threatEvery && x.threatCount > h.threatCount && x.threatSpeed > h.threatSpeed && x.phase3Mult < h.phase3Mult);
+  assert.ok(x.laserWarnMs <= h.laserWarnMs && x.laserWidth > h.laserWidth);
+  assert.ok(x.threatCount > h.threatCount && x.threatSpeed > h.threatSpeed);
   assert.ok(x.crystalHits[0] > h.crystalHits[0] && x.crystalHits[1] > h.crystalHits[1] && x.crystalSec < h.crystalSec);
-  assert.ok(x.slamEvery < h.slamEvery && x.safeEvery < h.safeEvery && x.safeCount <= h.safeCount && x.mapEvery < h.mapEvery && x.orbMult < h.orbMult);
+  assert.ok(x.safeCount <= h.safeCount && x.orbMult < h.orbMult && x.bulletEveryMs < h.bulletEveryMs);
 });
 
 test('난이도 표: 세 난이도 모두 있고 하드일수록 공격이 잦고 수정이 단단하다', () => {
   const L = C.levels;
   for (const k of ['easy', 'normal', 'hard', 'expert'] as const) assert.ok(L[k]);
-  assert.ok(L.easy.laserEvery[0] > L.normal.laserEvery[0] && L.normal.laserEvery[0] > L.hard.laserEvery[0]);
-  assert.ok(L.easy.slamEvery > L.hard.slamEvery && L.easy.crystalSec > L.hard.crystalSec);
+  assert.ok(L.easy.bulletEveryMs > L.normal.bulletEveryMs && L.normal.bulletEveryMs > L.hard.bulletEveryMs);
+  assert.ok(L.easy.laserWarnMs > L.hard.laserWarnMs && L.easy.crystalSec > L.hard.crystalSec);
+  for (const k of ['easy', 'normal', 'hard', 'expert'] as const) {
+    for (const gone of ['laserEvery', 'threatEvery', 'slamEvery', 'safeEvery', 'mapEvery', 'phase3Mult']) assert.ok(!(gone in L[k]), `${k}.${gone}`);
+  }
 });
 
 test('circlePos: 레이드 보스는 bossY에 머물고 isOut·보호 구역 아님, 공격 원은 출발점에서 날아감', () => {
@@ -240,6 +244,20 @@ function breakMine(r: CRoom, p: PlayerState, now: number) {
   const c = crystals(r).find((x) => x.target === p.id)!;
   while (r.circles.has(c.id)) r.coop.hitCrystal(p, c, now);
 }
+
+type SkillRun = { useSkill(k: CoopSkill, now: number): void; rand: () => number };
+/** 고유 패턴 호출 기록 (useSkill을 감싼다) */
+function spySkills(r: CRoom) {
+  const run = r.coop as unknown as SkillRun;
+  const orig = run.useSkill.bind(run);
+  const calls: { k: CoopSkill; t: number }[] = [];
+  run.useSkill = (k, now) => { calls.push({ k, t: now }); orig(k, now); };
+  return calls;
+}
+const sealsSent = () => sent.filter((s) => s.ev === 'coop:seal').map((s) => s.d as Seal | null);
+const beamsSent = () => sent.filter((s) => s.ev === 'coop:beam').map((s) => s.d as Beam | null);
+/** 저절로 나오는 고유 패턴을 막는다 (직접 부른 패턴만 보려고) */
+const noSkills = (r: CRoom) => { (r.coop as unknown as { nextSkill: number }).nextSkill = Infinity; };
 
 test('coop 시작: 레이드 보스 1마리, 사람 체력 100·봇 0, 판 180초', () => {
   const { room, r, me } = coopRoom();
@@ -419,9 +437,9 @@ test('coop 내려찍기: 경고 원 안에 그대로 있으면 −1, 피하면 �
   r.coop.tick(t); // 2단계
   r.cursors.set(me.id, { x: 500, y: 600, at: Date.now() + 1e9 });
   r.cursors.set(other.id, { x: 300, y: 800, at: Date.now() + 1e9 });
+  noSkills(r);
   sent.length = 0;
-  let k = 0;
-  while (!sent.some((s) => s.ev === 'coop:slam') && k++ < 200) r.coop.tick(t + k * 100);
+  (r.coop as unknown as SkillRun).useSkill('slam', t + 100);
   const slams = sent.find((s) => s.ev === 'coop:slam')!.d as { owner: string; at: number }[];
   assert.equal(slams.length, 2);
   r.cursors.set(other.id, { x: 900, y: 400, at: Date.now() + 1e9 }); // 피함
@@ -435,10 +453,9 @@ test('coop 안전지대: 발동 순간 밖이면 −(노말 안전지대), 안�
   const other = room.players.find((p) => p.id === ids[1])!;
   r.coop.phase = 3;
   const t = r.startAt + 5000;
-  (r.coop as unknown as { schedule(now: number): void }).schedule(t);
+  noSkills(r);
   sent.length = 0;
-  let k = 0;
-  while (!sent.some((s) => s.ev === 'coop:safe' && s.d) && k++ < 400) r.coop.tick(t + k * 100);
+  (r.coop as unknown as SkillRun).useSkill('safe', t);
   const s = sent.find((x) => x.ev === 'coop:safe' && x.d)!.d as SafeZones;
   const z = safeZoneAt(s, 0, s.at);
   r.cursors.set(me.id, { x: z.x, y: z.y, at: Date.now() + 1e9 });
@@ -608,7 +625,7 @@ test('coop 피격: 겹친 피격은 한 번', () => {
   const now = r.startAt + 5000;
   assert.equal(r.coop.damage(me, 'laser', now), true);
   r.coop.threatEscaped(makeThreat(999, now, { x: 0, y: 0 }, 0, 100, me.id), now);
-  assert.equal(r.coop.damage(me, 'hazard', now), false);
+  assert.equal(r.coop.damage(me, 'seal', now), false);
   assert.equal(me.hp, C.hpMax - N.laser);
   room.destroy();
 });
@@ -723,14 +740,15 @@ test('coop 검토: 내려찍기·안전지대는 상태에 담겨 다시 접속�
   const { room, r, me } = coopRoom(1, 0);
   r.coop.phase = 3;
   const t = r.startAt + 5000;
-  (r.coop as unknown as { schedule(now: number): void }).schedule(t);
+  noSkills(r);
   r.cursors.set(me.id, { x: 500, y: 600, at: Date.now() + 1e9 });
-  let k = 0;
-  while (!r.coop.state().safe && k++ < 400) r.coop.tick(t + k * 100);
-  assert.ok(r.coop.state().safe);
-  k = 0;
-  while (!r.coop.state().slams.length && k++ < 400) r.coop.tick(t + 40_000 + k * 100);
-  assert.ok(r.coop.state().slams.length >= 0);
+  const run = r.coop as unknown as SkillRun;
+  run.useSkill('safe', t);
+  run.useSkill('slam', t);
+  run.useSkill('seal', t);
+  run.useSkill('beam', t);
+  const st = (room as unknown as { playPayload(): { coop: CoopState } }).playPayload().coop;
+  assert.ok(st.safe && st.slams.length === 1 && st.seal && st.beam, '재접속 상태에 실림');
   room.destroy();
 });
 
@@ -769,7 +787,8 @@ test('coop 원은 보스 아래쪽으로만 날아감 (위로 가서 바로 사�
 
 // ---------- 탄막 ----------
 
-const volleysSent = () => sent.filter((s) => s.ev === 'coop:volley').map((s) => s.d as Volley);
+/** 탄막만 (고유 패턴 내려오는 벽은 빼고) */
+const volleysSent = () => sent.filter((s) => s.ev === 'coop:volley').map((s) => s.d as Volley).filter((v) => !v.wall);
 /** 발사 시각 (같은 시각에 겹쳐 쏜 것은 하나로) */
 const fireTimes = (vs: Volley[]) => [...new Set(vs.map((v) => v.at))].sort((a, b) => a - b);
 const gapsOf = (ts: number[]) => ts.slice(1).map((t, i) => t - ts[i]!);
@@ -1007,5 +1026,224 @@ test('탄을 눌러도 헛클릭이 아니다 (빈 곳은 그대로 헛클릭)',
   room.click(me.id, { circleId: null, x: 5, y: FIELD.h - 5 });
   assert.equal(me.stats.misses, 1, '빈 곳은 헛클릭');
   assert.equal(me.combo, 0);
+  room.destroy();
+});
+
+// ---------- 고유 패턴·판 패턴 ----------
+
+test('고유 패턴: 10초마다 하나, 직전과 다름, 1단계는 레이저·추적 원만', () => {
+  assert.equal(C.skillEveryMs, 10_000);
+  const { room, r } = coopRoom(1, 0);
+  const calls = spySkills(r);
+  const t0 = r.startAt;
+  for (let t = t0; t <= t0 + 60_000; t += 50) r.coop.tick(t);
+  assert.ok(calls.length >= 5, String(calls.length));
+  assert.equal(calls[0]!.t, t0 + RULES.laser.startQuietMs, '첫 패턴은 시작 조용한 시간 뒤');
+  for (const g of gapsOf(calls.map((c) => c.t))) assert.equal(g, C.skillEveryMs);
+  for (const c of calls) assert.ok(COOP_BOSSES.core.skills[1].includes(c.k), c.k);
+  for (let i = 1; i < calls.length; i++) assert.notEqual(calls[i]!.k, calls[i - 1]!.k, '직전과 다름');
+  // 2단계: 그 단계 목록에서, 여전히 직전과 다름
+  r.coop.phase = 2;
+  calls.length = 0;
+  for (let t = t0 + 60_050; t <= t0 + 200_000; t += 50) r.coop.tick(t);
+  assert.ok(calls.length >= 12);
+  for (const c of calls) assert.ok(COOP_BOSSES.core.skills[2].includes(c.k), c.k);
+  for (let i = 1; i < calls.length; i++) assert.notEqual(calls[i]!.k, calls[i - 1]!.k);
+  room.destroy();
+});
+
+test('pickSkill: 직전과 다른 것, 목록이 하나면 그것', () => {
+  const list = ['laser', 'threat', 'slam'] as const;
+  for (const x of [0, 0.4, 0.999]) {
+    assert.notEqual(pickSkill(list, 'laser', () => x), 'laser');
+    assert.ok(list.includes(pickSkill(list, null, () => x) as never));
+  }
+  assert.equal(pickSkill(['laser'], 'laser', () => 0.5), 'laser');
+  assert.equal(pickSkill(['laser', 'threat'], 'laser', () => 0), 'threat');
+});
+
+test('고유 패턴: 보호막·큰 피해 구간에는 안 나오고, 끝난 뒤 10초 뒤 다시', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const calls = spySkills(r);
+  const now = r.startAt + 4000;
+  for (let t = r.startAt; t <= now; t += 50) r.coop.tick(t);
+  assert.equal(calls.length, 1);
+  toShield(r, me, now);
+  calls.length = 0;
+  for (let t = now; t <= now + 8000; t += 50) r.coop.tick(t);
+  assert.equal(calls.length, 0, '보호막 중 없음');
+  breakMine(r, me, now + 8000);
+  const end = now + 8000 + C.burst.ms;
+  for (let t = now + 8000; t < end; t += 50) r.coop.tick(t);
+  assert.equal(calls.length, 0, '큰 피해 구간 중 없음');
+  for (let t = end; t <= end + 12_000; t += 50) r.coop.tick(t);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0]!.t >= end + C.skillEveryMs && calls[0]!.t <= end + C.skillEveryMs + 100, String(calls[0]!.t - end));
+  room.destroy();
+});
+
+test('구역 봉인: rand가 무엇이든 막힌 줄은 2단계 1개, 3단계 2개, 남은 줄 ≥ 1', () => {
+  assert.deepEqual(C.seal, { warnMs: 2_000, ms: 5_000 });
+  for (const x of [0, 0.33, 0.66, 0.999]) {
+    for (const [phase, n] of [[2, 1], [3, 2]] as const) {
+      const s = rollSeal(phase, 1000, () => x);
+      assert.equal(s.lanes.length, n, `${phase} ${x}`);
+      assert.equal(new Set(s.lanes).size, n, '서로 다른 줄');
+      assert.ok(s.lanes.every((l) => l === 0 || l === 1 || l === 2));
+      assert.ok(3 - s.lanes.length >= 1);
+      assert.deepEqual([s.warnAt, s.at, s.until], [1000, 1000 + C.seal.warnMs, 1000 + C.seal.warnMs + C.seal.ms]);
+    }
+  }
+  const s: Seal = { lanes: [1], warnAt: 0, at: 2000, until: 7000 };
+  const mid = { x: FIELD.w / 2, y: 600 };
+  assert.equal(inSeal(mid, s, 1999), false, '경고 중');
+  assert.equal(inSeal(mid, s, 2000), true);
+  assert.equal(inSeal(mid, s, 7000), false, 'until에 끝');
+  assert.equal(inSeal({ x: FIELD.w / 3 - 1, y: 600 }, s, 3000), false, '왼쪽 줄');
+  assert.equal(inSeal({ x: FIELD.w / 3, y: 600 }, s, 3000), true, '가운데 줄 시작');
+  assert.equal(inSeal({ x: (FIELD.w * 2) / 3, y: 600 }, s, 3000), false, '오른쪽 줄 시작');
+});
+
+test('구역 봉인: 경고 중에는 안 맞고 at~until 사이 막힌 줄 안이면 맞음 (노말 −20, 기절 1초)', () => {
+  const { room, r, me, ids } = coopRoom(2, 0);
+  const other = room.players.find((p) => p.id === ids[1])!;
+  r.coop.phase = 3;
+  noSkills(r);
+  const t = r.startAt + 5000;
+  sent.length = 0;
+  (r.coop as unknown as SkillRun).useSkill('seal', t);
+  const s = sealsSent()[0]!;
+  assert.ok(s && s.lanes.length === 2);
+  assert.deepEqual(r.coop.state().seal, s, '상태에도 실림');
+  const lane = s.lanes[0]!, open = [0, 1, 2].find((l) => !s.lanes.includes(l))!;
+  const xOf = (l: number) => (l + 0.5) * FIELD.w / 3;
+  r.cursors.set(me.id, { x: xOf(lane), y: 700, at: Date.now() + 1e9 });
+  r.cursors.set(other.id, { x: xOf(open), y: 700, at: Date.now() + 1e9 });
+  for (let k = t; k < s.at; k += 100) r.coop.tick(k);
+  assert.deepEqual([me.hp, other.hp], [100, 100], '경고 중에는 안 맞음');
+  r.coop.tick(s.at + 1);
+  assert.equal(N.seal, 20);
+  assert.deepEqual([me.hp, other.hp], [100 - 20, 100]);
+  assert.equal(me.stunUntil, s.at + 1 + 1000);
+  // 무적이 끝나도 같은 봉인에서는 다시 안 맞음
+  r.coop.tick(s.at + 3000);
+  assert.equal(me.hp, 80, '한 봉인에 한 번');
+  r.coop.tick(s.until + 1);
+  assert.equal(r.coop.state().seal, null);
+  assert.equal(sealsSent().at(-1), null, '끝나면 null');
+  room.destroy();
+});
+
+test('회전 빔: 빔 위의 점은 맞고 빔 사이의 점은 안 맞음, 시간이 지나면 돈다', () => {
+  assert.deepEqual(C.beam, { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22 });
+  const from = { x: 550, y: 190 }, h = C.beam.halfWidth;
+  const b: Beam = { at: 1000, until: 5000, count: 2, a0: 0, w: 0.6 };
+  assert.equal(beamHits({ x: 850, y: 190 }, b, from, 999, h), false, '경고 중');
+  assert.equal(beamHits({ x: 850, y: 190 }, b, from, 1000, h), true, '빔 위');
+  assert.equal(beamHits({ x: 250, y: 190 }, b, from, 1000, h), true, '반대쪽 빔 (2줄)');
+  assert.equal(beamHits({ x: 850, y: 190 + h - 1 }, b, from, 1000, h), true, '두께 안');
+  assert.equal(beamHits({ x: 850, y: 190 + h + 1 }, b, from, 1000, h), false, '두께 밖');
+  assert.equal(beamHits({ x: 550, y: 490 }, b, from, 1000, h), false, '빔 사이');
+  const quarter = 1000 + (Math.PI / 2 / 0.6) * 1000; // 90° 돈 시각
+  assert.equal(beamHits({ x: 550, y: 490 }, b, from, quarter, h), true, '돈 뒤에는 맞음');
+  assert.equal(beamHits({ x: 850, y: 190 }, b, from, quarter, h), false);
+  assert.equal(beamHits({ x: 850, y: 190 }, b, from, 5000, h), false, 'until에 끝');
+  // 3줄은 120° 간격
+  const b3: Beam = { ...b, count: 3 };
+  const a = (2 * Math.PI) / 3;
+  assert.equal(beamHits({ x: 550 + Math.cos(a) * 300, y: 190 + Math.sin(a) * 300 }, b3, from, 1000, h), true);
+  assert.equal(beamHits({ x: 250, y: 190 }, b3, from, 1000, h), false);
+});
+
+test('회전 빔: 서버가 커서로 판정, 한 빔에 한 번, 경고 중엔 안 맞음 (2단계 2줄, 3단계 3줄)', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  noSkills(r);
+  let last: Beam | null = null;
+  for (const phase of [2, 3] as const) {
+    r.coop.phase = phase;
+    sent.length = 0;
+    const t = r.startAt + 5000 + phase * 20_000;
+    (r.coop as unknown as SkillRun).useSkill('beam', t);
+    const b = beamsSent()[0]!;
+    assert.equal(b.count, C.beam.count[phase - 2]);
+    assert.equal(Math.abs(b.w), C.beam.w);
+    assert.deepEqual([b.at, b.until], [t + C.beam.warnMs, t + C.beam.warnMs + C.beam.ms]);
+    assert.deepEqual(r.coop.state().beam, b);
+    last = b;
+  }
+  const b = last!;
+  const from = circlePos(r.coop.boss, b.at + 1);
+  r.cursors.set(me.id, { x: from.x + Math.cos(b.a0) * 250, y: from.y + Math.sin(b.a0) * 250, at: Date.now() + 1e9 });
+  r.coop.tick(b.at - 1);
+  assert.equal(me.hp, 100, '경고 중');
+  r.coop.tick(b.at + 1);
+  assert.equal(me.hp, 100 - N.beam);
+  me.immuneUntil = 0;
+  r.coop.tick(b.at + 2);
+  assert.equal(me.hp, 100 - N.beam, '한 빔에 한 번');
+  r.coop.tick(b.until + 1);
+  assert.equal(r.coop.state().beam, null);
+  assert.equal(beamsSent().at(-1), null);
+  room.destroy();
+});
+
+test('내려오는 벽: 2단계 틈 2개, 3단계 틈 1개', () => {
+  assert.deepEqual(C.wall, { gaps: [2, 1], speed: [140, 180] });
+  for (const x of [0, 0.5, 0.999]) {
+    for (const [phase, gaps] of [[2, 2], [3, 1]] as const) {
+      const { room, r } = coopRoom(1, 0);
+      r.coop.phase = phase;
+      (r.coop as unknown as SkillRun).rand = () => x;
+      sent.length = 0;
+      const t = r.startAt + 5000;
+      (r.coop as unknown as SkillRun).useSkill('wall', t);
+      const walls = sent.filter((s) => s.ev === 'coop:volley').map((s) => s.d as Volley).filter((v) => v.wall);
+      assert.equal(walls.length, 1);
+      const v = walls[0]!;
+      assert.equal(v.at, t);
+      assert.ok(v.shots.every((s) => s.v === C.wall.speed[phase - 2]));
+      const xs = v.shots.map((s) => s.x).sort((a, b) => a - b);
+      const holes = xs.slice(1).filter((q, i) => q - xs[i]! > C.bullets.wallGap + 0.01);
+      assert.equal(holes.length, gaps, `${phase} ${x}`);
+      assert.ok(v.shots[0]!.y > C.bossY + C.bossR, '보스 아래');
+      room.destroy();
+    }
+  }
+});
+
+test('협력전에서는 아케이드 맵 패턴이 나오지 않는다', () => {
+  assert.equal('phasePatterns' in C, false);
+  for (const phase of [1, 2, 3] as const) {
+    const { room, r } = coopRoom(1, 0);
+    r.coop.phase = phase;
+    for (let t = r.startAt; t <= r.startAt + 60_000; t += 100) r.coop.tick(t);
+    const rr = r as unknown as { pendingPattern: unknown; pattern: unknown };
+    assert.equal(rr.pendingPattern, null);
+    assert.equal(rr.pattern, null);
+    assert.ok(!sent.some((s) => s.ev === 'map:warn'));
+    room.destroy();
+  }
+  assert.ok(!('hazard' in C.hurtFx));
+  for (const k of ['easy', 'normal', 'hard', 'expert'] as const) assert.ok(!('hazard' in C.levels[k].hurt));
+});
+
+test('shift: 봉인·빔·다음 고유 패턴 시각이 함께 밀림', () => {
+  const { room, r } = coopRoom(1, 0);
+  r.coop.phase = 3;
+  const t = r.startAt + 5000;
+  const run = r.coop as unknown as SkillRun;
+  run.useSkill('seal', t);
+  run.useSkill('beam', t);
+  const s0 = { ...r.coop.state().seal! }, b0 = { ...r.coop.state().beam! };
+  const calls = spySkills(r);
+  r.coop.shift(4000);
+  const s1 = r.coop.state().seal!, b1 = r.coop.state().beam!;
+  assert.deepEqual([s1.warnAt, s1.at, s1.until], [s0.warnAt + 4000, s0.at + 4000, s0.until + 4000]);
+  assert.deepEqual([b1.at, b1.until], [b0.at + 4000, b0.until + 4000]);
+  // 첫 패턴은 startQuietMs 뒤였는데 4초 밀림
+  for (let k = r.startAt; k < r.startAt + RULES.laser.startQuietMs + 4000; k += 50) r.coop.tick(k);
+  assert.equal(calls.length, 0);
+  r.coop.tick(r.startAt + RULES.laser.startQuietMs + 4000);
+  assert.equal(calls.length, 1);
   room.destroy();
 });

@@ -19,6 +19,9 @@ export interface CoopState {
   /** 대기 중인 내려찍기, 안전지대 (다시 접속·재개해도 화면이 이어서 그리도록) */
   slams: Slam[];
   safe: SafeZones | null;
+  /** 구역 봉인, 회전 빔 (경고 중이거나 나와 있는 것, 없으면 null) */
+  seal: Seal | null;
+  beam: Beam | null;
   /**
    * 아직 끝나지 않은 탄막. 시작·재개(shift)·보스 무너짐·재접속 때만 실린다 (있으면 화면이 통째로 바꾸고, 없으면 그대로 둔다).
    * 평소에는 coop:volley로 하나씩 간다
@@ -36,15 +39,14 @@ export interface CoopResult {
   /** 진 이유: 수정 구간 실패(엑스퍼트 분노) / 모두 탈락 / 시간 끝 */
   reason?: 'crystal' | 'wipe' | 'time';
 }
-/** 'hazard'(아케이드 맵 패턴)는 협력전 맵 패턴을 없앨 때 함께 지운다 */
-export type CoopHitBy = 'bullet' | 'wall' | 'threat' | 'beam' | 'laser' | 'slam' | 'seal' | 'safe' | 'rage' | 'hazard';
+export type CoopHitBy = 'bullet' | 'wall' | 'threat' | 'beam' | 'laser' | 'slam' | 'seal' | 'safe' | 'rage';
 import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
 import type { WavePattern } from './waves.ts';
 import type { Point } from './cursor.ts';
 import type { MapPattern } from './patterns.ts';
-import type { SafeZones, Slam } from './coop.ts';
+import type { Beam, SafeZones, Seal, Slam } from './coop.ts';
 
 /** 커서 자석으로 끌려가는 원: at부터 ms 동안 by의 커서로 빨려 들어간 뒤 잡힌다 */
 export interface Pull { circleId: number; by: string; from: Point; at: number; ms: number }
@@ -255,6 +257,10 @@ export interface ServerToClient {
   'coop:slam': (d: Slam[]) => void;
   /** 협력전: 안전지대 경고 (끝나면 null) */
   'coop:safe': (d: SafeZones | null) => void;
+  /** 협력전: 구역 봉인 경고·발동 (끝나면 null) */
+  'coop:seal': (d: Seal | null) => void;
+  /** 협력전: 회전 빔 경고·발동 (끝나면 null) */
+  'coop:beam': (d: Beam | null) => void;
   /** 협력전: 수정 남은 횟수 (0이면 사라짐) */
   'coop:crystal': (d: { id: number; hp: number; maxHp: number }) => void;
   /** 협력전: 잡은 원이 보스에게 피해 (연출) */

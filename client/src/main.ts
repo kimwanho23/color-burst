@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Seal, type Beam, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
@@ -109,6 +109,9 @@ let coopState: CoopState | null = null;
 /** 협력전: 내려찍기 경고, 안전지대 */
 let coopSlams: Slam[] = [];
 let coopSafe: SafeZones | null = null;
+/** 협력전: 구역 봉인, 회전 빔 (경고 중이거나 나와 있는 것) */
+let coopSeal: Seal | null = null;
+let coopBeam: Beam | null = null;
 /** 협력전 탄막 (서버는 무늬 단위로 보내고 위치는 시각으로 계산), 이미 알린 탄 (`${탄막}:${탄}`) */
 let coopVolleys: Volley[] = [];
 const coopSkip = new Set<string>();
@@ -510,7 +513,7 @@ function resetToHome(err = '') {
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
   pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;
   arcade = null; offer = null;
-  coopState = null; coopSlams = []; coopSafe = null; setVolleys([]); renderCoop();
+  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; setVolleys([]); renderCoop();
   $('pauseOv').hidden = true; $('pickOv').hidden = true; $('roundEnd').hidden = true;
   resetComboNotice();
   closeChipPop();
@@ -595,7 +598,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   popped = new Set(d.popped ?? []);
   coopState = d.coop ?? null;
   // 다시 접속·재개: 서버 상태에서 내려찍기·안전지대를 이어서 그린다
-  coopSlams = coopState?.slams ?? []; coopSafe = coopState?.safe ?? null;
+  coopSlams = coopState?.slams ?? []; coopSafe = coopState?.safe ?? null; coopSeal = coopState?.seal ?? null; coopBeam = coopState?.beam ?? null;
   setVolleys(coopState?.volleys ?? []);
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
@@ -629,14 +632,18 @@ socket.on('coop:state', (s) => {
     for (const [id, c] of circles) if (c.kind === 'threat') circles.delete(id);
     renderer.banner('보호막! 내 색 수정을 깨세요', '#7fd3ff'); sfx.patternWarn();
   }
-  // 큰 피해 구간 시작: 서버가 맵 패턴을 지우므로 화면도 지운다 (커서 물리가 어긋나지 않게)
-  if (s.burstUntil > (coopState?.burstUntil ?? 0) && !s.shield && !coopState?.burstUntil) { renderer.banner('보스가 무너졌다!', '#ffd43b'); sfx.fever(); mapPattern = null; popped = new Set(); }
+  // 큰 피해 구간 시작
+  if (s.burstUntil > (coopState?.burstUntil ?? 0) && !s.shield && !coopState?.burstUntil) { renderer.banner('보스가 무너졌다!', '#ffd43b'); sfx.fever(); }
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
-  coopState = s; coopSlams = s.slams; coopSafe = s.safe; renderCoop();
+  coopState = s; coopSlams = s.slams; coopSafe = s.safe; coopSeal = s.seal; coopBeam = s.beam; renderCoop();
   // 탄막 목록은 실려 올 때만 바꾼다 (평소 상태에는 없다)
   if (s.volleys) setVolleys(s.volleys);
 });
-socket.on('coop:volley', (v) => { coopVolleys.push(v); });
+socket.on('coop:volley', (v) => {
+  coopVolleys.push(v);
+  // 내려오는 벽: 고유 패턴이라 경고를 띄운다 (탄막은 그냥 나옴)
+  if (v.wall) { renderer.banner('벽이 내려온다! 틈으로', '#ff8a95'); sfx.patternWarn(); }
+});
 // 보스가 무너짐: 그 전에 쏜 탄막은 모두 사라진다
 socket.on('coop:clear', ({ before }) => { setVolleys(coopVolleys.filter((v) => v.at > before)); });
 /** 내가 맞은 연출: 글자·흔들림·화면 붉게 */
@@ -667,7 +674,7 @@ socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId }) => {
   const p = players.find((x) => x.id === playerId);
   if (p) { p.hp = hp; renderScores(); renderMyHp(playerId === myId()); }
   if (circleId !== undefined) circles.delete(circleId);
-  const what = by === 'laser' || by === 'beam' ? '레이저' : by === 'hazard' ? '장판' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'bullet' || by === 'wall' ? '탄막' : '추적 원';
+  const what = by === 'laser' ? '레이저' : by === 'beam' ? '회전 빔' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'bullet' || by === 'wall' ? '탄막' : '추적 원';
   const lost = dmg;
   if (playerId === myId()) {
     // 탄은 화면이 맞음을 알리면서 연출을 먼저 냈다
@@ -684,6 +691,9 @@ socket.on('coop:crystal', ({ id, hp, maxHp }) => {
   c.hp = hp; c.maxHp = maxHp;
 });
 socket.on('coop:safe', (d) => { coopSafe = d; if (d) { renderer.banner('안전지대로!', '#78ffaa'); sfx.patternWarn(); } });
+// 이미 있던 패턴을 다시 보낸 것(재개 shift)이면 현수막은 띄우지 않는다 (봉인·빔은 다음 고유 패턴 전에 끝나 null이 온다)
+socket.on('coop:seal', (d) => { const fresh = !!d && !coopSeal; coopSeal = d; if (fresh) { renderer.banner('구역 봉인! 빗금 친 줄에서 나가세요', '#ff5d73'); sfx.patternWarn(); } });
+socket.on('coop:beam', (d) => { const fresh = !!d && !coopBeam; coopBeam = d; if (fresh) { renderer.banner('회전 빔! 빔을 피해 도세요', '#ff5d73'); sfx.patternWarn(); } });
 // 잡은 원이 보스에게: 빛줄기와 피해 숫자
 socket.on('coop:orb', ({ by, x, y, dmg }) => {
   const b = coopState ? circles.get(coopState.bossId) : undefined;
@@ -1351,6 +1361,11 @@ function updateHud(now: number) {
   if (showCd && cd !== lastCount) { $('countdown').textContent = String(cd); sfx.tick(); lastCount = cd; }
 }
 
+/** 협력전 보스 중심 (회전 빔이 뻗는 곳) */
+function coopBossPos(t: number) {
+  const b = coopState ? circles.get(coopState.bossId) : undefined;
+  return b ? circlePos(b, t) : { x: FIELD.w / 2, y: RULES.coop.bossY };
+}
 function frame() {
   const now = viewNow();
   renderPauseBtn();
@@ -1414,6 +1429,8 @@ function frame() {
     coop: !!rules.coop,
     slams: rules.coop ? coopSlams : undefined,
     safe: rules.coop ? coopSafe : undefined,
+    seal: rules.coop ? coopSeal : undefined,
+    beam: rules.coop && coopBeam ? { b: coopBeam, from: coopBossPos(now) } : undefined,
     volleys: rules.coop ? coopVolleys : undefined,
     meId: myId(),
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),

@@ -1,14 +1,14 @@
 /**
- * 협력전 계산: 레이드 보스 단계·피해, 보스가 뿜는 원, 수정, 내려찍기·안전지대, 공격 일정, 별.
+ * 협력전 계산: 레이드 보스 단계·피해, 보스가 뿜는 원, 수정, 내려찍기·안전지대, 판 패턴(구역 봉인·회전 빔), 고유 패턴 고르기, 별.
  * 한 판의 상태는 서버의 CoopRun(server/src/coop.ts)이 들고, 여기는 순수 함수만 둔다. 수치는 RULES.coop.
  */
 import { FIELD, RULES, zoneOf, type Circle, type CircleKind, type ColorIndex, type CoopLevel, type PlayerState } from './rules.ts';
 import type { Point } from './cursor.ts';
+import type { CoopSkill } from './coopBosses.ts';
 
 const C = RULES.coop;
 
 export type CoopPhase = 1 | 2 | 3;
-export type CoopAttack = 'laser' | 'threat' | 'slam' | 'safe' | 'map';
 
 /** 레이드 보스 최대 체력: 봇은 botWeight명분 */
 export function raidMaxHp(humans: number, bots: number): number {
@@ -126,12 +126,52 @@ export function rollSafe(count: number, at: number, rand: () => number): SafeZon
   return { at, warnMs: C.safe.warnMs, zones };
 }
 
-/** 다음 공격까지 간격. 레이저는 laserEvery 범위에서 무작위, 3단계면 × phase3Mult */
-export function attackGap(kind: CoopAttack, level: CoopLevel, phase: CoopPhase, rand = Math.random): number {
-  const L = C.levels[level];
-  const base = kind === 'laser' ? L.laserEvery[0] + rand() * (L.laserEvery[1] - L.laserEvery[0])
-    : kind === 'threat' ? L.threatEvery : kind === 'slam' ? L.slamEvery : kind === 'safe' ? L.safeEvery : L.mapEvery;
-  return base * (phase === 3 ? L.phase3Mult : 1);
+/** 고유 패턴: 단계 목록에서 무작위, 직전(last)과 다른 것 (목록이 하나뿐이면 그것) */
+export function pickSkill(list: readonly CoopSkill[], last: CoopSkill | null, rand: () => number): CoopSkill {
+  const pool = list.length > 1 ? list.filter((k) => k !== last) : list;
+  const from = pool.length ? pool : list;
+  return from[Math.min(from.length - 1, Math.floor(rand() * from.length))]!;
+}
+
+/** 구역 봉인: 판을 세로로 3등분한 줄(lanes ⊂ {0,1,2}) 중 막힌 줄. warnAt부터 경고, at~until 동안 막힌 줄 안이면 맞는다 */
+export interface Seal { lanes: number[]; warnAt: number; at: number; until: number }
+
+/** 2단계 1줄, 3단계 2줄 (1단계는 쓰지 않지만 1줄). 늘 한 줄 이상 남긴다 */
+export function rollSeal(phase: CoopPhase, now: number, rand: () => number): Seal {
+  const n = phase === 3 ? 2 : 1;
+  const pick = (k: number) => Math.min(k - 1, Math.floor(rand() * k));
+  let lanes: number[];
+  if (n === 1) lanes = [pick(3)];
+  else { const open = pick(3); lanes = [0, 1, 2].filter((l) => l !== open); }
+  const at = now + C.seal.warnMs;
+  return { lanes, warnAt: now, at, until: at + C.seal.ms };
+}
+
+/** 이 점이 지금 막힌 줄 안인가 (at ≤ t < until) */
+export function inSeal(pt: Point, s: Seal, t: number): boolean {
+  if (t < s.at || t >= s.until) return false;
+  const lane = Math.min(2, Math.max(0, Math.floor(pt.x / (FIELD.w / 3))));
+  return s.lanes.includes(lane);
+}
+
+/** 회전 빔: 보스 중심에서 고르게 벌어진 count줄, at부터 각속도 w(라디안/초)로 돈다 (경고 at − warnMs ~ at 동안은 a0에 멈춰 있음) */
+export interface Beam { at: number; until: number; count: number; a0: number; w: number }
+
+/** 빔 줄들의 지금 각도 (at 전에는 a0에서 멈춤) */
+export function beamAngles(b: Beam, t: number): number[] {
+  const a = b.a0 + b.w * Math.max(0, t - b.at) / 1000;
+  return Array.from({ length: b.count }, (_, i) => a + (Math.PI * 2 * i) / b.count);
+}
+
+/** 이 점이 지금 빔 위인가: at ≤ t < until, from(보스 중심)에서 뻗는 반직선과의 거리 ≤ half (길이는 판 밖까지) */
+export function beamHits(pt: Point, b: Beam, from: Point, t: number, half: number): boolean {
+  if (t < b.at || t >= b.until) return false;
+  const dx = pt.x - from.x, dy = pt.y - from.y;
+  return beamAngles(b, t).some((a) => {
+    const ux = Math.cos(a), uy = Math.sin(a);
+    const along = dx * ux + dy * uy;
+    return along >= 0 && Math.abs(dx * uy - dy * ux) <= half;
+  });
 }
 
 /** 별: 진 판 0. 이긴 판은 살아남은 비율·남은 시간으로 1~3 */

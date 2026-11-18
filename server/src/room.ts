@@ -905,7 +905,6 @@ export class Room {
       const cur = this.freshCursor(p.id, now);
       if (p.bot || !cur) continue;
       let by: 'spike' | 'ring' | null = null, ms = -1;
-      if (this.coop && now < p.immuneUntil) continue;
       if (pt.id === 'spikes') {
         const i = spikeHit(pt, cur, now, this.popped);
         if (i < 0) continue;
@@ -915,10 +914,6 @@ export class Room {
         by = 'spike'; ms = hazardStun(p, now, R.spikes.stunMs, this.G, this.players);
       } else if (inRingDanger(pt, cur, now)) {
         by = 'ring'; ms = hazardStun(p, now, R.ring.stunMs, this.G, this.players);
-      }
-      if (by && this.coop) {
-        if (!this.coop.damage(p, 'hazard', now)) continue;
-        if (this.phase !== 'play') return;
       }
       if (by && ms >= 0) changed = true;
       if (by && ms > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by });
@@ -1507,7 +1502,6 @@ export class Room {
       removeCircles: (pred) => { for (const [id, c] of this.circles) if (pred(c)) this.circles.delete(id); },
       fireLaser: (lines, at) => { this.lasers.push({ lines, at, hit: new Set() }); this.io.to(this.code).emit('laser:warn', { lines, at }); },
       clearLasers: () => { this.lasers = []; },
-      setPattern: (p) => { if (p) this.pendingPattern = p; else this.clearPattern(); },
       eliminate: (p, now) => this.eliminate(p, now),
       finish: (win, reason) => { if (this.phase === 'play') this.end(win, reason); },
       emitPlayers: () => this.emitPlayers(),

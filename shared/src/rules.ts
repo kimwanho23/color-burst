@@ -56,12 +56,11 @@ export const RULES = {
     hpLowRatio: 0.3,
     /** 큰 피해 구간 시작에 살아 있는 사람 모두 회복하는 체력 (엑스퍼트는 회복 없음) */
     heal: { burstStart: 25 },
-    /** 공격 종류별 맞은 뒤 무적(ms)·기절(ms). 기절 중에는 무적이 함께 걸려 있다. hazard는 방이 기절을 따로 건다 */
+    /** 공격 종류별 맞은 뒤 무적(ms)·기절(ms). 기절 중에는 무적이 함께 걸려 있다 */
     hurtFx: {
       bullet: { immuneMs: 600, stunMs: 0 }, wall: { immuneMs: 600, stunMs: 0 }, threat: { immuneMs: 1_000, stunMs: 0 },
       beam: { immuneMs: 2_000, stunMs: 1_000 }, laser: { immuneMs: 2_000, stunMs: 1_000 }, slam: { immuneMs: 2_000, stunMs: 1_000 },
       seal: { immuneMs: 2_000, stunMs: 1_000 }, safe: { immuneMs: 2_000, stunMs: 1_000 }, rage: { immuneMs: 2_000, stunMs: 0 },
-      hazard: { immuneMs: 2_000, stunMs: 1_000 },
     } as Record<CoopHitBy, { immuneMs: number; stunMs: number }>,
     /** 단계 경계 (체력 비율). 경계에 닿으면 보호막 */
     phaseAt: [0.67, 0.33],
@@ -90,39 +89,45 @@ export const RULES = {
     slam: { warnMs: 1_500, r: 110 },
     /** 안전지대: 경고 시간, 시작·끝 반지름, 경고 동안 옮겨 가는 최대 거리 */
     safe: { warnMs: 3_500, r0: 230, r1: 150, move: 180 },
-    /** 단계마다 쓰는 맵 패턴 (1단계는 없음) */
-    phasePatterns: { 2: ['spikes', 'ice'], 3: ['ring', 'vortex', 'bar'] },
+    /** 고유 패턴: skillEveryMs마다 단계 목록(COOP_BOSSES.core.skills)에서 하나 (직전과 다른 것). 판 시작 첫 패턴은 RULES.laser.startQuietMs 뒤 */
+    skillEveryMs: 10_000,
+    /** 구역 봉인: 경고 시간, 막혀 있는 시간 (2단계 1줄, 3단계 2줄) */
+    seal: { warnMs: 2_000, ms: 5_000 },
+    /** 회전 빔: 경고 시간, 도는 시간, 줄 수 [2단계, 3단계], 각속도 크기(라디안/초, 방향은 무작위), 맞는 거리(중심선에서) */
+    beam: { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22 },
+    /** 내려오는 벽: [2단계, 3단계] 틈 수, 속도(필드/초) */
+    wall: { gaps: [2, 1], speed: [140, 180] },
     threatR: 30, threatPoints: 3,
     /** 별: 살아남은 사람 비율 ≥ alive 이고 남은 시간 ≥ leftSec */
     stars: { three: { alive: 1, leftSec: 60 }, two: { alive: 0.5, leftSec: 0 } },
     /**
-     * 난이도: laserWidth는 화면 높이 %(RoomRules.laserWidth와 같은 단위), 간격은 ms, 3단계는 간격 × phase3Mult.
+     * 난이도: laserWidth는 화면 높이 %(RoomRules.laserWidth와 같은 단위), laserWarnMs 레이저 경고(ms), threatCount·threatSpeed 추적 원 수·속도, safeCount 안전지대 수.
      * crystalHits: [첫 보호막, 두 번째 보호막] 수정 횟수, crystalSec: 보호막 제한 시간(초), orbMult: 원 간격 배율, bulletEveryMs·bulletSpeed: 탄막 간격(ms)·속도(필드/초)
      */
     levels: {
       easy: {
-        hurt: { bullet: 5, wall: 5, threat: 15, beam: 20, laser: 20, slam: 20, seal: 10, safe: 30, rage: 30, hazard: 10 } as Record<CoopHitBy, number>,
-        laserEvery: [9_000, 12_000], laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
-        threatEvery: 6_000, threatCount: 2, threatSpeed: 160, phase3Mult: 0.85,
-        crystalHits: [6, 9], crystalSec: 15, slamEvery: 11_000, safeEvery: 22_000, safeCount: 2, mapEvery: 20_000, orbMult: 1.1, bulletEveryMs: 1_600, bulletSpeed: 220,
+        hurt: { bullet: 5, wall: 5, threat: 15, beam: 20, laser: 20, slam: 20, seal: 10, safe: 30, rage: 30 } as Record<CoopHitBy, number>,
+        laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
+        threatCount: 2, threatSpeed: 160,
+        crystalHits: [6, 9], crystalSec: 15, safeCount: 2, orbMult: 1.1, bulletEveryMs: 1_600, bulletSpeed: 220,
       },
       normal: {
-        hurt: { bullet: 10, wall: 10, threat: 20, beam: 25, laser: 30, slam: 30, seal: 20, safe: 40, rage: 50, hazard: 20 } as Record<CoopHitBy, number>,
-        laserEvery: [7_000, 10_000], laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
-        threatEvery: 5_000, threatCount: 3, threatSpeed: 200, phase3Mult: 0.75,
-        crystalHits: [8, 12], crystalSec: 12, slamEvery: 9_000, safeEvery: 18_000, safeCount: 2, mapEvery: 16_000, orbMult: 1, bulletEveryMs: 1_200, bulletSpeed: 260,
+        hurt: { bullet: 10, wall: 10, threat: 20, beam: 25, laser: 30, slam: 30, seal: 20, safe: 40, rage: 50 } as Record<CoopHitBy, number>,
+        laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
+        threatCount: 3, threatSpeed: 200,
+        crystalHits: [8, 12], crystalSec: 12, safeCount: 2, orbMult: 1, bulletEveryMs: 1_200, bulletSpeed: 260,
       },
       hard: {
-        hurt: { bullet: 15, wall: 15, threat: 25, beam: 30, laser: 40, slam: 40, seal: 30, safe: 50, rage: 70, hazard: 30 } as Record<CoopHitBy, number>,
-        laserEvery: [5_000, 7_500], laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
-        threatEvery: 4_000, threatCount: 4, threatSpeed: 250, phase3Mult: 0.65,
-        crystalHits: [10, 15], crystalSec: 10, slamEvery: 7_000, safeEvery: 14_000, safeCount: 1, mapEvery: 12_000, orbMult: 0.9, bulletEveryMs: 950, bulletSpeed: 300,
+        hurt: { bullet: 15, wall: 15, threat: 25, beam: 30, laser: 40, slam: 40, seal: 30, safe: 50, rage: 70 } as Record<CoopHitBy, number>,
+        laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
+        threatCount: 4, threatSpeed: 250,
+        crystalHits: [10, 15], crystalSec: 10, safeCount: 1, orbMult: 0.9, bulletEveryMs: 950, bulletSpeed: 300,
       },
       expert: {
-        hurt: { bullet: 20, wall: 20, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity, hazard: 40 } as Record<CoopHitBy, number>,
-        laserEvery: [3_800, 5_800], laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
-        threatEvery: 3_200, threatCount: 5, threatSpeed: 300, phase3Mult: 0.55,
-        crystalHits: [13, 19], crystalSec: 8, slamEvery: 5_500, safeEvery: 11_000, safeCount: 1, mapEvery: 9_000, orbMult: 0.8, bulletEveryMs: 750, bulletSpeed: 340,
+        hurt: { bullet: 20, wall: 20, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity } as Record<CoopHitBy, number>,
+        laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
+        threatCount: 5, threatSpeed: 300,
+        crystalHits: [13, 19], crystalSec: 8, safeCount: 1, orbMult: 0.8, bulletEveryMs: 750, bulletSpeed: 340,
       },
     },
   },
