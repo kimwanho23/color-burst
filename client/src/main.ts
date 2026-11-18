@@ -12,7 +12,7 @@ import { BOSS_HITSTOP_MS, BOSS_SHAKE, COOP_DEFEAT, FEVER_BURST, Renderer, shapeS
 import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
-import { coopResultHtml, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
+import { coopResultHtml, counterFlashAt, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
 import { renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
 import { barrierGuarding, barrierReady, chordPress, pointerAction } from './pointer.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId } from '@color-burst/shared';
@@ -635,6 +635,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   mapPattern = d.pattern ?? null;
   popped = new Set(d.popped ?? []);
   coopState = d.coop ?? null;
+  counterFireAt = counterFlashAt(counterFireAt, coopState?.counter, serverNow(), true).fireAt;
   // 다시 접속·재개: 서버 상태에서 내려찍기·안전지대를 이어서 그린다
   coopSlams = coopState?.slams ?? []; coopSafe = coopState?.safe ?? null; coopSeal = coopState?.seal ?? null; coopBeam = coopState?.beam ?? null; coopHoming = coopState?.homing ?? null;
   setVolleys(coopState?.volleys ?? []);
@@ -685,7 +686,9 @@ socket.on('coop:state', (s) => {
     sfx.fever();
   }
   // 폭딜 반격 예고가 새로 시작됨
-  if (s.counter?.fireAt && s.counter.fireAt !== coopState?.counter?.fireAt) { counterFireAt = s.counter.fireAt; sfx.patternWarn(); }
+  const flash = counterFlashAt(counterFireAt, s.counter, serverNow());
+  counterFireAt = flash.fireAt;
+  if (flash.warn) sfx.patternWarn();
   if (s.threatAt && !coopState?.threatAt) {
     renderer.banner('보스가 큰 원을 발사합니다! 클릭해서 제거하세요!', '#64efff');
     sfx.patternWarn();
@@ -1595,6 +1598,7 @@ function frame() {
     coop: !!rules.coop,
     coopShield: rules.coop && !!coopState?.shield,
     counterFireAt: rules.coop ? counterFireAt : 0,
+    counterWarn: rules.coop && counterFireAt > now,
     coopPhase: rules.coop ? coopState?.phase : undefined,
     slams: rules.coop ? coopSlams : undefined,
     safe: rules.coop ? coopSafe : undefined,

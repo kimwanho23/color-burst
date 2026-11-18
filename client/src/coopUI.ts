@@ -64,6 +64,16 @@ function ensure(stage: HTMLElement, id: string, cls: string) {
   return el;
 }
 
+/**
+ * 화면 번쩍임 시각을 서버 상태에 맞춘다. prev: 지금 들고 있는 발동 시각, g: 받은 게이지, synced: 재개·재접속(경고음 없이 시각만 맞춤).
+ * 발동 전에 fireAt이 0으로 오면 취소(번쩍임 지움), 발동 뒤에 0으로 오면 판정이 끝난 것(번쩍임 유지)
+ */
+export function counterFlashAt(prev: number, g: CoopCounter | null | undefined, now: number, synced = false): { fireAt: number; warn: boolean } {
+  if (!g) return { fireAt: 0, warn: false };
+  if (g.fireAt > 0) return { fireAt: g.fireAt, warn: !synced && g.fireAt !== prev };
+  return { fireAt: prev > now ? 0 : prev, warn: false };
+}
+
 /** 보스 체력 바 아래 분노 게이지: 차오를수록 진해지고, 예고 중이면 가득, 재사용 대기 중이면 흐리게 남은 초 */
 function counterGauge(g: CoopCounter, level: CoopLevel, now: number) {
   const cap = RULES.coop.counter.cap[level];

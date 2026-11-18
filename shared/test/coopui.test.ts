@@ -40,3 +40,14 @@ test('coopResultRows: 아무도 대미지가 없으면 최다 대미지 표시 �
 test('coopBreaksText: 보호막마다 걸린 초, 분노 횟수', () => {
   assert.deepEqual(coopBreaksText([{ ms: 6200, rages: 0 }, { ms: 21800, rages: 1 }]), ['1번째 보호막 6.2초', '2번째 보호막 21.8초 (분노 1번)']);
 });
+
+test('counterFlashAt: 예고 시작은 경고, 취소되면 번쩍임 지움, 발동 뒤 판정으로 0이 와도 번쩍임 유지, 재개·재접속은 새 시각으로', async () => {
+  const { counterFlashAt } = await import('../../client/src/coopUI.ts');
+  const g = (fireAt: number) => ({ value: 0, at: 0, fireAt, coolUntil: 0 });
+  assert.deepEqual(counterFlashAt(0, g(5000), 3000), { fireAt: 5000, warn: true }, '새 예고');
+  assert.deepEqual(counterFlashAt(5000, g(5000), 3500), { fireAt: 5000, warn: false }, '같은 예고');
+  assert.deepEqual(counterFlashAt(5000, g(0), 4000), { fireAt: 0, warn: false }, '발동 전 취소 → 번쩍임 없음');
+  assert.deepEqual(counterFlashAt(5000, g(0), 5150), { fireAt: 5000, warn: false }, '판정 뒤 0 → 번쩍임 유지');
+  assert.deepEqual(counterFlashAt(5000, null, 4000), { fireAt: 0, warn: false }, '판 끝');
+  assert.deepEqual(counterFlashAt(5000, g(8000), 6000, true), { fireAt: 8000, warn: false }, '재개·재접속: 시각만 맞추고 경고음 없음');
+});

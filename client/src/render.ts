@@ -94,6 +94,8 @@ export interface DrawState {
   now: number;
   /** 협력전 폭딜 반격 발동 시각 (발동 뒤 잠깐 화면이 붉게 번쩍인다, 0이면 없음) */
   counterFireAt?: number;
+  /** 폭딜 반격 예고 중 (보스가 붉게 맥동) */
+  counterWarn?: boolean;
   /** 방해 전파를 맞아 원이 흐려 보이는 중 */
   blurred?: boolean;
   /** 장판 (color: 주인 색) */
@@ -550,6 +552,11 @@ export class Renderer {
     // 보호막 중: 붉은 빛 (효과 줄이기면 없음). 테두리까지만 번지고 바로 끈다
     const glow = !!s?.coopShield && !reduceMotion;
     if (glow) { ctx.shadowColor = 'rgba(255, 45, 61, .9)'; ctx.shadowBlur = 36; }
+    // 폭딜 반격 예고: 붉게 맥동 (효과 줄이기는 고정 빛)
+    else if (s?.counterWarn && c.boss === 'raid') {
+      const k = reduceMotion ? 0.7 : 0.4 + 0.6 * Math.abs(Math.sin(frameNow / 110));
+      ctx.shadowColor = `rgba(255, 40, 60, ${k})`; ctx.shadowBlur = 20 + 30 * k;
+    }
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = s?.coop && s.coopPhase ? 7 : 4; ctx.strokeStyle = st.enraged ? '#ff4d4d' : s?.coop && s.coopPhase ? COOP_BOSSES.core.rims[s.coopPhase - 1] : '#fff'; ctx.stroke();
     ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
