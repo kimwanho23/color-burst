@@ -4,7 +4,7 @@ import {
   DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, inSafe, isGuarded, isHit, isOut,
   COOP_BOSSES, beamHits, hitShot, inSeal, pickSkill, rollSeal,
   burstMsFor, makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, inCrystalDanger, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, shotGone, shotPos, toGameRules, zoneOf,
-  type Beam, type Circle, type CoopHitBy, type CoopSkill, type Seal, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones, type Volley,
+  type Beam, type Circle, type CoopHitBy, type CoopSkill, type Homing, type Seal, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones, type Volley,
 } from '../src/index.ts';
 import { Room } from '../../server/src/room.ts';
 import { gameRecord } from '../../server/src/gameLog.ts';
@@ -1805,5 +1805,140 @@ test('일시정지 뒤: 끝난 단계 시각도 밀려 phaseMs가 멈춘 시간�
   r.startAt += 5000;
   r.coop.shift(5000);
   assert.deepEqual(r.coop.result(r.startAt + 50_000, r.startAt, false).phaseMs, [40_000]);
+  room.destroy();
+});
+
+type HomingRun = SkillRun & { clearShots(before: number): void; dispose(): void };
+const homingSent = () => sent.filter((s) => s.ev === 'coop:homing').map((s) => s.d as Homing | null);
+const homingHitsOf = (id: string) => sent.filter((x) => x.ev === 'coop:hit' && (x.d as { by: string }).by === 'homing' && (x.d as { playerId: string }).playerId === id);
+/** 엑스퍼트 2단계 판에서 유도탄을 예고한다. 커서는 발사 자리 바로 아래 300 */
+function homingRoom(humans = 1) {
+  const c = coopRoom(humans, 0, 'expert');
+  noSkills(c.r); c.r.coop.phase = 2;
+  const t = c.r.startAt + 5000;
+  (c.r.coop as unknown as SkillRun).useSkill('homing', t);
+  const h = c.r.coop.state().homing!;
+  const below = circlePos(c.r.coop.boss, h.at);
+  for (const id of c.ids) c.r.cursors.set(id, { x: below.x, y: below.y + 300, at: t });
+  return { ...c, t, h };
+}
+
+test('유도탄: 엑스퍼트 2·3단계에서만 쓴다', () => {
+  for (const level of ['hard', 'expert'] as const) {
+    for (const phase of [1, 2] as const) {
+      const { room, r } = coopRoom(1, 0, level);
+      noSkills(r); r.coop.phase = phase;
+      sent.length = 0;
+      (r.coop as unknown as SkillRun).useSkill('homing', r.startAt + 5000);
+      assert.equal(homingSent().length, level === 'expert' && phase === 2 ? 1 : 0);
+      room.destroy();
+    }
+  }
+});
+
+test('유도탄: 예고 뒤 살아 있는 사람마다 1발', () => {
+  const { room, r, ids, t, h } = homingRoom(2);
+  assert.deepEqual([...h.targets].sort(), [...ids].sort());
+  assert.equal(h.shots.length, 0); assert.equal(h.at, t + C.homing.warnMs);
+  r.coop.tick(h.at - 1);
+  assert.equal(r.coop.state().homing!.shots.length, 0);
+  r.coop.tick(h.at);
+  const shots = r.coop.state().homing!.shots;
+  assert.deepEqual(shots.map((s) => s.target).sort(), [...ids].sort());
+  assert.ok(shots.every((s) => s.born === h.at));
+  room.destroy();
+});
+
+test('유도탄: 봇은 대상이 아니다', () => {
+  const { room, r } = coopRoom(1, 2, 'expert');
+  noSkills(r); r.coop.phase = 2;
+  (r.coop as unknown as SkillRun).useSkill('homing', r.startAt + 5000);
+  assert.equal(r.coop.state().homing!.targets.length, 1);
+  room.destroy();
+});
+
+test('유도탄: 가만히 있는 사람은 맞고, 한 발은 한 번만', () => {
+  const { room, r, me, h } = homingRoom(1);
+  for (let now = h.at; now <= h.at + C.homing.lifeMs + C.homing.fadeMs; now += 50) { me.immuneUntil = 0; r.coop.tick(now); }
+  assert.equal(homingHitsOf(me.id).length, 1);
+  assert.equal(me.hp, C.hpMax - C.levels.expert.hurt.homing);
+  assert.equal(r.coop.state().homing, null);
+  room.destroy();
+});
+
+test('유도탄: 무적이면 계속 쫓고, 수명 뒤에는 맞지 않으며 수명 + fadeMs에 사라진다', () => {
+  const { room, r, me, h } = homingRoom(1);
+  r.cursors.set(me.id, { x: FIELD.w / 2, y: FIELD.h / 2, at: h.at }); // 빗나가 맴돌아도 판 안에 남게 가운데
+  me.immuneUntil = Infinity;
+  let now = h.at;
+  for (; now < h.at + C.homing.lifeMs; now += 50) r.coop.tick(now);
+  assert.equal(r.coop.state().homing!.shots.length, 1);
+  me.immuneUntil = 0;
+  const s = r.coop.state().homing!.shots[0]!;
+  r.cursors.set(me.id, { x: s.x, y: s.y, at: now });
+  r.coop.tick(now);
+  assert.equal(homingHitsOf(me.id).length, 0);
+  r.coop.tick(h.at + C.homing.lifeMs + C.homing.fadeMs);
+  assert.equal(r.coop.state().homing, null);
+  assert.equal(homingSent().at(-1), null);
+  room.destroy();
+});
+
+test('유도탄: 대상이 탈락하면 그 탄만 사라진다', () => {
+  const { room, r, ids, h } = homingRoom(2);
+  r.coop.tick(h.at);
+  const other = room.players.find((p) => p.id === ids[1])!;
+  other.outAt = h.at;
+  r.coop.tick(h.at + 50);
+  assert.deepEqual(r.coop.state().homing!.shots.map((s) => s.target), [ids[0]]);
+  room.destroy();
+});
+
+test('유도탄: 일시정지는 시각을 밀고 위치는 그대로', () => {
+  const { room, r, h } = homingRoom(1);
+  r.coop.tick(h.at); r.coop.tick(h.at + 100);
+  const before = r.coop.state().homing!;
+  r.coop.shift(5000);
+  const after = r.coop.state().homing!;
+  assert.equal(after.at, before.at + 5000); assert.equal(after.t, before.t + 5000); assert.equal(after.warnAt, before.warnAt + 5000);
+  assert.equal(after.shots[0]!.born, before.shots[0]!.born + 5000);
+  r.coop.tick(after.t);
+  const s = r.coop.state().homing!.shots[0]!;
+  assert.equal(s.x, before.shots[0]!.x); assert.equal(s.y, before.shots[0]!.y);
+  room.destroy();
+});
+
+test('유도탄: 보호막 단계·탄막 지우기·판 종료는 지운다', () => {
+  {
+    const { room, r, me, h } = homingRoom(1);
+    r.coop.tick(h.at);
+    toShield(r, me, h.at + 10, C.phaseAt[1]);
+    assert.equal(r.coop.state().homing, null); assert.equal(homingSent().at(-1), null);
+    room.destroy();
+  }
+  {
+    const { room, r, h } = homingRoom(1);
+    r.coop.tick(h.at);
+    (r.coop as unknown as HomingRun).clearShots(h.at + 10);
+    assert.equal(r.coop.state().homing, null); assert.equal(homingSent().at(-1), null);
+    room.destroy();
+  }
+  {
+    const { room, r, h } = homingRoom(1);
+    r.coop.tick(h.at);
+    (r.coop as unknown as HomingRun).dispose();
+    assert.equal((r.coop as unknown as { homing: unknown }).homing, null);
+    room.destroy();
+  }
+});
+
+test('유도탄: 방어막에 막히면 피해 없이 탄이 사라진다', () => {
+  const { room, r, me, h } = homingRoom(1);
+  me.coopFx!.guardUntil = Infinity;
+  for (let now = h.at; now <= h.at + C.homing.lifeMs && r.coop.state().homing; now += 50) r.coop.tick(now);
+  const hit = homingHitsOf(me.id);
+  assert.equal(hit.length, 1); assert.equal((hit[0]!.d as { blocked?: boolean }).blocked, true);
+  assert.equal(me.hp, C.hpMax);
+  assert.equal(r.coop.state().homing, null);
   room.destroy();
 });
