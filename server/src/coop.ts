@@ -249,7 +249,10 @@ export class CoopRun {
     this.burstUntil = now + C.burst.ms;
     this.afterBurst = true;
     // 큰 피해 구간 시작: 살아 있는 사람 회복 (엑스퍼트는 없음)
-    if (this.level !== 'expert') for (const p of this.alive()) p.hp = Math.min(C.hpMax, p.hp + C.heal.burstStart);
+    if (this.level !== 'expert') {
+      for (const p of this.alive()) p.hp = Math.min(C.hpMax, p.hp + C.heal.burstStart);
+      this.host.emitPlayers();
+    }
     this.host.setPattern(null);
     this.host.clearLasers();
     this.host.emit('coop:state', this.state());
@@ -315,7 +318,7 @@ export class CoopRun {
     for (const s of due) {
       for (const p of this.alive()) {
         const q = this.host.cursorOf(p.id);
-        if (q && Math.hypot(q.x - s.x, q.y - s.y) <= s.r && this.damage(p, 'slam', now)) continue;
+        if (q && Math.hypot(q.x - s.x, q.y - s.y) <= s.r) this.damage(p, 'slam', now);
       }
     }
   }
@@ -326,7 +329,7 @@ export class CoopRun {
     this.safe = null;
     for (const p of this.alive()) {
       const q = this.host.cursorOf(p.id);
-      if (q && !inSafe(q, s, now) && this.damage(p, 'safe', now)) continue;
+      if (q && !inSafe(q, s, now)) this.damage(p, 'safe', now);
     }
     this.host.emit('coop:safe', null);
   }
@@ -364,9 +367,10 @@ export class CoopRun {
   damage(p: PlayerState, by: CoopHitBy, now: number, circleId?: number): boolean {
     if (p.bot || p.outAt || now < p.immuneUntil || p.hp <= 0) return false;
     const fx = C.hurtFx[by];
+    const before = p.hp;
     p.hp = Math.max(0, p.hp - C.levels[this.level].hurt[by]);
     p.immuneUntil = now + fx.immuneMs;
-    this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, immuneUntil: p.immuneUntil, ...(circleId !== undefined ? { circleId } : {}) });
+    this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, dmg: before - p.hp, immuneUntil: p.immuneUntil, ...(circleId !== undefined ? { circleId } : {}) });
     if (fx.stunMs > 0 && by !== 'hazard') this.host.stun(p, now, fx.stunMs);
     if (p.hp <= 0) {
       this.host.eliminate(p, now);

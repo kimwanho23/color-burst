@@ -52,6 +52,8 @@ export const RULES = {
    */
   coop: {
     timeSec: 180, hpMax: 100,
+    /** 체력이 이 비율 이하면 낮음 표시 */
+    hpLowRatio: 0.3,
     /** 큰 피해 구간 시작에 살아 있는 사람 모두 회복하는 체력 (엑스퍼트는 회복 없음) */
     heal: { burstStart: 25 },
     /** 공격 종류별 맞은 뒤 무적(ms)·기절(ms). 기절 중에는 무적이 함께 걸려 있다. hazard는 방이 기절을 따로 건다 */

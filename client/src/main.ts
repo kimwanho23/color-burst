@@ -622,13 +622,12 @@ socket.on('coop:state', (s) => {
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
   coopState = s; coopSlams = s.slams; coopSafe = s.safe; renderCoop();
 });
-socket.on('coop:hit', ({ playerId, by, hp, circleId }) => {
+socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId }) => {
   const p = players.find((x) => x.id === playerId);
-  const was = p?.hp ?? hp;
   if (p) { p.hp = hp; renderScores(); renderMyHp(playerId === myId()); }
   if (circleId !== undefined) circles.delete(circleId);
-  const what = by === 'laser' || by === 'beam' ? '레이저' : by === 'hazard' ? '장판' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '수정 구간 실패' : by === 'bullet' || by === 'wall' ? '탄막' : '추적 원';
-  const lost = Math.max(0, was - hp);
+  const what = by === 'laser' || by === 'beam' ? '레이저' : by === 'hazard' ? '장판' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'bullet' || by === 'wall' ? '탄막' : '추적 원';
+  const lost = dmg;
   if (playerId === myId()) {
     const c = gameCursor.pos ?? { x: CX, y: CY };
     renderer.text(c.x, c.y - 70, hp > 0 ? `체력 −${lost}` : '체력이 다 떨어졌어요', '#ff5d73', 1.2);
@@ -1263,7 +1262,7 @@ function renderMyHp(hit = false) {
   const el = $('myhp');
   const m = playing && rules.coop ? me() : undefined;
   el.innerHTML = myHpHtml(m);
-  el.classList.toggle('low', !!m && m.hp <= RULES.coop.hpMax * 0.3);
+  el.classList.toggle('low', !!m && m.hp <= RULES.coop.hpMax * RULES.coop.hpLowRatio);
   if (hit) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 }
 let lastCoopHud = 0;

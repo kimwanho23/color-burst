@@ -560,6 +560,23 @@ test('회복: 큰 피해 구간 시작에 +25(최대 100), 엑스퍼트는 회�
   ex.room.destroy();
 });
 
+test('회복은 바로 players로 알리고, coop:hit에 피해량이 실림', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  me.hp = 50;
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  sent.length = 0;
+  breakMine(r, me, now);
+  const healed = sent.find((x) => x.ev === 'players');
+  assert.ok(healed, '회복 뒤 players 전송');
+  assert.equal((healed!.d as PlayerState[]).find((p) => p.id === me.id)!.hp, 50 + C.heal.burstStart);
+  sent.length = 0;
+  r.coop.damage(me, 'laser', now + 5000);
+  const hit = sent.find((x) => x.ev === 'coop:hit')!.d as { dmg: number; hp: number };
+  assert.deepEqual([hit.dmg, hit.hp], [N.laser, 50 + C.heal.burstStart - N.laser]);
+  room.destroy();
+});
+
 test('엑스퍼트 분노: 바로 패배, reason crystal', () => {
   const { room, r, me } = coopRoom(1, 0, 'expert');
   assert.equal(C.levels.expert.hurt.rage, Infinity);

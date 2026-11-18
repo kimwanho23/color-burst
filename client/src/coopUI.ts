@@ -31,7 +31,7 @@ export function renderCoopHud(stage: HTMLElement, s: CoopState | null, now = Dat
 
 /** 체력 막대: 칸 안은 hp/hpMax 비율, 낮으면 붉게 */
 const hpFill = (hp: number) => `<i style="width:${Math.max(0, Math.min(100, (hp / RULES.coop.hpMax) * 100))}%"></i>`;
-const hpLow = (hp: number) => hp <= RULES.coop.hpMax * 0.3;
+const hpLow = (hp: number) => hp <= RULES.coop.hpMax * RULES.coop.hpLowRatio;
 
 /** 점수판 칩에 붙이는 작은 체력 막대 + 숫자 */
 export const hpBarHtml = (p: PlayerState) =>
