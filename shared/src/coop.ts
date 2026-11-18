@@ -66,13 +66,19 @@ export function makeThreat(id: number, now: number, from: Point, angle: number, 
   return { id, kind: 'threat', angle, speed: Math.min(speed, maxSpeed), r: C.threatR, born: now, from: { x: from.x, y: from.y }, target, noGuard: true };
 }
 
-export function threatSpeed(level: CoopLevel): number {
-  return C.levels[level].threatSpeed;
+/** 엑스퍼트는 초반 적응 뒤 2·3단계에서 별도 공격 수치를 쓴다. */
+export function coopAttackRules(level: CoopLevel, phase: CoopPhase) {
+  if (level === 'expert' && phase > 1) return C.expertRamp[phase - 2]!;
+  return C.levels[level];
+}
+
+export function threatSpeed(level: CoopLevel, phase: CoopPhase = 1): number {
+  return coopAttackRules(level, phase).threatSpeed;
 }
 
 /** 추적 원 수: 난이도 threatCount + 단계 phaseUp.threatAdd */
 export function coopThreatCount(level: CoopLevel, phase: CoopPhase): number {
-  return C.levels[level].threatCount + C.phaseUp.threatAdd[phase - 1]!;
+  return coopAttackRules(level, phase).threatCount + C.phaseUp.threatAdd[phase - 1]!;
 }
 
 /** 레이저 무늬 비율: 난이도 volleyOdds에서 한 줄을 phaseUp.singleShift만큼 덜어 여러 줄 무늬에 원래 비율대로 나눈다 (합은 그대로) */

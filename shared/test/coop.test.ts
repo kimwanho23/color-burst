@@ -13,7 +13,7 @@ import { COOP_SPECIAL_IDS, specialRule } from '../src/coopSpecial.ts';
 
 mock.method(console, 'log', () => {});
 test('보스 체력: 난이도 배율과 사람·봇 인원 반영', () => {
-  for (const [level, hp] of [['easy', 180], ['normal', 225], ['hard', 270], ['expert', 315]] as const) {
+  for (const [level, hp] of [['easy', 240], ['normal', 300], ['hard', 360], ['expert', 540]] as const) {
     assert.equal(raidMaxHp(1, 0, level), hp);
     assert.equal(raidMaxHp(1, 3, level), Math.round(hp * 2.5));
     const { room, r } = coopRoom(1, 0, level);
@@ -371,6 +371,32 @@ const sealsSent = () => sent.filter((s) => s.ev === 'coop:seal').map((s) => s.d 
 const beamsSent = () => sent.filter((s) => s.ev === 'coop:beam').map((s) => s.d as Beam | null);
 /** 저절로 나오는 고유 패턴을 막는다 (직접 부른 패턴만 보려고) */
 const noSkills = (r: CRoom) => { (r.coop as unknown as { nextSkill: number }).nextSkill = Infinity; };
+
+test('엑스퍼트 단계 상승: 실제 탄막 간격·속도와 큰 구체 수·속도에 단계별 수치 적용', async () => {
+  const { coopAttackRules, coopThreatCount, threatSpeed } = await import('../src/index.ts');
+  const { room, r } = coopRoom(1, 0, 'expert');
+  const run = r.coop as unknown as { bulletGap(): number; fireVolley(shape: 'ring', at: number): void };
+  const gaps: number[] = [];
+  for (const [phase, speed, count, threat] of [[1, 320, 5, 280], [2, 380, 7, 340], [3, 440, 9, 400]] as const) {
+    r.coop.phase = phase;
+    const attack = coopAttackRules('expert', phase);
+    gaps.push(run.bulletGap());
+    assert.equal(run.bulletGap(), attack.bulletEveryMs / C.bullets.phaseMult[phase - 1]!);
+    assert.equal(coopThreatCount('expert', phase), count);
+    assert.equal(threatSpeed('expert', phase), threat);
+    sent.length = 0;
+    run.fireVolley('ring', r.startAt + 5000);
+    const volley = sent.find((s) => s.ev === 'coop:volley')!.d as Volley;
+    for (const shot of volley.shots) assert.ok(shot.v >= speed * 0.8 - 1e-9 && shot.v <= speed * 1.2 + 1e-9);
+  }
+  assert.ok(gaps[0]! > gaps[1]! && gaps[1]! > gaps[2]!);
+  assert.ok(gaps[0]! > C.levels.hard.bulletEveryMs * 0.8, '1단계는 하드에 가까운 발사 간격');
+  assert.deepEqual(C.levels.expert.crystalHits, [12, 24]);
+  for (const level of ['easy', 'normal', 'hard'] as const) {
+    for (const phase of [1, 2, 3] as const) assert.equal(coopAttackRules(level, phase), C.levels[level]);
+  }
+  room.destroy();
+});
 
 test('스페셜 어택: 대기실 선택·준비 해제, 게임 중 변경 금지', () => {
   const room = new Room(fakeIo(), 'SPCL', () => {});
@@ -1609,7 +1635,7 @@ test('회전 빔 지연 보정: stillMs보다 오래 새 커서가 없으면 그
 });
 
 test('단계가 오르면 세짐: 추적 원 수 + phaseUp.threatAdd, 레이저는 한 줄 비율이 phaseUp.singleShift만큼 여러 줄로', async () => {
-  const { coopThreatCount, coopVolleyOdds } = await import('../src/index.ts');
+  const { coopAttackRules, coopThreatCount, coopVolleyOdds } = await import('../src/index.ts');
   const U = C.phaseUp;
   assert.deepEqual(U.threatAdd.length, 3);
   assert.equal(U.threatAdd[0], 0);
@@ -1617,7 +1643,7 @@ test('단계가 오르면 세짐: 추적 원 수 + phaseUp.threatAdd, 레이저�
   for (const level of ['easy', 'normal', 'hard', 'expert'] as const) {
     const L = C.levels[level];
     assert.equal(coopThreatCount(level, 1), L.threatCount);
-    assert.equal(coopThreatCount(level, 3), L.threatCount + U.threatAdd[2]!);
+    assert.equal(coopThreatCount(level, 3), coopAttackRules(level, 3).threatCount + U.threatAdd[2]!);
     assert.ok(coopThreatCount(level, 3) > coopThreatCount(level, 1));
     assert.deepEqual(coopVolleyOdds(level, 1), L.volleyOdds);
     const o3 = coopVolleyOdds(level, 3);

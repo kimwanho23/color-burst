@@ -96,8 +96,8 @@ test('보스 정의: 단계마다 skills가 spec 표와 같다', () => {
   assert.deepEqual(b.shieldBullets, [['spiral', 'ring'], ['spiral', 'ring', 'aimed']]);
   assert.equal(b.rims.length, 3);
   for (const lv of Object.values(RULES.coop.levels)) assert.ok(lv.bulletEveryMs > 0 && lv.bulletSpeed > 0);
-  assert.deepEqual(Object.values(RULES.coop.levels).map((l) => l.bulletEveryMs), [1600, 1200, 950, 750]);
-  assert.deepEqual(Object.values(RULES.coop.levels).map((l) => l.bulletSpeed), [220, 260, 300, 340]);
+  assert.deepEqual(Object.values(RULES.coop.levels).map((l) => l.bulletEveryMs), [1600, 1200, 950, 850]);
+  assert.deepEqual(Object.values(RULES.coop.levels).map((l) => l.bulletSpeed), [220, 260, 300, 320]);
 });
 
 test('단계 배율은 양이지 속도가 아님: 단계가 달라도 Shot.v 같음', () => {

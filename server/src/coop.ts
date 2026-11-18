@@ -13,7 +13,7 @@ import {
   type LaserLine, type PlayerState, type Point, type SafeZones, type Seal, type ServerToClient, type Slam,
   type BulletShape, type CoopItemId, type Volley,
 } from '@color-burst/shared';
-import { specialId, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
+import { coopAttackRules, specialId, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
 
 const C = RULES.coop;
 const I = RULES.coop.items;
@@ -293,7 +293,7 @@ export class CoopRun {
 
   /** 탄막 간격: 평소 bulletEveryMs ÷ 단계 배율(양), 보호막 중 ÷ shieldMult */
   private bulletGap() {
-    const B = C.bullets, every = C.levels[this.level].bulletEveryMs;
+    const B = C.bullets, every = coopAttackRules(this.level, this.phase).bulletEveryMs;
     return this.shield ? every / B.shieldMult : every / B.phaseMult[this.phase - 1]!;
   }
 
@@ -331,7 +331,7 @@ export class CoopRun {
       if (targets.length) aim = targets[this.aimTurn++ % targets.length];
     }
     this.pushVolley(makeVolley(shape, this.host.nextId(), at, circlePos(this.boss, at),
-      { speed: C.levels[this.level].bulletSpeed, phase: this.phase, ...(aim ? { aim } : {}) }, this.rand));
+      { speed: coopAttackRules(this.level, this.phase).bulletSpeed, phase: this.phase, ...(aim ? { aim } : {}) }, this.rand));
   }
 
   /** 탄막(벽 포함)을 들고 알린다 */
@@ -417,7 +417,7 @@ export class CoopRun {
     if (!alive.length || !this.boss) return;
     const from = circlePos(this.boss, now);
     const n = coopThreatCount(this.level, this.phase);
-    const sp = threatSpeed(this.level);
+    const sp = threatSpeed(this.level, this.phase);
     for (let i = 0; i < n; i++) {
       const a = Math.PI * (0.12 + 0.76 * ((i + 0.5) / n)) + (this.rand() - 0.5) * 0.15;
       const target = alive[this.targetTurn++ % alive.length]!.id;

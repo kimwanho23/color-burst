@@ -75,7 +75,7 @@ export const RULES = {
     } as Record<CoopHitBy, { immuneMs: number; stunMs: number }>,
     /** 단계 경계 (체력 비율). 경계에 닿으면 보호막 */
     phaseAt: [0.67, 0.33],
-    /** 레이드 보스: 반지름, 높이(y), 좌우 한 번 왕복 시간, 체력 = hpBase × (사람 + 봇 × botWeight) */
+    /** 레이드 보스: 반지름, 높이(y), 좌우 한 번 왕복 시간, 체력 = hpBase × (사람 + 봇 × botWeight) × 난이도 hpMult */
     /*
      * hpBase 어림 (노말, 사람 1 + 봇 3, 목표: 보스가 120~150초에 잡힘, 제한 180초)
      *  사람: 0.45초마다 원 하나, 노랑 20%(0.7)와 콤보 보너스를 넣어 초당 약 2.6 피해
@@ -84,8 +84,9 @@ export const RULES = {
      *  보호막 2번 동안 보스는 맞지 않음(수정 깨는 데 약 6초씩, 합 약 12초). 목표 135초이면 맞는 시간 약 123초
      *  총 피해 ≈ 4.7 × 123 + 83 ≈ 660. 탄을 피하느라 원을 놓치는 몫(약 15%)을 빼면 ≈ 560
      *  체력 = hpBase × (1 + 3 × 0.5) = 2.5 × hpBase 이므로 hpBase ≈ 560 / 2.5 ≈ 225 (예전 150은 탄막 이전 값)
+     *  스페셜 어택 추가 후 플레이 체감에 맞춰 기본 체력 225 → 300으로 상향 (2026-11-18).
      */
-    bossR: 145, bossY: 190, swingMs: 9_000, hpBase: 225, botWeight: 0.5,
+    bossR: 145, bossY: 190, swingMs: 9_000, hpBase: 300, botWeight: 0.5,
     /** 보스가 뿜는 원: 사람·봇 한 명당 간격(ms, 봇 색은 × botGapMult), 속도, 노란 원 확률(%), 원 하나 피해(노랑은 yellowDmg) */
     orb: { gapMs: 450, botGapMult: 1.5, speed: 280, yellowPct: 20, dmg: 1, yellowDmg: 0.7 },
     /** 피해 콤보 보너스: comboStep마다 +comboPer, 상한 comboCap */
@@ -114,6 +115,11 @@ export const RULES = {
      * singleShift 레이저 한 줄 비율(%p)을 그만큼 덜어 여러 줄 무늬(평행·십자·방사)에 원래 비율대로 나눔 (없던 무늬는 생기지 않음)
      */
     phaseUp: { threatAdd: [0, 1, 2], singleShift: [0, 15, 30] },
+    /** 엑스퍼트 2·3단계 공격 기준. 1단계는 levels.expert, 간격·구체 수에는 공통 단계 배율도 적용한다. */
+    expertRamp: [
+      { bulletEveryMs: 750, bulletSpeed: 380, threatCount: 6, threatSpeed: 340 },
+      { bulletEveryMs: 550, bulletSpeed: 440, threatCount: 7, threatSpeed: 400 },
+    ],
     /** 고유 패턴: skillEveryMs마다 단계 목록(COOP_BOSSES.core.skills)에서 하나 (직전과 다른 것). 판 시작 첫 패턴은 RULES.laser.startQuietMs 뒤 */
     skillEveryMs: 10_000,
     /** 구역 봉인: 경고 시간, 막혀 있는 시간 (2단계 1줄, 3단계 2줄) */
@@ -170,11 +176,11 @@ export const RULES = {
         crystalHits: [10, 15], crystalSec: 10, safeCount: 1, orbMult: 0.9, bulletEveryMs: 950, bulletSpeed: 300,
       },
       expert: {
-        hpMult: 1.4,
+        hpMult: 1.8,
         hurt: { bullet: 20, wall: 20, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity } as Record<CoopHitBy, number>,
         laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
-        threatCount: 5, threatSpeed: 300,
-        crystalHits: [13, 19], crystalSec: 8, safeCount: 1, orbMult: 0.8, bulletEveryMs: 750, bulletSpeed: 340,
+        threatCount: 5, threatSpeed: 280,
+        crystalHits: [12, 24], crystalSec: 8, safeCount: 1, orbMult: 0.8, bulletEveryMs: 850, bulletSpeed: 320,
       },
     },
   },
