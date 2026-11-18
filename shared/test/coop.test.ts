@@ -1,7 +1,7 @@
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, immuneMs, inSafe, isGuarded, isOut,
+  DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, immuneMs, inSafe, isGuarded, isHit, isOut,
   makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, toGameRules, zoneOf,
   type Circle, type CoopHitBy, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones,
 } from '../src/index.ts';
@@ -190,6 +190,13 @@ test('circlePos: 레이드 보스는 bossY에 머물고 isOut·보호 구역 아
   assert.deepEqual(circlePos(th, 1000), { x: FIELD.w / 2, y: FIELD.h / 2 + 100 });
   assert.ok(isOut(th, 100_000));
   void seq;
+});
+
+test('협력전 원은 판 가운데를 지나도 잡힌다', () => {
+  const c = makeOrb(1, 0, { x: FIELD.w / 2, y: FIELD.h / 2 }, Math.PI / 2, 0, 280);
+  assert.equal(isGuarded(c, 0), false);
+  assert.ok(isHit(c, 0, FIELD.w / 2, FIELD.h / 2));
+  assert.equal(RULES.coop.orb.gapMs, 450);
 });
 
 // ---------- 방 ----------

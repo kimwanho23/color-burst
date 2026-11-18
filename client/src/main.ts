@@ -1355,6 +1355,7 @@ function frame() {
     popped,
     trapped: gameCursor.trapped,
     colorOf: rules.coop ? new Map(players.map((p) => [p.id, p.color])) : undefined,
+    coop: !!rules.coop,
     slams: rules.coop ? coopSlams : undefined,
     safe: rules.coop ? coopSafe : undefined,
     meId: myId(),

@@ -56,7 +56,7 @@ export const RULES = {
     /** 레이드 보스: 반지름, 높이(y), 좌우 한 번 왕복 시간, 체력 = hpBase × (사람 + 봇 × botWeight) */
     bossR: 145, bossY: 190, swingMs: 9_000, hpBase: 150, botWeight: 0.5,
     /** 보스가 뿜는 원: 사람·봇 한 명당 간격(ms, 봇 색은 × botGapMult), 속도, 노란 원 확률(%), 원 하나 피해(노랑은 yellowDmg) */
-    orb: { gapMs: 900, botGapMult: 1.5, speed: 280, yellowPct: 20, dmg: 1, yellowDmg: 0.7 },
+    orb: { gapMs: 450, botGapMult: 1.5, speed: 280, yellowPct: 20, dmg: 1, yellowDmg: 0.7 },
     /** 피해 콤보 보너스: comboStep마다 +comboPer, 상한 comboCap */
     comboStep: 10, comboPer: 0.1, comboCap: 0.5,
     /** 큰 피해 구간: 길이, 피해 배율, 그동안 원 간격 */
@@ -539,6 +539,8 @@ export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold'
 
 export interface Circle {
   id: number;
+  /** 협력전 원: 판 가운데 보호 구역이 없다 */
+  noGuard?: true;
   kind: CircleKind;
   /** 발사 방향(라디안) */
   angle: number;
@@ -1131,7 +1133,7 @@ export function isOut(c: Circle, t: number) {
 
 /** 발사 보호 구역 안에 있는지 (잡을 수 없는 상태) */
 export function isGuarded(c: Circle, t: number) {
-  if (c.kind === 'threat' || c.boss === 'raid') return false;
+  if (c.noGuard || c.kind === 'threat' || c.boss === 'raid') return false;
   const p = circlePos(c, t);
   return Math.hypot(p.x - FIELD.w / 2, p.y - FIELD.h / 2) < RULES.spawnGuardR;
 }

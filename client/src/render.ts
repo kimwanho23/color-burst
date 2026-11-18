@@ -72,6 +72,8 @@ let reduceMotion = prefersReduced;
 export function setReduceFx(on: boolean) { reduceMotion = prefersReduced || on; }
 
 export interface DrawState {
+  /** 협력전이면 가운데 보호 구역 점선을 안 그린다 */
+  coop?: boolean;
   circles: Iterable<Circle>;
   hidden: Set<number>;
   myColor: ColorIndex | null;
@@ -271,8 +273,10 @@ export class Renderer {
     ctx.strokeStyle = s.myFever ? 'rgba(255,159,28,.8)' : 'rgba(255,255,255,.18)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.stroke();
     // 발사 보호 구역: 이 안의 원은 아직 잡을 수 없다
-    ctx.setLineDash([6, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.12)';
-    ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke();
+    if (!s.coop) {
+      ctx.setLineDash([6, 8]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.12)';
+      ctx.beginPath(); ctx.arc(cx, cy, RULES.spawnGuardR, 0, Math.PI * 2); ctx.stroke();
+    }
     // 점수 구역 경계: 사이(×2)·가장자리(×3)가 시작되는 동심원
     RULES.zones.bounds.forEach((b, i) => {
       ctx.setLineDash([4, 12]); ctx.lineWidth = 2; ctx.strokeStyle = `rgba(126, 224, 255, ${i ? 0.2 : 0.14})`;

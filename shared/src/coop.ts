@@ -57,7 +57,7 @@ export function applyRaidDamage(c: Circle, dmg: number, phase?: CoopPhase): { de
 
 /** 공격 원: from에서 angle 방향으로 날아간다 */
 export function makeThreat(id: number, now: number, from: Point, angle: number, speed: number, target: string): Circle {
-  return { id, kind: 'threat', angle, speed, r: C.threatR, born: now, from: { x: from.x, y: from.y }, target };
+  return { id, kind: 'threat', angle, speed, r: C.threatR, born: now, from: { x: from.x, y: from.y }, target, noGuard: true };
 }
 
 export function threatSpeed(level: CoopLevel): number {
@@ -66,7 +66,7 @@ export function threatSpeed(level: CoopLevel): number {
 
 /** 보스가 뿜는 원: from(보스 자리)에서 angle 방향으로. 크기는 일반 원과 같은 범위 */
 export function makeOrb(id: number, now: number, from: Point, angle: number, kind: CircleKind, speed: number, rand = Math.random): Circle {
-  return { id, kind, angle, speed, r: 40 * (0.85 + rand() * 0.3), born: now, from: { x: from.x, y: from.y } };
+  return { id, kind, angle, speed, r: 40 * (0.85 + rand() * 0.3), born: now, from: { x: from.x, y: from.y }, noGuard: true };
 }
 
 /** 수정 횟수: 난이도와 몇 번째 보호막인지 */
@@ -93,7 +93,7 @@ export function placeCrystals(n: number, rand: () => number): Point[] {
 
 /** 수정: 움직이지 않는 주인 색 큰 원, 체력 = 깨는 데 필요한 횟수 */
 export function makeCrystal(id: number, now: number, at: Point, owner: string, color: ColorIndex, hits: number): Circle {
-  return { id, kind: 'crystal', angle: 0, speed: 0, r: C.crystal.r, born: now, from: { x: at.x, y: at.y }, target: owner, colorOf: color, hp: hits, maxHp: hits };
+  return { id, kind: 'crystal', angle: 0, speed: 0, r: C.crystal.r, born: now, from: { x: at.x, y: at.y }, target: owner, colorOf: color, hp: hits, maxHp: hits, noGuard: true };
 }
 
 /** 내려찍기: (x, y) 반지름 r 원을 at에 내려친다 */
