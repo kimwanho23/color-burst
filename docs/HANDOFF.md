@@ -87,6 +87,23 @@ Node.js 20 이상이 필요하다. 화면은 기본 `http://localhost:5173`, 서
 
 구현은 `server/src/coop.ts`의 `activateBarrier`·`damage`, `server/src/room.ts`의 `coopBarrier`, `client/src/pointer.ts`의 `pointerAction`, `client/src/coopUI.ts`의 `renderBarrierHud`, `client/src/render.ts`의 `drawBarrier`다. 수치는 `RULES.coop.barrier`에 있다.
 
+## 콤보 상한과 폭딜 반격
+
+협력전 원·약점 피해의 콤보 보너스는 10콤보마다 +0.2배, 상한 1.8배(40콤보)다. 예전 값은 +0.1배·1.5배였다. 보스 체력은 그대로 두었다.
+
+팀 피해가 몰리면 보스가 반격한다. 분노 게이지는 보스 최대 체력 대비 %로 원·약점 피해(봇 포함)만큼 차고 매초 일정량 빠진다(새는 양동이). 스페셜 어택·미사일·큰 피해 구간·수정 보호막 단계의 피해는 넣지 않는다. 가득 차면 2초 예고(`보스 반격!`) 뒤 탈락하지 않은 모두(봇 포함)의 콤보를 0으로 만든다. 체력 피해·기절은 없다. 그 순간 우클릭 보호막이 켜져 있으면 콤보를 지킨다(판당 보호막 횟수를 탄 막기와 함께 쓴다). 서버는 발동 + `lagMs`(150ms)에 판정해 늦게 도착한 켜기 요청도 인정한다. 아이템 방어막은 반격을 막지 않는다. 예고 중 수정 보호막 단계가 시작되면 취소하고 게이지를 비운다(재사용 대기 없음).
+
+| 난이도 | 빠지는 속도(%/초) | 용량(%) | 재사용 대기 |
+|---|---|---|---|
+| 이지 | 2.3 | 5 | 30초 |
+| 노말 | 1.3 | 2.5 | 25초 |
+| 하드 | 0.8 | 1.5 | 20초 |
+| 엑스퍼트 | 0.5 | 1.0 | 15초 |
+
+화면은 보스 체력 바 아래 붉은 분노 게이지(재사용 대기 중에는 흐리게 남은 초), 예고 문구, 발동 순간 화면 번쩍임(효과 줄이기는 테두리만), 동료 피드를 보여 준다. 대기실 설명에 반격 안내 한 줄이 있다. 결과 통계에 사람마다 `counterLost`·`counterSaved`가 쌓인다.
+
+구현은 `shared/src/coopCounter.ts`(`counterValue`·`fillCounter`·`barrierCovers`), `server/src/coop.ts`의 `hurtBoss`(combo 인자)·`tickCounter`, `client/src/coopUI.ts`의 `counterGauge`, `client/src/render.ts`의 `drawCounterFlash`다. 수치는 `RULES.coop.counter`와 `comboPer`·`comboCap`에 있다. 설계 `docs/superpowers/specs/2026-11-18-coop-combo-counter-design.md`.
+
 ## 주요 코드
 
 - `shared/src/rules.ts`의 `RULES.coop`에 모든 게임 수치가 있다. `levels.expert`는 첫 단계 기준이고 `expertRamp`는 2·3단계 공격 기준이다.
@@ -120,4 +137,4 @@ npm.cmd run build
 
 유도탄은 실제 플레이로 속도·선회 체감, 멀티플레이 동시 추격, 일시정지·재접속 뒤 이어짐을 확인한다. 우클릭 보호막은 우클릭 체감과 연타, 휴대폰에서 버튼 위치·크기, 구체 가독성, 일시정지·재접속 뒤 이어짐, 다른 모드에서 우클릭이 아무 일도 하지 않는지 확인한다.
 
-콤보 상한 1.8배와 단시간 폭딜에 반응하는 보스 반격도 논의 단계다. 제안은 10콤보마다 +0.2배, 최근 3초간 보스 최대 체력 8% 피해에 반격 예고, 맞으면 콤보 초기화, 재사용 대기 20초, 파훼 후 딜 타임에는 반격 억제다. 현재 실제 콤보 설정은 `RULES.coop.comboStep`, `comboPer`, `comboCap`을 확인한다.
+콤보 상한과 폭딜 반격은 실제 플레이로 난이도별 감각(이지는 강화 둘이 겹쳐야, 노말은 최대 콤보 + 강화 하나, 하드는 최대 콤보로 거의 다 잡으면, 엑스퍼트는 최대 콤보면 금방 반격), 게이지·예고 가독성, 보스 처치 시간이 얼마나 빨라졌는지 확인한다.
