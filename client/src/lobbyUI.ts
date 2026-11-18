@@ -28,11 +28,11 @@ export function lobbySlots(players: readonly PlayerState[], hostId: string, myId
   });
 }
 
-const COOP_NAME: Record<CoopLevel, string> = { easy: '이지', normal: '노말', hard: '하드' };
+const COOP_NAME: Record<CoopLevel, string> = { easy: '이지', normal: '노말', hard: '하드', expert: '엑스퍼트' };
 
 /** 규칙 요약 두 줄: 인원 모드 · 클래식/아케이드 · 프리셋, 그리고 시간·피버·켜진 요소 */
 export function rulesSummary(r: RoomRules): { title: string; detail: string } {
-  const who = r.coop ? `협력전 ${COOP_NAME[r.coopLevel]}` : r.team ? '팀전 2:2' : r.survival ? '서바이벌' : '개인전';
+  const who = r.coop ? `협력전 · ${COOP_NAME[r.coopLevel]}` : r.team ? '팀전 2:2' : r.survival ? '서바이벌' : '개인전';
   const preset = matchPreset(r);
   const title = `${who} · ${r.mode === 'arcade' ? '아케이드' : '클래식'} · ${preset ? PRESETS[preset].name : '커스텀'}`;
   // 판 길이: 아케이드는 라운드, 클래식 서바이벌은 인원에 따라 길어지므로 탈락 간격, 협력전은 고정 시간
@@ -40,31 +40,32 @@ export function rulesSummary(r: RoomRules): { title: string; detail: string } {
     : r.coop ? `${RULES.coop.timeSec}초`
     : r.survival ? `${RULES.survival.everyMs / 1000}초마다 꼴찌 탈락` : `${r.roundSec}초`;
   // 협력전은 일반 보스·레이저·맵 패턴을 끈다 (toGameRules)
-  const on = [!r.coop && r.boss && '보스', r.items && '아이템', !r.coop && r.laser && '레이저', !r.coop && r.mapPct > 0 && '맵 패턴'].filter(Boolean);
+  if (r.coop) return { title, detail: time };
+  const on = [r.boss && '보스', r.items && '아이템', r.laser && '레이저', r.mapPct > 0 && '맵 패턴'].filter(Boolean);
   return { title, detail: [time, `피버 ×${r.feverMult} ${r.feverSec}초`, ...on].join(' · ') };
 }
 
-export type RuleChipIcon = 'timer' | 'fever' | 'speed' | 'mark' | 'miss' | 'boss' | 'item' | 'laser' | 'map' | 'rainbow' | 'up';
+export type RuleChipIcon = 'coop' | 'timer' | 'fever' | 'speed' | 'mark' | 'miss' | 'boss' | 'item' | 'laser' | 'map' | 'rainbow' | 'up';
 export interface RuleChip { icon: RuleChipIcon; text: string; off?: boolean }
 
 /** 대기실 규칙 칩: 판 시간·피버·속도·견제·빈 곳·요소 켜짐/꺼짐 (꺼진 것은 off로 흐리게). 협력전은 쓰지 않는 것을 뺀다 */
 export function rulesChips(r: RoomRules): RuleChip[] {
   const time = r.mode === 'arcade' ? `${ARCADE.rounds}라운드 × ${r.arcadeRoundSec}초`
     : r.coop ? `${RULES.coop.timeSec}초` : r.survival ? `${RULES.survival.everyMs / 1000}초마다 꼴찌 탈락` : `${r.roundSec}초`;
+  // 협력전은 난이도와 제한 시간만
+  if (r.coop) return [{ icon: 'coop', text: `협력전 · ${COOP_NAME[r.coopLevel]}` }, { icon: 'timer', text: time }];
   const chips: RuleChip[] = [{ icon: 'timer', text: time }];
-  if (!r.coop) chips.push({ icon: 'fever', text: `피버 ×${r.feverMult} · ${r.feverSec}초` });
+  chips.push({ icon: 'fever', text: `피버 ×${r.feverMult} · ${r.feverSec}초` });
   chips.push({ icon: 'speed', text: `속도 ×${r.speed} · 원 개수 ×${r.density}` });
-  if (!r.coop) {
-    chips.push({ icon: 'mark', text: r.stealPenalty ? `견제 페널티 · 표적 ${r.markSec}초` : '견제 페널티 없음' });
-    chips.push({ icon: 'miss', text: '빈 곳 감점', off: !r.missPenalty });
-    chips.push({ icon: 'boss', text: '보스', off: !r.boss });
-    chips.push({ icon: 'item', text: '아이템', off: !r.items });
-    const freq = (r.laserFreq ?? 1) < 1 ? '드물게' : (r.laserFreq ?? 1) > 1 ? '자주' : '보통';
-    chips.push(r.laser ? { icon: 'laser', text: `레이저 · ${r.chaos ? `카오스 · ${freq}` : freq}` } : { icon: 'laser', text: '레이저', off: true });
-    chips.push(r.mapPct > 0 ? { icon: 'map', text: `맵 패턴 ${r.mapPct}%` } : { icon: 'map', text: '맵 패턴', off: true });
-    chips.push(r.rainbowPct > 0 ? { icon: 'rainbow', text: `무지개 ${r.rainbowPct}%` } : { icon: 'rainbow', text: '무지개', off: true });
-    chips.push({ icon: 'up', text: '꼴찌 보정', off: !r.comeback });
-  }
+  chips.push({ icon: 'mark', text: r.stealPenalty ? `견제 페널티 · 표적 ${r.markSec}초` : '견제 페널티 없음' });
+  chips.push({ icon: 'miss', text: '빈 곳 감점', off: !r.missPenalty });
+  chips.push({ icon: 'boss', text: '보스', off: !r.boss });
+  chips.push({ icon: 'item', text: '아이템', off: !r.items });
+  const freq = (r.laserFreq ?? 1) < 1 ? '드물게' : (r.laserFreq ?? 1) > 1 ? '자주' : '보통';
+  chips.push(r.laser ? { icon: 'laser', text: `레이저 · ${r.chaos ? `카오스 · ${freq}` : freq}` } : { icon: 'laser', text: '레이저', off: true });
+  chips.push(r.mapPct > 0 ? { icon: 'map', text: `맵 패턴 ${r.mapPct}%` } : { icon: 'map', text: '맵 패턴', off: true });
+  chips.push(r.rainbowPct > 0 ? { icon: 'rainbow', text: `무지개 ${r.rainbowPct}%` } : { icon: 'rainbow', text: '무지개', off: true });
+  chips.push({ icon: 'up', text: '꼴찌 보정', off: !r.comeback });
   return chips;
 }
 

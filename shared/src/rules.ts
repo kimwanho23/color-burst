@@ -94,6 +94,11 @@ export const RULES = {
         threatEvery: 4_000, threatCount: 4, threatSpeed: 250, phase3Mult: 0.65,
         crystalHits: [10, 15], crystalSec: 10, slamEvery: 7_000, safeEvery: 14_000, safeCount: 1, mapEvery: 12_000, orbMult: 0.9,
       },
+      expert: {
+        laserEvery: [3_800, 5_800], laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
+        threatEvery: 3_200, threatCount: 5, threatSpeed: 300, phase3Mult: 0.55,
+        crystalHits: [13, 19], crystalSec: 8, slamEvery: 5_500, safeEvery: 11_000, safeCount: 1, mapEvery: 9_000, orbMult: 0.8,
+      },
     },
   },
   /** 클릭 판정 여유(필드 단위) */
@@ -337,8 +342,8 @@ export interface RoomRules {
   coopLevel: CoopLevel;
 }
 
-export type CoopLevel = 'easy' | 'normal' | 'hard';
-export const COOP_LEVELS: readonly CoopLevel[] = ['easy', 'normal', 'hard'];
+export type CoopLevel = 'easy' | 'normal' | 'hard' | 'expert';
+export const COOP_LEVELS: readonly CoopLevel[] = ['easy', 'normal', 'hard', 'expert'];
 
 /** 프리셋을 골라도 바뀌지 않는 설정 (모드 관련) */
 export const MODE_KEYS = ['mode', 'arcadeRoundSec', 'team', 'survival', 'coop', 'coopLevel'] as const;

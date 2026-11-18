@@ -3,7 +3,7 @@ import { RULES, type CoopResult, type CoopState, type PlayerState } from '@color
 import { UI, icon } from './icons.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-const LEVEL_NAME = { easy: '이지', normal: '노말', hard: '하드' } as const;
+const LEVEL_NAME = { easy: '이지', normal: '노말', hard: '하드', expert: '엑스퍼트' } as const;
 
 function ensure(stage: HTMLElement, id: string, cls: string) {
   let el = document.getElementById(id);

@@ -161,6 +161,16 @@ test('toGameRules: 협력전이면 180초·레이저/보스/견제/맵 끔·피�
   assert.ok(toGameRules({ ...DEFAULT_RULES, coop: true, coopLevel: 'easy' }).laserHalf < G.laserHalf);
 });
 
+test('엑스퍼트 난이도: 규칙 정리를 통과하고 하드보다 한 칸 더 세다', () => {
+  assert.equal(sanitizeRules(DEFAULT_RULES, { coop: true, coopLevel: 'expert' }).coopLevel, 'expert');
+  assert.equal(Object.keys(C.levels).length, 4);
+  const { hard: h, expert: x } = C.levels;
+  assert.ok(x.laserEvery[0] < h.laserEvery[0] && x.laserEvery[1] < h.laserEvery[1] && x.laserWarnMs <= h.laserWarnMs && x.laserWidth > h.laserWidth);
+  assert.ok(x.threatEvery < h.threatEvery && x.threatCount > h.threatCount && x.threatSpeed > h.threatSpeed && x.phase3Mult < h.phase3Mult);
+  assert.ok(x.crystalHits[0] > h.crystalHits[0] && x.crystalHits[1] > h.crystalHits[1] && x.crystalSec < h.crystalSec);
+  assert.ok(x.slamEvery < h.slamEvery && x.safeEvery < h.safeEvery && x.safeCount <= h.safeCount && x.mapEvery < h.mapEvery && x.orbMult < h.orbMult);
+});
+
 test('난이도 표: 세 난이도 모두 있고 하드일수록 공격이 잦고 수정이 단단하다', () => {
   const L = C.levels;
   for (const k of ['easy', 'normal', 'hard'] as const) assert.ok(L[k]);

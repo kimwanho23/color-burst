@@ -351,7 +351,7 @@ const closeScoreModal = () => { $('scoreModal').hidden = true; };
 $('scoreClose').onclick = closeScoreModal;
 $('scoreModal').addEventListener('click', (e) => { if (e.target === $('scoreModal')) closeScoreModal(); });
 $('scoreBtn').innerHTML = `${icon(UI.score, 16)}<span>점수표 보기</span>`;
-const RULE_ICON = { timer: UI.timer, fever: UI.fever, speed: UI.speed, mark: UI.mark, miss: UI.miss, boss: UI.boss, item: UI.item, laser: UI.laser, map: UI.map, rainbow: UI.rainbow, up: UI.up } as const;
+const RULE_ICON = { coop: UI.coop, timer: UI.timer, fever: UI.fever, speed: UI.speed, mark: UI.mark, miss: UI.miss, boss: UI.boss, item: UI.item, laser: UI.laser, map: UI.map, rainbow: UI.rainbow, up: UI.up } as const;
 
 function renderLobby() {
   if (!room) return;

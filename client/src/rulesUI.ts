@@ -43,6 +43,7 @@ const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string, keyof typeof UI]> = {
   easy: ['이지', '레이저가 얇고 공격이 느려요', 'chill'],
   normal: ['노말', '보통 세기의 공격', 'basic'],
   hard: ['하드', '굵은 레이저와 빠른 공격 원', 'hardcore'],
+  expert: ['엑스퍼트', '촘촘한 탄막과 단단한 수정, 짧은 제한 시간', 'expert'],
 };
 /** 커스텀 규칙: 방장 브라우저에만 저장 (모드 설정은 빼고) */
 const CUSTOM_KEY = 'cb-custom-rules';
@@ -63,7 +64,7 @@ export interface RulesUIHandlers {
 export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean, on: RulesUIHandlers) {
   const current = matchPreset(rules);
   // 방장이 프리셋과 다른 규칙을 만들면 커스텀으로 기억
-  if (editable && !current) saveCustom(rules);
+  if (editable && !current && !rules.coop) saveCustom(rules);
   const advOpen = el.querySelector<HTMLDetailsElement>('details.adv')?.open ?? false;
   const dis = editable ? '' : 'disabled';
   const coop = !!rules.coop;
@@ -73,7 +74,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   // 게임 모드: 클래식·아케이드·협력전. 둘째 줄은 같은 모양의 버튼 세 칸으로, 협력전이면 인원 모드 대신 난이도
   const second = coop
     ? `<div class="lbl">협력전 난이도${by}</div>
-    <div class="modeopts">
+    <div class="modeopts coop-levels">
       ${COOP_LEVELS.map((l) => `<button type="button" class="mopt" data-lv="${l}" aria-pressed="${rules.coopLevel === l}" title="${COOP_LEVEL_LABEL[l][1]}" ${dis}>${icon(UI[COOP_LEVEL_LABEL[l][2]], 22, 'mi')}<b>${COOP_LEVEL_LABEL[l][0]}</b></button>`).join('')}
     </div>`
     : `<div class="lbl">인원 모드${by}</div>
@@ -82,7 +83,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
       <button type="button" class="mopt" data-o="team" aria-pressed="${rules.team}" title="같은 팀 색은 내 색, 팀 점수 합으로 승부" ${dis}>${icon(UI.team, 22, 'mi')}<b>팀전 2:2</b></button>
       <button type="button" class="mopt" data-o="survival" aria-pressed="${rules.survival}" title="${arcade ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌 탈락, 마지막 1명이 승리" ${dis}>${icon(UI.survival, 22, 'mi')}<b>서바이벌</b></button>
     </div>`;
-  el.innerHTML = `
+  const head = `
     <div class="lbl">게임 모드${by}</div>
     <div class="modes three">
       <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade && !coop}" title="${rules.roundSec}초 한 판 승부" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b></button>
@@ -90,11 +91,12 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
       <button type="button" class="mode" data-m="coop" aria-pressed="${coop}" title="다 같이 거대 보스를 잡아요, 생명 ${RULES.coop.lives}개 · ${RULES.coop.timeSec}초" ${dis}>${icon(UI.coop, 26, 'mi')}<b>협력전</b></button>
     </div>
     ${second}
-    ${coop ? '<p class="coop-note">협력전은 견제·표적·보스 원·레이저 설정·방해 아이템·맵 패턴·꼴찌 보정을 쓰지 않고, 보스가 직접 공격해요.</p>' : ''}
+    ${coop ? '<p class="coop-note">다 같이 거대 보스를 잡아요. 난이도가 오를수록 공격이 빨라지고 수정이 단단해져요.</p>' : ''}
     ${arcade ? `<label class="adv-row" for="rule-arcadeRoundSec"><span>라운드 시간</span>
       <select id="rule-arcadeRoundSec" data-k="arcadeRoundSec" ${dis}>
         ${RULE_CHOICES.arcadeRoundSec.map((v) => `<option value="${v}" ${rules.arcadeRoundSec === v ? 'selected' : ''}>${v}초</option>`).join('')}
-      </select></label>` : ''}
+      </select></label>` : ''}`;
+  const rest = `
     <div class="lbl">방 규칙${by}</div>
     <div class="presets">
       ${(Object.entries(PRESETS) as [PresetId, (typeof PRESETS)[PresetId]][]).map(([id, p]) =>
@@ -117,8 +119,9 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
       </div>
     </details>`;
 
-  // 다시 그려도 열려 있던 상태 유지
-  el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen;
+  // 협력전은 난이도만 고른다 (방 규칙 프리셋·고급 설정·라운드 시간은 그리지 않음)
+  el.innerHTML = coop ? head : head + rest;
+  if (!coop) el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen; // 다시 그려도 열려 있던 상태 유지
   // 게임 모드: 협력전은 클래식 위에서 도는 별도 모드 (서버가 아케이드·팀전·서바이벌을 끈다)
   el.querySelectorAll<HTMLButtonElement>('.mode[data-m]').forEach((b) => {
     const m = b.dataset.m as 'classic' | 'arcade' | 'coop';
@@ -130,6 +133,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     b.onclick = () => on.change({ team: o === 'team', survival: o === 'survival' });
   });
   el.querySelectorAll<HTMLButtonElement>('.mopt[data-lv]').forEach((b) => { b.onclick = () => on.change({ coopLevel: b.dataset.lv as CoopLevel }); });
+  if (coop) return;
   el.querySelectorAll<HTMLButtonElement>('.preset[data-p]').forEach((b) => { b.onclick = () => on.preset(b.dataset.p as PresetId); });
   // 커스텀: 저장해 둔 규칙을 불러오고 고급 설정을 펼친다
   el.querySelector<HTMLButtonElement>('.preset.custom')!.onclick = () => {

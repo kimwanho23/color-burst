@@ -54,7 +54,7 @@ export const UI = {
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,
   codex: BookOpen, leave: LogOut, close: X, special: Gem, combo: Link, guide: CircleHelp,
   obstacle: Construction, precision: Crosshair, custom: SlidersHorizontal,
-  prev: ChevronLeft, next: ChevronRight, timer: Timer, solo: User, team: Users, survival: HeartPulse, coop: HandHelping, heart: Heart,
+  prev: ChevronLeft, next: ChevronRight, timer: Timer, solo: User, team: Users, survival: HeartPulse, coop: HandHelping, expert: Skull, heart: Heart,
 } as const;
 
 /** 아이콘 SVG 문자열 */
