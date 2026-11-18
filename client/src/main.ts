@@ -14,7 +14,7 @@ import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lob
 import { renderResult } from './results.ts';
 import { coopResultHtml, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
 import { renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
-import { barrierGuarding, pointerAction } from './pointer.ts';
+import { barrierGuarding, barrierReady, chordPress, pointerAction } from './pointer.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId } from '@color-burst/shared';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, abilityIcon, coopItemIcon, icon, itemIcon } from './icons.ts';
@@ -140,6 +140,8 @@ let usedTouch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse
 let barrierRequestedAt = 0;
 function useBarrier() {
   if (!playing || !rules.coop || pausedView || serverNow() < startAt) return;
+  // 켜져 있거나 쿨타임 중이면 보내지 않는다 (서버도 거절한다)
+  if (!barrierReady(me()?.coopFx, serverNow())) return;
   barrierRequestedAt = serverNow();
   socket.emit('coop:barrier');
 }
@@ -727,6 +729,9 @@ function checkBulletHit(m: PlayerState | undefined, now: number, live: boolean) 
   coopHurtShownAt = performance.now();
   myHurtFx(m.hp - dmg > 0 ? `체력 −${dmg}` : '체력이 다 떨어졌어요');
 }
+/** 내 화면 '막음!' 글자·소리 최소 간격(ms) */
+const BLOCK_FX_GAP_MS = 150;
+let lastBlockFxAt = -Infinity;
 socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked, barrier }) => {
   const p = players.find((x) => x.id === playerId);
   if (p) { p.hp = hp; renderScores(); renderMyHp(playerId === myId()); }
@@ -734,7 +739,8 @@ socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked, barrier }) =>
   // 방어막이 막음: 피해 없음
   if (blocked) {
     const q = playerId === myId() ? gameCursor.pos : null;
-    if (q) { renderer.text(q.x, q.y - 40, '막음!', '#5ce1e6', 1); sfx.bossBlock(); }
+    // 보호막으로 탄막을 연달아 막아도 글자·소리가 겹치지 않게 간격을 둔다
+    if (q && performance.now() - lastBlockFxAt >= BLOCK_FX_GAP_MS) { lastBlockFxAt = performance.now(); renderer.text(q.x, q.y - 40, '막음!', '#5ce1e6', 1); sfx.bossBlock(); }
     else if (p) pushFeed($('feed'), coopItemIcon('guard', 18), `${p.name}: ${barrier ? '보호막' : '방어막'}으로 막음`, COLORS[p.color].hex);
     return;
   }
@@ -999,12 +1005,13 @@ socket.on('boss:escaped', ({ circleId }) => {
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => {
   const before = me()?.stacks ?? {};
-  const barrierBefore = me()?.coopFx?.barrierUntil ?? 0;
+  const fxBefore = me()?.coopFx;
   players = p; renderScores(); if (picking()) showPick();
   const m = me();
-  // 서버가 보호막을 켜 주면(종료 시각이 새로 생기면) 켜는 소리. 일시정지 보정으로 밀린 것은 제외
-  const barrierNow = m?.coopFx?.barrierUntil ?? 0;
-  if (playing && rules.coop && !pausedView && barrierNow > barrierBefore && barrierBefore <= serverNow()) sfx.barrierOn();
+  // 서버가 보호막을 켜 주면(종료 시각이 새로 생기면) 켜는 소리. 일시정지 보정으로 밀린 것과
+  // 재접속 직후 처음 받은 상태(직전 내 정보 없음)는 제외
+  const barrierBefore = fxBefore?.barrierUntil ?? 0, barrierNow = m?.coopFx?.barrierUntil ?? 0;
+  if (fxBefore && playing && rules.coop && !pausedView && barrierNow > barrierBefore && barrierBefore <= serverNow()) sfx.barrierOn();
   renderBarrier();
   // 스택형 증강: 내 칸이 오르면 한 줄 알림
   for (const id of STACK_IDS) {
@@ -1290,7 +1297,7 @@ function tutorialClick(e: PointerEvent, tb: NonNullable<ReturnType<typeof curren
 }
 // 게임 화면에서는 브라우저 메뉴를 띄우지 않는다 (우클릭은 협력전 보호막)
 $('cv').addEventListener('contextmenu', (e) => e.preventDefault());
-$('cv').addEventListener('pointerdown', (e) => {
+function onCanvasPress(e: PointerEvent) {
   if (e.pointerType === 'touch' && !usedTouch) { usedTouch = true; renderBarrier(); }
   // 우클릭은 클릭 판정이 아니다: 협력전이면 보호막, 아니면 아무 일도 하지 않는다
   const act = pointerAction(e.pointerType, e.button);
@@ -1359,7 +1366,10 @@ $('cv').addEventListener('pointerdown', (e) => {
     }
     socket.emit('game:click', { circleId: null, x, y });
   }
-});
+}
+$('cv').addEventListener('pointerdown', onCanvasPress);
+// 다른 버튼을 누른 채 새로 누른 버튼(좌+우)은 브라우저가 pointermove로만 알린다: 같은 누르기로 처리
+$('cv').addEventListener('pointermove', (e) => { if (chordPress(e.pointerType, e.button, e.buttons)) onCanvasPress(e); });
 
 initSettingsPanel();
 

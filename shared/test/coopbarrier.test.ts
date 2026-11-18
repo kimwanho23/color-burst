@@ -59,10 +59,14 @@ test('발동: 횟수 1 줄고 1.5초 켜짐, 켜진 중 다시 누르면 무시'
   assert.equal(r.coop.activateBarrier(me, now + 100), false);
   assert.equal(fx(me).barrierLeft, 1);
   assert.equal(fx(me).barrierUntil, now + 1500);
-  // 끝난 뒤에는 다시 쓸 수 있고, 0회면 거부
-  assert.equal(r.coop.activateBarrier(me, now + 1500), true);
+  // 끝난 뒤 쿨타임(2초) 동안은 거부, 그 뒤 다시 쓸 수 있고, 0회면 거부
+  assert.equal(B.cooldownMs, 2000);
+  assert.equal(r.coop.activateBarrier(me, now + 1500), false, '끝난 직후 연타');
+  assert.equal(r.coop.activateBarrier(me, now + 1500 + 1999), false, '쿨타임 중');
+  assert.equal(fx(me).barrierLeft, 1);
+  assert.equal(r.coop.activateBarrier(me, now + 1500 + 2000), true);
   assert.equal(fx(me).barrierLeft, 0);
-  assert.equal(r.coop.activateBarrier(me, now + 4000), false);
+  assert.equal(r.coop.activateBarrier(me, now + 9000), false);
   assert.equal(fx(me).barrierLeft, 0);
   room.destroy();
 });
@@ -144,6 +148,26 @@ test('일시정지: 종료 시각을 밀고 플레이어 상태를 다시 보낸
   room.destroy();
 });
 
+test('일시정지: 쿨타임까지 끝난 보호막은 밀지도 다시 보내지도 않는다', () => {
+  const { room, r, me } = coopRoom();
+  const now = Date.now() - 10_000;
+  r.coop.activateBarrier(me, now);
+  sent.length = 0;
+  r.coop.shift(5000);
+  assert.equal(fx(me).barrierUntil, now + 1500, '그대로');
+  assert.ok(!sent.some((s) => s.ev === 'players'), 'players 전송 없음');
+  room.destroy();
+});
+
+test('일시정지: 쿨타임 중이면 쿨타임도 함께 밀린다', () => {
+  const { room, r, me } = coopRoom();
+  const now = Date.now() - 2000; // 끝난 지 0.5초, 쿨타임 남음
+  r.coop.activateBarrier(me, now);
+  r.coop.shift(5000);
+  assert.equal(fx(me).barrierUntil, now + 1500 + 5000);
+  room.destroy();
+});
+
 test('방 조건: 시작 카운트다운 중 요청은 무시', () => {
   const { room, r, me } = coopRoom();
   assert.ok(Date.now() < r.startAt, '카운트다운 중');
@@ -169,24 +193,55 @@ test('화면 예측: 켜진 동안과 요청 직후 응답 대기 중에는 맞�
   assert.equal(barrierGuarding({ barrierUntil: 0, barrierLeft: 0 }, t - 100, t), false, '남은 횟수 0이면 서버가 거절');
   assert.equal(barrierGuarding({ barrierUntil: t + 1, barrierLeft: 1 }, 0, t), true, '켜짐');
   assert.equal(barrierGuarding(undefined, t - 100, t), false);
+  // 쿨타임 중 요청은 서버가 거절하므로 예측을 건너뛰지 않는다
+  assert.equal(barrierGuarding({ barrierUntil: t - 500, barrierLeft: 1 }, t - 100, t), false, '쿨타임 중');
+});
+
+test('화면 요청 가능 여부: 켜짐·쿨타임·0회면 보내지 않는다', async () => {
+  const { barrierReady } = await import('../../client/src/pointer.ts');
+  const t = 10_000;
+  assert.equal(barrierReady({ barrierUntil: 0, barrierLeft: 2 }, t), true);
+  assert.equal(barrierReady({ barrierUntil: t + 100, barrierLeft: 1 }, t), false, '켜짐');
+  assert.equal(barrierReady({ barrierUntil: t - 100, barrierLeft: 1 }, t), false, '쿨타임');
+  assert.equal(barrierReady({ barrierUntil: t - B.cooldownMs, barrierLeft: 1 }, t), true, '쿨타임 끝');
+  assert.equal(barrierReady({ barrierUntil: 0, barrierLeft: 0 }, t), false, '0회');
+  assert.equal(barrierReady(undefined, t), false);
+});
+
+test('두 버튼 동시 누름: 다른 버튼을 누른 채 새로 누른 버튼을 알아낸다', async () => {
+  const { chordPress } = await import('../../client/src/pointer.ts');
+  assert.equal(chordPress('mouse', 2, 3), true, '왼쪽 누른 채 오른쪽');
+  assert.equal(chordPress('mouse', 0, 3), true, '오른쪽 누른 채 왼쪽');
+  assert.equal(chordPress('mouse', 2, 1), false, '오른쪽을 뗌');
+  assert.equal(chordPress('mouse', -1, 3), false, '버튼 변화 없는 이동');
+  assert.equal(chordPress('mouse', 1, 5), false, '가운데 버튼');
+  assert.equal(chordPress('touch', 0, 1), false);
 });
 
 test('모바일 버튼: 누르면 보호막을 쓰고, 버튼 위 터치 이동은 게임 커서로 새지 않는다', async () => {
   const { renderBarrierHud } = await import('../../client/src/coopUI.ts');
   const on: Record<string, (e: unknown) => void> = {};
+  let writes = 0, html = '';
   const el = {
-    id: '', type: '', className: '', hidden: false, disabled: false, innerHTML: '',
+    id: '', type: '', className: '', hidden: false, disabled: false, dataset: {} as Record<string, string>,
+    get innerHTML() { return html; }, set innerHTML(v: string) { html = v; writes++; },
     classList: { toggle() {} }, setAttribute() {},
     addEventListener(ev: string, f: (e: unknown) => void) { on[ev] = f; },
   };
   const stage = { appendChild() {} } as unknown as HTMLElement;
   const g = globalThis as { document?: unknown };
   const prev = g.document;
-  g.document = { getElementById: () => null, createElement: () => el };
+  let created = false;
+  g.document = { getElementById: () => (created ? el : null), createElement: () => { created = true; return el; } };
   try {
     let used = 0;
     const me = { bot: false, coopFx: { barrierUntil: 0, barrierLeft: 2 } } as unknown as PlayerState;
     renderBarrierHud(stage, me, 'normal', true, () => { used++; });
+    renderBarrierHud(stage, me, 'normal', true, () => { used++; });
+    assert.equal(writes, 1, '같은 내용이면 다시 쓰지 않음');
+    (me.coopFx as CoopFx).barrierLeft = 1;
+    renderBarrierHud(stage, me, 'normal', true, () => { used++; });
+    assert.equal(writes, 2, '횟수가 바뀌면 다시 씀');
     const ev = () => { const e = { stopped: 0, prevented: 0, stopPropagation() { e.stopped++; }, preventDefault() { e.prevented++; } }; return e; };
     const down = ev(); on.pointerdown!(down);
     assert.equal(used, 1);

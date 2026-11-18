@@ -45,9 +45,13 @@ export function renderBarrierHud(stage: HTMLElement, p: PlayerState | undefined,
   el.hidden = !p || p.bot || !!p.outAt || uses <= 0;
   if (el.hidden || !p) return;
   const left = p.coopFx?.barrierLeft ?? 0;
+  // 남은 횟수·입력 방식이 그대로면 다시 그리지 않는다
+  const key = `${left}:${touch}`;
+  if (el.dataset.key === key) return;
+  el.dataset.key = key;
   el.disabled = left <= 0;
   el.classList.toggle('touch', touch);
-  el.innerHTML = `<span class="barrier-dot" aria-hidden="true"></span><b>보호막 ${left}</b><small>${touch ? '눌러서 사용' : '우클릭'}</small>`;
+  el.innerHTML =`<span class="barrier-dot" aria-hidden="true"></span><b>보호막 ${left}</b><small>${touch ? '눌러서 사용' : '우클릭'}</small>`;
   el.setAttribute('aria-label', `보호막 ${left}회 남음`);
 }
 

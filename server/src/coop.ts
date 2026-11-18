@@ -152,11 +152,11 @@ export class CoopRun {
     return true;
   }
 
-  /** 우클릭 보호막 켜기: 조건과 횟수는 서버에서 확인한다. 켜져 있는 동안 다시 눌러도 횟수를 깎지 않는다 */
+  /** 우클릭 보호막 켜기: 조건과 횟수는 서버에서 확인한다. 켜져 있는 동안과 끝난 뒤 쿨타임 동안은 다시 눌러도 횟수를 깎지 않는다 */
   activateBarrier(p: PlayerState, now: number): boolean {
     const fx = p.coopFx;
     if (p.bot || p.outAt || !p.connected || p.hp <= 0 || now < p.stunUntil || !fx) return false;
-    if (fx.barrierLeft <= 0 || now < fx.barrierUntil) return false;
+    if (fx.barrierLeft <= 0 || (fx.barrierUntil && now < fx.barrierUntil + C.barrier.cooldownMs)) return false;
     fx.barrierLeft--;
     fx.barrierUntil = now + C.barrier.durationMs;
     this.host.emitPlayers();
@@ -867,14 +867,16 @@ export class CoopRun {
     for (const m of this.missiles) m.at += delta;
     if (this.boostUntil) this.boostUntil += delta;
     let barrierShifted = false;
+    const pausedAt = Date.now() - delta; // 멈춘 순간: 그때 켜져 있거나 쿨타임 중이던 보호막만 민다
     for (const p of this.host.players()) {
       const fx = p.coopFx;
       if (!fx) continue;
       if (fx.guardUntil) fx.guardUntil += delta;
       if (fx.fireUntil) fx.fireUntil += delta;
-      if (fx.barrierUntil) { fx.barrierUntil += delta; barrierShifted = true; }
+      // 켜져 있거나 쿨타임 중인 보호막만 민다 (쿨타임이 일시정지 동안 흐르지 않게)
+      if (fx.barrierUntil && fx.barrierUntil + C.barrier.cooldownMs > pausedAt) { fx.barrierUntil += delta; barrierShifted = true; }
     }
-    // 화면의 보호막 구체가 일시정지 동안 줄지 않게 밀린 종료 시각을 다시 보낸다
+    // 화면의 보호막 구체·쿨타임이 일시정지 동안 줄지 않게 밀린 종료 시각을 다시 보낸다
     if (barrierShifted) this.host.emitPlayers();
     if (this.slams.length) this.host.emit('coop:slam', this.slams);
     if (this.safe) this.host.emit('coop:safe', this.safe);
