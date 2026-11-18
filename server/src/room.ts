@@ -1507,7 +1507,7 @@ export class Room {
       finish: (win, reason) => { if (this.phase === 'play') this.end(win, reason); },
       emitPlayers: () => this.emitPlayers(),
       laserHalf: () => this.G.laserHalf,
-      cursorOf: (id) => { const c = this.freshCursor(id, Date.now()); return c ? { x: c.x, y: c.y } : null; },
+      cursorOf: (id) => { const c = this.freshCursor(id, Date.now()); return c ? { x: c.x, y: c.y, at: c.at } : null; },
       stun: (p, now, ms) => {
         const r = hazardStun(p, now, ms, this.G, this.players);
         if (r > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });

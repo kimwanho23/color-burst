@@ -17,6 +17,8 @@ import {
 const C = RULES.coop;
 const I = RULES.coop.items;
 const NO_SKIP: ReadonlySet<string> = new Set();
+/** 빔 지연 보정에서 커서를 다시 보는 간격(ms, 판정 촘촘함일 뿐 규칙 수치는 아님) */
+const BEAM_STEP_MS = 10;
 
 export interface CoopHost {
   players(): PlayerState[];
@@ -33,8 +35,8 @@ export interface CoopHost {
   emitPlayers(): void;
   /** 레이저 맞는 거리 (난이도 두께) */
   laserHalf(): number;
-  /** 사람 커서 (없으면 판정하지 않음) */
-  cursorOf(id: string): Point | null;
+  /** 사람 커서와 서버가 받은 시각 (없으면 판정하지 않음) */
+  cursorOf(id: string): (Point & { at: number }) | null;
   /** 피격 기절 (레이저와 같은 처리, ms 동안) */
   stun(p: PlayerState, now: number, ms: number): void;
   /** 원 밖의 피해(미사일)로 보스가 쓰러짐: 방이 boss:killed를 알리고 판을 이겨서 끝낸다 */
@@ -208,12 +210,27 @@ export class CoopRun {
     if (!b || !this.boss) return;
     if (now >= b.until) { this.beam = null; this.beamHit.clear(); this.host.emit('coop:beam', null); return; }
     if (now < b.at) return;
-    const from = circlePos(this.boss, now);
     for (const p of this.alive()) {
       if (this.beamHit.has(p.id)) continue;
       const q = this.host.cursorOf(p.id);
-      if (q && beamHits(q, b, from, now, C.beam.halfWidth) && this.damage(p, 'beam', now)) this.beamHit.add(p.id);
+      if (q && this.beamOver(q, b, now) && this.damage(p, 'beam', now)) this.beamHit.add(p.id);
       if (!this.boss || this.beam !== b) return;
+    }
+  }
+
+  /**
+   * 커서 지연 보정: 커서를 받은 시각(빔이 도는 동안으로 자름)에 빔 위였는가. 그 뒤 stillMs보다 오래 새 커서가 없으면
+   * 지금 − stillMs까지 그 자리에 있었던 것으로 보고 그 사이도 본다 (빔 끝은 판 가장자리에서 빠르게 지나가서, 지금 각도로 오래된 커서를 보면 억울하게 맞는다)
+   */
+  private beamOver(q: Point & { at: number }, b: Beam, now: number): boolean {
+    const boss = this.boss;
+    if (!boss) return false;
+    const end = Math.min(now, b.until - 1);
+    const lo = Math.max(b.at, Math.min(q.at, end));
+    const hi = Math.max(lo, Math.min(end, now - C.beam.stillMs));
+    for (let t = lo; ; t = Math.min(hi, t + BEAM_STEP_MS)) {
+      if (beamHits(q, b, circlePos(boss, t), t, C.beam.halfWidth)) return true;
+      if (t >= hi) return false;
     }
   }
 
@@ -253,7 +270,7 @@ export class CoopRun {
     let aim: Point | undefined;
     if (shape === 'aimed') {
       // 커서가 있는 살아 있는 사람을 돌아가며 노린다 (아무도 없으면 바로 아래)
-      const targets = this.alive().map((p) => this.host.cursorOf(p.id)).filter((q): q is Point => !!q);
+      const targets = this.alive().flatMap((p) => { const q = this.host.cursorOf(p.id); return q ? [{ x: q.x, y: q.y }] : []; });
       if (targets.length) aim = targets[this.aimTurn++ % targets.length];
     }
     this.pushVolley(makeVolley(shape, this.host.nextId(), at, circlePos(this.boss, at),

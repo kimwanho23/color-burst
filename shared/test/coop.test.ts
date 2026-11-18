@@ -1253,7 +1253,7 @@ test('구역 봉인: 경고 중에는 안 맞고 at~until 사이 막힌 줄 안�
 });
 
 test('회전 빔: 빔 위의 점은 맞고 빔 사이의 점은 안 맞음, 시간이 지나면 돈다', () => {
-  assert.deepEqual(C.beam, { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22 });
+  assert.deepEqual(C.beam, { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22, stillMs: 150 });
   const from = { x: 550, y: 190 }, h = C.beam.halfWidth;
   const b: Beam = { at: 1000, until: 5000, count: 2, a0: 0, w: 0.6 };
   assert.equal(beamHits({ x: 850, y: 190 }, b, from, 999, h), false, '경고 중');
@@ -1414,5 +1414,52 @@ test('판이 끝난 뒤: 분노로 모두 탈락한 tick의 나머지가 수정�
   sent.length = 0;
   assert.deepEqual(tickToOver(r, room, now, now + 60_000), []);
   assert.equal(overOf()?.coop?.reason, 'wipe');
+  room.destroy();
+});
+
+/** 회전 빔 하나를 띄우고, 빔이 th에 지나가는 점(보스에서 600)을 돌려준다 */
+function beamAt() {
+  const { room, r, me } = coopRoom(1, 0);
+  noSkills(r);
+  r.coop.phase = 2;
+  const run = r.coop as unknown as SkillRun;
+  const rand = run.rand;
+  run.rand = () => 0.25; // a0 = π/2(아래), w = −0.6
+  sent.length = 0;
+  run.useSkill('beam', r.startAt + 5000);
+  run.rand = rand; // 고정 난수로 tick을 돌리면 원 뿜기 등이 끝나지 않는다
+  const b = beamsSent()[0]!;
+  const th = b.at + 500;
+  const from = circlePos(r.coop.boss, th);
+  const a = b.a0 + b.w * (th - b.at) / 1000;
+  const P = { x: from.x + Math.cos(a) * 600, y: from.y + Math.sin(a) * 600 };
+  const H = C.beam.halfWidth;
+  assert.equal(beamHits(P, b, from, th, H), true, '빔이 th에 P를 지남');
+  for (const t of [th - 300, th - C.beam.stillMs, th + 120]) assert.equal(beamHits(P, b, circlePos(r.coop.boss, t), t, H), false, `${t - th}`);
+  const at = (recv: number) => r.cursors.set(me.id, { x: P.x, y: P.y, at: recv });
+  return { room, r, me, th, at };
+}
+
+test('회전 빔 지연 보정: 빔이 닿기 전에 받은 커서는 빔이 그 자리를 지날 때 판정해도 맞지 않음', () => {
+  const { room, r, me, th, at } = beamAt();
+  at(th - 300);
+  r.coop.tick(th);
+  assert.equal(me.hp, C.hpMax);
+  room.destroy();
+});
+
+test('회전 빔 지연 보정: 받은 시각에 빔 안이던 커서는 빔이 지나간 뒤 판정해도 맞음', () => {
+  const { room, r, me, th, at } = beamAt();
+  at(th);
+  r.coop.tick(th + 120);
+  assert.equal(me.hp, C.hpMax - N.beam);
+  room.destroy();
+});
+
+test('회전 빔 지연 보정: stillMs보다 오래 새 커서가 없으면 그동안 그 자리에 있던 것으로 판정', () => {
+  const { room, r, me, th, at } = beamAt();
+  at(th - 300);
+  r.coop.tick(th + 200);
+  assert.equal(me.hp, C.hpMax - N.beam);
   room.destroy();
 });
