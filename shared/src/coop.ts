@@ -216,6 +216,43 @@ export function beamHits(pt: Point, b: Beam, from: Point, t: number, half: numbe
   });
 }
 
+/** 유도탄 한 발: 대상(target) 커서를 쫓는다. born 발사 시각, (x, y, angle)은 Homing.t 시각의 위치·진행 방향(라디안) */
+export interface HomingShot { id: number; target: string; x: number; y: number; angle: number; born: number }
+/** 유도탄 패턴: warnAt 예고 시작, at 발사 시각, t 위치를 잰 서버 시각. 발사 전에는 shots가 비고 targets로 예고한다 */
+export interface Homing { warnAt: number; at: number; t: number; phase: 2 | 3; targets: string[]; shots: HomingShot[] }
+
+/** 단계별 유도탄 속력(필드/초)·초당 최대 선회(라디안) */
+export function homingRule(phase: 2 | 3): { speed: number; turnRad: number } {
+  const H = C.homing, i = phase - 2;
+  return { speed: H.speed[i]!, turnRad: (H.turnDeg[i]! * Math.PI) / 180 };
+}
+
+/** dtMs 동안 목표 쪽으로 최대 turnRad×dt만큼 돌고 speed로 나아간다. 목표가 없거나 겹치면 돌지 않는다 */
+export function steerHoming(s: { x: number; y: number; angle: number }, to: Point | null, speed: number, turnRad: number, dtMs: number): { x: number; y: number; angle: number } {
+  const dt = Math.max(0, dtMs) / 1000;
+  let angle = s.angle;
+  if (to && (to.x !== s.x || to.y !== s.y)) {
+    let d = Math.atan2(to.y - s.y, to.x - s.x) - angle;
+    d = Math.atan2(Math.sin(d), Math.cos(d)); // (−π, π]로 접어 짧은 쪽으로
+    const max = turnRad * dt;
+    angle += Math.max(-max, Math.min(max, d));
+  }
+  return { x: s.x + Math.cos(angle) * speed * dt, y: s.y + Math.sin(angle) * speed * dt, angle };
+}
+
+/** 이번 틱에 탄이 지나간 선분(from → to)과 커서 거리가 r 이하인가 (빠른 탄이 틱 사이에 커서를 건너뛰지 않게) */
+export function homingHits(from: Point, to: Point, cursor: Point, r: number): boolean {
+  const dx = to.x - from.x, dy = to.y - from.y, len2 = dx * dx + dy * dy;
+  const k = len2 ? Math.max(0, Math.min(1, ((cursor.x - from.x) * dx + (cursor.y - from.y) * dy) / len2)) : 0;
+  return Math.hypot(cursor.x - (from.x + dx * k), cursor.y - (from.y + dy * k)) <= r;
+}
+
+/** 탄 불투명도: 수명 전 1, 수명 뒤 fadeMs 동안 1 → 0 */
+export function homingAlpha(s: HomingShot, t: number): number {
+  const H = C.homing, past = t - s.born - H.lifeMs;
+  return past <= 0 ? 1 : Math.max(0, 1 - past / H.fadeMs);
+}
+
 /** 별: 진 판 0. 이긴 판은 살아남은 비율·남은 시간으로 1~3 */
 export function coopStars(win: boolean, aliveRatio: number, leftMs: number): 0 | 1 | 2 | 3 {
   if (!win) return 0;

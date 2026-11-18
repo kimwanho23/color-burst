@@ -1,7 +1,7 @@
 import type { CoopPhase } from './coop.ts';
 import type { BulletShape } from './coopBullets.ts';
 
-export type CoopSkill = 'laser' | 'threat' | 'slam' | 'safe' | 'seal' | 'wall' | 'beam' | 'crush';
+export type CoopSkill = 'laser' | 'threat' | 'slam' | 'safe' | 'seal' | 'wall' | 'beam' | 'crush' | 'homing';
 
 export interface CoopBoss {
   id: 'core'; name: string;
@@ -29,6 +29,6 @@ export const COOP_BOSSES: { core: CoopBoss } = {
     },
     shieldBullets: [['spiral', 'ring'], ['spiral', 'ring', 'aimed']],
     skills: { 1: ['laser', 'threat'], 2: PHASE2, 3: [...PHASE2, 'safe'] },
-    expertSkills: { 2: [...PHASE2, 'crush'], 3: [...PHASE2, 'safe', 'crush'] },
+    expertSkills: { 2: [...PHASE2, 'crush', 'homing'], 3: [...PHASE2, 'safe', 'crush', 'homing'] },
   },
 };

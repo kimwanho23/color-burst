@@ -27,6 +27,8 @@ export interface CoopState {
   /** 구역 봉인, 회전 빔 (경고 중이거나 나와 있는 것, 없으면 null) */
   seal: Seal | null;
   beam: Beam | null;
+  /** 엑스퍼트 유도탄 (예고 중이거나 날고 있는 것, 없으면 null) */
+  homing: Homing | null;
   /** 약점 노출 아이템: until까지 보스 중심 + (dx, dy) 자리 (없으면 null) */
   weak: { until: number; dx: number; dy: number } | null;
   /**
@@ -56,14 +58,14 @@ export interface CoopResult {
   /** 진 이유: 수정 구간 실패(엑스퍼트 분노) / 모두 탈락 / 시간 끝 */
   reason?: 'crystal' | 'wipe' | 'time';
 }
-export type CoopHitBy = 'bullet' | 'wall' | 'threat' | 'beam' | 'laser' | 'slam' | 'seal' | 'safe' | 'rage' | 'crush';
+export type CoopHitBy = 'bullet' | 'wall' | 'threat' | 'beam' | 'laser' | 'slam' | 'seal' | 'safe' | 'rage' | 'crush' | 'homing';
 import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
 import type { WavePattern } from './waves.ts';
 import type { Point } from './cursor.ts';
 import type { MapPattern } from './patterns.ts';
-import type { Beam, SafeZones, Seal, Slam } from './coop.ts';
+import type { Beam, Homing, SafeZones, Seal, Slam } from './coop.ts';
 
 /** 커서 자석으로 끌려가는 원: at부터 ms 동안 by의 커서로 빨려 들어간 뒤 잡힌다 */
 export interface Pull { circleId: number; by: string; from: Point; at: number; ms: number }
@@ -278,6 +280,7 @@ export interface ServerToClient {
   'coop:seal': (d: Seal | null) => void;
   /** 협력전: 회전 빔 경고·발동 (끝나면 null) */
   'coop:beam': (d: Beam | null) => void;
+  'coop:homing': (d: Homing | null) => void;
   /** 협력전: 수정 남은 횟수 (0이면 사라짐) */
   'coop:crystal': (d: { id: number; hp: number; maxHp: number }) => void;
   /** 협력전: 잡은 원이 보스에게 피해 (연출) */

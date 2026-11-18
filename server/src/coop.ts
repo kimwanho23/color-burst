@@ -13,6 +13,7 @@ import {
   type LaserLine, type PlayerState, type Point, type SafeZones, type Seal, type ServerToClient, type Slam,
   type BulletShape, type CoopItemId, type Volley,
 } from '@color-burst/shared';
+import { FIELD, homingHits, homingRule, steerHoming, type Homing } from '@color-burst/shared';
 import { coopAttackRules, specialId, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
 
 const C = RULES.coop;
@@ -68,6 +69,9 @@ export class CoopRun {
   private sealHit = new Set<string>();
   private beam: Beam | null = null;
   private beamHit = new Set<string>();
+  /** 엑스퍼트 유도탄과 마지막으로 위치를 보낸 시각 */
+  private homing: Homing | null = null;
+  private homingSentAt = 0;
   private stats = new Map<string, CoopPlayerResult>();
   /** 단계가 끝난 절대 시각 (결과에서 판 시작 기준으로 바꿈) */
   private phaseAts: number[] = [];
@@ -197,6 +201,8 @@ export class CoopRun {
     if (!this.boss) return;
     this.tickBeam(now);
     if (!this.boss) return;
+    this.tickHoming(now);
+    if (!this.boss) return;
     this.tickBullets(now);
     if (this.shield) { this.tickBotCrystals(now); if (this.shield && now >= this.shield.until && !this.rageAt) this.startRage(now); return; }
     this.spawnOrbs(now);
@@ -247,6 +253,10 @@ export class CoopRun {
       this.beam = { at, until: at + C.beam.ms, count: C.beam.count[p2]!, a0: this.rand() * Math.PI * 2, w };
       this.beamHit.clear();
       this.host.emit('coop:beam', this.beam);
+    } else if (k === 'homing') {
+      if (this.level !== 'expert' || this.phase === 1 || this.homing) return;
+      this.homing = { warnAt: now, at: now + C.homing.warnMs, t: now, phase: this.phase as 2 | 3, targets: this.alive().map((p) => p.id), shots: [] };
+      this.emitHoming(now);
     } else if (k === 'wall' && this.boss) {
       // 보스 바로 아래(보스 중심 + wallDy)에서 내려온다. 지금 보내되 warnMs 뒤에 움직인다 (그 전에는 shotPos가 null이라 맞지 않고 화면은 미리보기).
       // 판정은 탄과 같다 (화면이 알리고 reportHurt가 'wall'로 깎음)
@@ -284,6 +294,58 @@ export class CoopRun {
       if (q && this.beamOver(q, b, now) && this.damage(p, 'beam', now)) this.beamHit.add(p.id);
       if (!this.boss || this.beam !== b) return;
     }
+  }
+
+  private emitHoming(now: number) {
+    this.homingSentAt = now;
+    this.host.emit('coop:homing', this.homing);
+  }
+
+  private stopHoming() {
+    if (!this.homing) return;
+    this.homing = null;
+    this.host.emit('coop:homing', null);
+  }
+
+  /**
+   * 유도탄: at에 보스 자리에서 대상마다 1발. 그 뒤 틱마다 대상 커서 쪽으로 선회 제한 안에서 돌며 나아가고,
+   * 수명 전에 지나간 선분이 커서에 닿으면 맞는다 (맞히거나 방어막에 막히면 사라짐, 무적이면 계속 쫓음)
+   */
+  private tickHoming(now: number) {
+    const h = this.homing;
+    if (!h || !this.boss || now < h.at) return;
+    const H = C.homing;
+    if (h.t < h.at) {
+      const from = circlePos(this.boss, h.at);
+      const alive = new Set(this.alive().map((p) => p.id));
+      h.shots = h.targets.filter((id) => alive.has(id)).map((id) => {
+        const q = this.host.cursorOf(id);
+        return { id: this.host.nextId(), target: id, x: from.x, y: from.y, angle: q ? Math.atan2(q.y - from.y, q.x - from.x) : Math.PI / 2, born: h.at };
+      });
+      h.t = h.at;
+      if (!h.shots.length) { this.stopHoming(); return; }
+      this.emitHoming(now);
+    }
+    const { speed, turnRad } = homingRule(h.phase);
+    const dt = now - h.t;
+    const before = h.shots.length;
+    const keep: typeof h.shots = [];
+    for (const s of h.shots) {
+      const p = this.alive().find((x) => x.id === s.target);
+      if (!p || now >= s.born + H.lifeMs + H.fadeMs) continue;
+      const q = this.host.cursorOf(p.id);
+      const next = steerHoming(s, q, speed, turnRad, dt);
+      if (q && now < s.born + H.lifeMs && homingHits(s, next, q, H.r) && this.damage(p, 'homing', now)) {
+        if (!this.boss || this.homing !== h) return; // 판이 끝났거나 패턴이 지워짐
+        continue;
+      }
+      if (next.x < -H.r || next.x > FIELD.w + H.r || next.y < -H.r || next.y > FIELD.h + H.r) continue;
+      keep.push({ ...s, ...next });
+    }
+    h.shots = keep;
+    h.t = now;
+    if (!keep.length) { this.stopHoming(); return; }
+    if (keep.length !== before || now - this.homingSentAt >= H.sendMs) this.emitHoming(now);
   }
 
   /**
@@ -366,6 +428,7 @@ export class CoopRun {
       return false;
     });
     this.host.emit('coop:clear', { before });
+    this.stopHoming();
   }
 
   /** 이 자리에 탄이 있는가 (지연 보정 lagWindowMs 동안 한 번이라도). 탄을 누른 클릭은 헛클릭이 아니다 */
@@ -692,6 +755,7 @@ export class CoopRun {
     if (this.safe) { this.safe = null; this.host.emit('coop:safe', null); }
     if (this.seal) { this.seal = null; this.sealHit.clear(); this.host.emit('coop:seal', null); }
     if (this.beam) { this.beam = null; this.beamHit.clear(); this.host.emit('coop:beam', null); }
+    this.stopHoming();
   }
 
   /** 사람이 나가거나 끊겼을 때: 모두 탈락이면 패배, 보호막 중이면 그 사람 수정을 치운다 */
@@ -776,6 +840,11 @@ export class CoopRun {
     if (this.safe) this.safe.at += delta;
     if (this.seal) { this.seal.warnAt += delta; this.seal.at += delta; this.seal.until += delta; }
     if (this.beam) { this.beam.at += delta; this.beam.until += delta; }
+    if (this.homing) {
+      const h = this.homing;
+      h.warnAt += delta; h.at += delta; h.t += delta;
+      for (const s of h.shots) s.born += delta;
+    }
     for (const v of this.volleys) v.at += delta;
     if (this.nextBullet) this.nextBullet += delta;
     if (this.weak) this.weak.until += delta;
@@ -791,6 +860,7 @@ export class CoopRun {
     if (this.safe) this.host.emit('coop:safe', this.safe);
     if (this.seal) this.host.emit('coop:seal', this.seal);
     if (this.beam) this.host.emit('coop:beam', this.beam);
+    if (this.homing) this.emitHoming(this.homingSentAt);
     this.host.emit('coop:state', this.state(true));
   }
 
@@ -806,6 +876,7 @@ export class CoopRun {
       shield: this.shield ? { until: this.shield.until, no: this.shield.no } : null, burstUntil: this.burstUntil, rageAt: this.rageAt,
       slams: this.slams.map((s) => ({ ...s })), safe: this.safe,
       seal: this.seal ? { ...this.seal, lanes: [...this.seal.lanes] } : null, beam: this.beam ? { ...this.beam } : null,
+      homing: this.homing ? { ...this.homing, targets: [...this.homing.targets], shots: this.homing.shots.map((s) => ({ ...s })) } : null,
       weak: this.weak ? { ...this.weak } : null,
       ...(withVolleys ? { volleys: this.volleys.filter((v) => !volleyDone(v, this.clock)) } : {}),
     };
@@ -846,5 +917,6 @@ export class CoopRun {
     this.safe = null;
     this.seal = null;
     this.beam = null;
+    this.homing = null;
   }
 }
