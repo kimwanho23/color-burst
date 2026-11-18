@@ -27,6 +27,8 @@ const RAGE_BODY: [string, string, string] = ['#ffd0d0', '#ff4d4d', '#8a0000'];
 /** 보스 처치 타격감: 멈칫(히트스톱), 흔들림 */
 export const BOSS_HITSTOP_MS = 80;
 export const BOSS_SHAKE = { sec: 0.2, amp: 8 } as const;
+/** 협력전 처치 연출의 진행 시각. 결과창은 전체 연출 뒤에 표시한다. */
+export const COOP_DEFEAT = { whiteMs: 2200, burstMs: 2500, clearMs: 3000, totalMs: 4000 } as const;
 /** 피버 중 원이 터질 때 파편 배율 */
 export const FEVER_BURST = 1.5;
 /**
@@ -129,6 +131,7 @@ export interface DrawState {
 }
 
 export class Renderer {
+  private coopDefeat: { x: number; y: number; r: number; at: number; exploded: boolean; onExplosion: () => void } | null = null;
   /** 레이저 맞는 거리 (빔 폭의 절반, 방 규칙 레이저 두께) */
   laserHalf: number = RULES.laser.width;
   private ctx: CanvasRenderingContext2D;
@@ -246,6 +249,16 @@ export class Renderer {
     }
   }
   bossPoke(id: number) { this.bossPoked.set(id, performance.now()); }
+
+  startCoopDefeat(origin: { x: number; y: number; r: number }, onExplosion: () => void) {
+    this.fx = []; this.delayed = []; this.shake = 0; this.stopUntil = 0;
+    this.coopDefeat = { ...origin, at: performance.now(), exploded: false, onExplosion };
+  }
+
+  stopCoopDefeat() {
+    if (this.coopDefeat) { this.fx = []; this.delayed = []; this.shake = 0; }
+    this.coopDefeat = null;
+  }
 
   text(x: number, y: number, txt: string, col: string, size = 1) { this.fx.push({ type: 'text', x, y, txt, col, size, t: 0, life: 0.8 }); }
   /** 점수 글자: 단계에 따라 색·크기·등장 연출 (base: 자리에 맞춘 기본 크기) */
@@ -418,7 +431,60 @@ export class Renderer {
     if (s.blind && s.blind.kind !== 'lens') this.drawBlind(s.blind, s.now);
     if (now < this.snipeUntil && !reduceMotion) this.drawSnipe(1 - (this.snipeUntil - now) / 600);
     if (s.cursor) this.drawCursor(s.cursor, now);
+    if (this.coopDefeat) this.drawCoopDefeat(now);
     this.drawFieldEdge(s.myFever, now);
+    ctx.restore();
+  }
+
+  private drawCoopDefeat(now: number) {
+    const d = this.coopDefeat!;
+    const elapsed = now - d.at, ctx = this.ctx;
+    if (elapsed >= COOP_DEFEAT.burstMs && !d.exploded) {
+      d.exploded = true;
+      if (!reduceMotion) {
+        this.shakeFor(0.2, 7);
+        this.burst(d.x, d.y, '#ffd166', true, 2.5);
+        this.shockwave(d.x, d.y, 360);
+      }
+      d.onExplosion();
+    }
+    ctx.save();
+    ctx.fillStyle = 'rgba(8, 9, 22, .45)'; ctx.fillRect(0, 0, FIELD.w, FIELD.h);
+    if (elapsed < COOP_DEFEAT.burstMs) {
+      const white = Math.min(1, elapsed / COOP_DEFEAT.whiteMs);
+      const r = d.r * (reduceMotion ? 1 : 1 + white * 0.08);
+      ctx.save(); ctx.translate(d.x, d.y);
+      if (!reduceMotion) {
+        const glow = ctx.createRadialGradient(0, 0, r * 0.6, 0, 0, r * (1.3 + white));
+        glow.addColorStop(0, `rgba(255, 244, 205, ${white * 0.7})`);
+        glow.addColorStop(1, 'rgba(255, 244, 205, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(0, 0, r * (1.3 + white), 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = reduceMotion ? 1 - Math.max(0, (elapsed - COOP_DEFEAT.whiteMs) / (COOP_DEFEAT.burstMs - COOP_DEFEAT.whiteMs)) : 1;
+      const body = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
+      BOSS_BODY.raid.forEach((color, i) => body.addColorStop(i / 2, color));
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      this.bossEmblem('raid', r, false);
+      ctx.fillStyle = `rgba(255, 255, 255, ${white * white})`;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    if (elapsed >= COOP_DEFEAT.burstMs && !reduceMotion) {
+      const explosion = Math.min(1, (elapsed - COOP_DEFEAT.burstMs) / 650);
+      ctx.globalAlpha = 1 - explosion;
+      ctx.strokeStyle = '#fff4c2'; ctx.lineWidth = 12 * (1 - explosion) + 2;
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r + explosion * 400, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (elapsed >= COOP_DEFEAT.clearMs) {
+      ctx.globalAlpha = Math.min(1, (elapsed - COOP_DEFEAT.clearMs) / 500);
+      ctx.font = "88px 'Black Han Sans', sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6; ctx.strokeStyle = '#161323';
+      ctx.strokeText('CLEAR', FIELD.w / 2, FIELD.h * 0.55);
+      ctx.fillStyle = '#ffd166'; ctx.fillText('CLEAR', FIELD.w / 2, FIELD.h * 0.55);
+    }
     ctx.restore();
   }
 

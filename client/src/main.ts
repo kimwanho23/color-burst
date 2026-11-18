@@ -8,7 +8,7 @@ import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
 import { closeGuide, openGuide } from './guide.ts';
 import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
-import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
+import { BOSS_HITSTOP_MS, BOSS_SHAKE, COOP_DEFEAT, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
 import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
@@ -270,8 +270,10 @@ const renderer = new Renderer($<HTMLCanvasElement>('cv'), $('stage'));
 /** 자리 4칸 아래 작은 칸: 내 색 고르기 또는 (방장) 방장 넘기기·내보내기 */
 let slotPanel: { kind: 'color' } | { kind: 'member'; id: string } | null = null;
 let resultTimer: ReturnType<typeof setTimeout> | null = null;
+let coopDefeatOrigin: { x: number; y: number; r: number } | null = null;
 function show(id: 'home' | 'lobby' | 'result' | null) {
   if (resultTimer !== null) { clearTimeout(resultTimer); resultTimer = null; }
+  renderer.stopCoopDefeat(); coopDefeatOrigin = null;
   $('coopFail').hidden = true;
   for (const s of ['home', 'lobby', 'result']) $(s).hidden = s !== id;
   // 대기실에서는 위쪽 점수판을 숨긴다 (자리 칸과 겹쳐 보여 헷갈림). 자리는 그대로 두어 판 위치가 흔들리지 않게
@@ -767,7 +769,7 @@ socket.on('coop:missile', ({ from, n, gapMs, at }) => {
   for (let i = 0; i < n; i++) {
     const hit = at + i * gapMs;
     coopMissiles.push({ from, at: hit, side: i % 2 ? 1 : -1 });
-    window.setTimeout(() => { const q = coopBossPos(serverNow()); renderer.burst(q.x + (Math.random() - 0.5) * 80, q.y + 40, '#ffb347', false, 0.5); }, Math.max(0, hit - serverNow()));
+    window.setTimeout(() => { if (!playing || !coopState) return; const q = coopBossPos(serverNow()); renderer.burst(q.x + (Math.random() - 0.5) * 80, q.y + 40, '#ffb347', false, 0.5); }, Math.max(0, hit - serverNow()));
   }
 });
 socket.on('threat:popped', ({ circleId, by, gained }) => {
@@ -945,6 +947,11 @@ function bossFeedback(feverStarted: boolean, comboBonus: boolean) {
 let bossKilledAt = 0;
 socket.on('boss:killed', ({ circleId, by, gained, mvp, mvpGained, x, y, jackpot, solo, soloFever, feverStarted, comboBonus }) => {
   bossKilledAt = serverNow();
+  if (rules.coop) {
+    coopDefeatOrigin = { x, y, r: circles.get(circleId)?.r ?? RULES.coop.bossR };
+    circles.delete(circleId);
+    return;
+  }
   circles.delete(circleId);
   const killer = nameOf(by), mvpP = nameOf(mvp);
   // 타격감: 멈칫 → 강한 흔들림 → 큰 파편 + 충격파 → 처치한 사람 색 배너
@@ -1157,6 +1164,7 @@ socket.on('circles:hold', ({ ids, at, ms }) => {
 });
 socket.on('game:over', (d) => {
   const { ranking } = d;
+  const defeated = d.coop?.win ? coopDefeatOrigin ?? { ...coopBossPos(serverNow()), r: RULES.coop.bossR } : null;
   playing = false;
   arcade = null; offer = null;
   $('pickOv').hidden = true;
@@ -1179,13 +1187,18 @@ socket.on('game:over', (d) => {
   $('graphBox').innerHTML = r.graph;
   $('srcBox').innerHTML = r.sources;
   if (room) room.wins = d.wins;
-  ((d.coop ? d.coop.win : pos === 1) ? sfx.win : sfx.lose)();
+  if (!d.coop?.win) ((d.coop ? d.coop.win : pos === 1) ? sfx.win : sfx.lose)();
   const again = isHost();
   $<HTMLButtonElement>('rematchBtn').hidden = !again;
   $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
   $('resultHint').textContent = again ? '' : '방장이 한 판 더를 누르면 바로 시작해요';
   closeChipPop();
-  if (d.coop && !d.coop.win) {
+  if (defeated) {
+    circles.clear(); pending.clear(); pulls.clear(); zones = []; mapPattern = null; setLasers([]);
+    show(null);
+    renderer.startCoopDefeat(defeated, () => { sfx.bossKill(); sfx.win(); });
+    resultTimer = setTimeout(() => show('result'), COOP_DEFEAT.totalMs);
+  } else if (d.coop && !d.coop.win) {
     show(null);
     $('coopFail').hidden = false;
     resultTimer = setTimeout(() => show('result'), fxOn() ? 1700 : 600);
