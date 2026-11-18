@@ -95,8 +95,8 @@ export const RULES = {
     seal: { warnMs: 2_000, ms: 5_000 },
     /** 회전 빔: 경고 시간, 도는 시간, 줄 수 [2단계, 3단계], 각속도 크기(라디안/초, 방향은 무작위), 맞는 거리(중심선에서) */
     beam: { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22 },
-    /** 내려오는 벽: [2단계, 3단계] 틈 수, 속도(필드/초) */
-    wall: { gaps: [2, 1], speed: [140, 180] },
+    /** 내려오는 벽: 경고 시간(그동안 제자리 미리보기, 맞지 않음), [2단계, 3단계] 틈 수, 속도(필드/초) */
+    wall: { warnMs: 2_000, gaps: [2, 1], speed: [140, 180] },
     threatR: 30, threatPoints: 3,
     /** 별: 살아남은 사람 비율 ≥ alive 이고 남은 시간 ≥ leftSec */
     stars: { three: { alive: 1, leftSec: 60 }, two: { alive: 0.5, leftSec: 0 } },

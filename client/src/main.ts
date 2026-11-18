@@ -645,7 +645,8 @@ socket.on('coop:volley', (v) => {
   if (v.wall) { renderer.banner('벽이 내려온다! 틈으로', '#ff8a95'); sfx.patternWarn(); }
 });
 // 보스가 무너짐: 그 전에 쏜 탄막은 모두 사라진다
-socket.on('coop:clear', ({ before }) => { setVolleys(coopVolleys.filter((v) => v.at > before)); });
+// 내려오는 벽은 경고 동안 at이 앞날이라 시각으로 거르면 남는다: 서버가 모두 지웠으니 벽도 함께 지운다
+socket.on('coop:clear', ({ before }) => { setVolleys(coopVolleys.filter((v) => v.at > before && !v.wall)); });
 /** 내가 맞은 연출: 글자·흔들림·화면 붉게 */
 function myHurtFx(text: string) {
   const c = gameCursor.pos ?? { x: CX, y: CY };

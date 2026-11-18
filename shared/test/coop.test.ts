@@ -2,7 +2,7 @@ import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, inSafe, isGuarded, isHit, isOut,
-  COOP_BOSSES, beamHits, inSeal, pickSkill, rollSeal,
+  COOP_BOSSES, beamHits, hitShot, inSeal, pickSkill, rollSeal,
   makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, shotGone, shotPos, toGameRules, zoneOf,
   type Beam, type Circle, type CoopHitBy, type CoopSkill, type Seal, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones, type Volley,
 } from '../src/index.ts';
@@ -1188,7 +1188,7 @@ test('회전 빔: 서버가 커서로 판정, 한 빔에 한 번, 경고 중엔 
 });
 
 test('내려오는 벽: 2단계 틈 2개, 3단계 틈 1개', () => {
-  assert.deepEqual(C.wall, { gaps: [2, 1], speed: [140, 180] });
+  assert.deepEqual(C.wall, { warnMs: 2_000, gaps: [2, 1], speed: [140, 180] });
   for (const x of [0, 0.5, 0.999]) {
     for (const [phase, gaps] of [[2, 2], [3, 1]] as const) {
       const { room, r } = coopRoom(1, 0);
@@ -1200,7 +1200,7 @@ test('내려오는 벽: 2단계 틈 2개, 3단계 틈 1개', () => {
       const walls = sent.filter((s) => s.ev === 'coop:volley').map((s) => s.d as Volley).filter((v) => v.wall);
       assert.equal(walls.length, 1);
       const v = walls[0]!;
-      assert.equal(v.at, t);
+      assert.equal(v.at, t + C.wall.warnMs, '경고 warnMs 뒤에 움직임');
       assert.ok(v.shots.every((s) => s.v === C.wall.speed[phase - 2]));
       const xs = v.shots.map((s) => s.x).sort((a, b) => a - b);
       const holes = xs.slice(1).filter((q, i) => q - xs[i]! > C.bullets.wallGap + 0.01);
@@ -1209,6 +1209,26 @@ test('내려오는 벽: 2단계 틈 2개, 3단계 틈 1개', () => {
       room.destroy();
     }
   }
+});
+
+test('내려오는 벽: 고유 패턴 시각 + warnMs(2초) 경고, 그 전에는 탄 자리에 있어도 안 맞음', () => {
+  assert.equal(C.wall.warnMs, 2000);
+  const { room, r } = coopRoom(1, 0);
+  r.coop.phase = 2;
+  noSkills(r);
+  sent.length = 0;
+  const t = r.startAt + 5000;
+  (r.coop as unknown as SkillRun).useSkill('wall', t);
+  const v = sent.filter((s) => s.ev === 'coop:volley').map((s) => s.d as Volley).find((x) => x.wall)!;
+  assert.ok(v, '고유 패턴 시각에 바로 보냄');
+  assert.equal(v.at, t + C.wall.warnMs);
+  const s0 = v.shots[0]!;
+  for (const dt of [0, 1000, C.wall.warnMs - 1]) {
+    assert.equal(shotPos(v, 0, t + dt), null, `경고 중 ${dt}`);
+    assert.equal(hitShot({ x: s0.x, y: s0.y }, [v], t + dt, new Set()), null, `경고 중 맞지 않음 ${dt}`);
+  }
+  assert.ok(hitShot({ x: s0.x, y: s0.y }, [v], v.at, new Set()), 'at부터는 맞음');
+  room.destroy();
 });
 
 test('협력전에서는 아케이드 맵 패턴이 나오지 않는다', () => {

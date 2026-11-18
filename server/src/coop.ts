@@ -138,7 +138,8 @@ export class CoopRun {
   /** 고유 패턴 하나를 지금 쓴다 */
   private useSkill(k: CoopSkill, now: number) {
     const L = C.levels[this.level];
-    const p2 = Math.max(0, this.phase - 2); // 판 패턴 수치는 [2단계, 3단계]
+    // 판 패턴(봉인·벽·빔) 수치는 [2단계, 3단계] 배열이라 phase − 2로 찾는다. 1단계 목록에는 판 패턴이 없어 쓰이지 않지만 0으로 막아 둔다
+    const p2 = Math.max(0, this.phase - 2);
     if (k === 'laser') this.host.fireLaser(rollVolley(this.rand, this.host.laserHalf(), L.volleyOdds).lines, now + L.laserWarnMs);
     else if (k === 'threat') this.spawnThreats(now);
     else if (k === 'slam') this.startSlam(now);
@@ -157,8 +158,9 @@ export class CoopRun {
       this.beamHit.clear();
       this.host.emit('coop:beam', this.beam);
     } else if (k === 'wall' && this.boss) {
-      // 보스 바로 아래(보스 중심 + wallDy)에서 내려온다. 판정은 탄과 같다 (화면이 알리고 reportHurt가 'wall'로 깎음)
-      this.pushVolley(makeVolley('wall', this.host.nextId(), now, circlePos(this.boss, now),
+      // 보스 바로 아래(보스 중심 + wallDy)에서 내려온다. 지금 보내되 warnMs 뒤에 움직인다 (그 전에는 shotPos가 null이라 맞지 않고 화면은 미리보기).
+      // 판정은 탄과 같다 (화면이 알리고 reportHurt가 'wall'로 깎음)
+      this.pushVolley(makeVolley('wall', this.host.nextId(), now + C.wall.warnMs, circlePos(this.boss, now),
         { speed: C.wall.speed[p2]!, phase: this.phase, gaps: C.wall.gaps[p2]! }, this.rand));
     }
   }

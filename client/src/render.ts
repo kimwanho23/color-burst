@@ -850,13 +850,25 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** 내려오는 벽 미리보기: 벽 줄을 판 너비로 옅게 잇고, 틈에서 아래로 초록 길을 낸다 */
-  private drawWallGuide(v: Volley, t: number) {
-    const p0 = shotPos(v, 0, t);
+  /**
+   * 내려오는 벽 미리보기: 벽 줄을 판 너비로 옅게 잇고, 틈에서 아래로 초록 길을 낸다.
+   * 경고 중(t < at)에는 출발 줄에 점선 탄 자리와 함께 깜빡이며 그리고, 움직이기 시작하면 벽을 따라간다
+   */
+  private drawWallGuide(v: Volley, t: number, frameNow: number) {
+    const warn = t < v.at;
+    const p0 = warn ? { x: v.shots[0]!.x, y: v.shots[0]!.y } : shotPos(v, 0, t);
     if (!p0 || p0.y > FIELD.h + v.r) return;
     const ctx = this.ctx, y = p0.y, gap = RULES.coop.bullets.wallGap;
     const xs = v.shots.map((q) => q.x).sort((a, b) => a - b);
     ctx.save();
+    if (warn) {
+      // 아직 맞지 않는 탄 자리: 점선 원, 깜빡임
+      ctx.globalAlpha = 0.55 + 0.35 * Math.sin(frameNow / 110);
+      ctx.strokeStyle = '#ff8a95'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+      for (const q of v.shots) { ctx.beginPath(); ctx.arc(q.x, q.y, v.r, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
     ctx.fillStyle = 'rgba(255, 60, 80, .16)';
     ctx.fillRect(0, y - v.r * 1.6, FIELD.w, v.r * 3.2);
     ctx.fillStyle = 'rgba(120, 255, 170, .12)'; ctx.strokeStyle = 'rgba(120, 255, 170, .55)'; ctx.lineWidth = 2; ctx.setLineDash([10, 10]);
@@ -873,7 +885,7 @@ export class Renderer {
   /** 협력전 탄: 어두운 빨강 몸통 + 밝은 테두리 + 도는 가시 4개 */
   private drawBullets(vs: readonly Volley[], t: number, frameNow: number) {
     const ctx = this.ctx, spin = frameNow / 260;
-    for (const v of vs) if (v.wall) this.drawWallGuide(v, t);
+    for (const v of vs) if (v.wall) this.drawWallGuide(v, t, frameNow);
     ctx.save();
     ctx.lineJoin = 'round';
     for (const v of vs) {
