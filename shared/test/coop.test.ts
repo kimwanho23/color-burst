@@ -1519,6 +1519,23 @@ test('내려오는 벽: 고유 패턴 시각 + warnMs(2초) 경고, 그 전에�
   room.destroy();
 });
 
+test('내려오는 벽: 일반 탄보다 큰 난이도별 피해와 중복 피격 방지', () => {
+  for (const [level, damage] of [['easy', 15], ['normal', 25], ['hard', 35], ['expert', 45]] as const) {
+    const { room, r, me } = coopRoom(1, 0, level);
+    r.coop.phase = 2;
+    sent.length = 0;
+    (r.coop as unknown as SkillRun).useSkill('wall', r.startAt + 5000);
+    const v = sent.filter((s) => s.ev === 'coop:volley').map((s) => s.d as Volley).find((x) => x.wall)!;
+    assert.ok(damage > C.levels[level].hurt.bullet);
+    assert.equal(r.coop.reportHurt(me, v.id, 0, v.at - 1), false);
+    assert.equal(r.coop.reportHurt(me, v.id, 0, v.at), true);
+    assert.equal(me.hp, C.hpMax - damage);
+    assert.equal(r.coop.reportHurt(me, v.id, 0, v.at + 1), false);
+    assert.equal(me.hp, C.hpMax - damage);
+    room.destroy();
+  }
+});
+
 test('협력전에서는 아케이드 맵 패턴이 나오지 않는다', () => {
   assert.equal('phasePatterns' in C, false);
   for (const phase of [1, 2, 3] as const) {
