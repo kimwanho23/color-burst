@@ -98,7 +98,7 @@ export class CoopRun {
   private alive() { return this.humans().filter((p) => !p.outAt); }
   private stat(id: string) {
     let s = this.stats.get(id);
-    if (!s) { s = { dmg: 0, burstDmg: 0, crystals: 0, threats: 0, hits: {}, hpLeft: 0, items: {} }; this.stats.set(id, s); }
+    if (!s) { s = { dmg: 0, burstDmg: 0, crystals: 0, threats: 0, hits: {}, hpLeft: 0, items: {}, counterLost: 0, counterSaved: 0 }; this.stats.set(id, s); }
     return s;
   }
 
@@ -900,6 +900,7 @@ export class CoopRun {
       seal: this.seal ? { ...this.seal, lanes: [...this.seal.lanes] } : null, beam: this.beam ? { ...this.beam } : null,
       homing: this.homing ? { ...this.homing, targets: [...this.homing.targets], shots: this.homing.shots.map((s) => ({ ...s })) } : null,
       weak: this.weak ? { ...this.weak } : null,
+      counter: null,
       ...(withVolleys ? { volleys: this.volleys.filter((v) => !volleyDone(v, this.clock)) } : {}),
     };
   }

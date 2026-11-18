@@ -7,6 +7,7 @@ import type { TutorialStep, CoopLevel } from './rules.ts';
 import type { CoopPhase } from './coop.ts';
 import type { Volley } from './coopBullets.ts';
 import type { CoopItemId } from './coopItems.ts';
+import type { CoopCounter } from './coopCounter.ts';
 import type { CoopSpecialAttack, CoopSpecialId } from './coopSpecial.ts';
 
 /** 협력전 진행 상태 */
@@ -31,6 +32,8 @@ export interface CoopState {
   homing: Homing | null;
   /** 약점 노출 아이템: until까지 보스 중심 + (dx, dy) 자리 (없으면 null) */
   weak: { until: number; dx: number; dy: number } | null;
+  /** 폭딜 반격 분노 게이지 (판이 없으면 null) */
+  counter: CoopCounter | null;
   /**
    * 아직 끝나지 않은 탄막. 시작·재개(shift)·보스 무너짐·재접속 때만 실린다 (있으면 화면이 통째로 바꾸고, 없으면 그대로 둔다).
    * 평소에는 coop:volley로 하나씩 간다
@@ -46,6 +49,8 @@ export interface CoopPlayerResult {
   hpLeft: number;
   /** 아이템별 획득 수 (봇은 줍지 않아 늘 비어 있다) */
   items: Partial<Record<CoopItemId, number>>;
+  /** 폭딜 반격으로 콤보를 잃은 횟수, 우클릭 보호막으로 지킨 횟수 */
+  counterLost: number; counterSaved: number;
 }
 /** 협력전 결과 */
 export interface CoopResult {
@@ -281,6 +286,8 @@ export interface ServerToClient {
   /** 협력전: 회전 빔 경고·발동 (끝나면 null) */
   'coop:beam': (d: Beam | null) => void;
   'coop:homing': (d: Homing | null) => void;
+  /** 협력전: 폭딜 반격 판정 (lost 콤보를 잃은 사람, saved 보호막으로 지킨 사람) */
+  'coop:counter': (d: { lost: string[]; saved: string[] }) => void;
   /** 협력전: 수정 남은 횟수 (0이면 사라짐) */
   'coop:crystal': (d: { id: number; hp: number; maxHp: number }) => void;
   /** 협력전: 잡은 원이 보스에게 피해 (연출) */
