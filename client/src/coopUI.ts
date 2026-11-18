@@ -1,13 +1,19 @@
 /** 협력전 화면: 보스 체력 바(위쪽), 결과 요약 */
 import { RULES, type CoopResult, type CoopState, type PlayerState } from '@color-burst/shared';
-import { UI, icon } from './icons.ts';
+import { UI, icon, coopSpecialIcon } from './icons.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId, specialRule } from '@color-burst/shared';
 
 export function specialPickerHtml(p: PlayerState | undefined): string {
   const chosen = specialId(p?.coopSpecial);
+  const maxCharge = Math.max(...COOP_SPECIAL_IDS.map((id) => specialRule(id).charge));
+  const maxDamage = Math.max(...COOP_SPECIAL_IDS.map((id) => specialRule(id).damage));
   return `<b>스페셜 어택</b><p>원 획득 +${RULES.coop.special.gain.orb} · 수정 타격 +${RULES.coop.special.gain.crystal} · 큰 원 제거 +${RULES.coop.special.gain.threat}<br>SPACE로 자동 공격 · 딜 타임 피해 ${RULES.coop.burst.mult}배</p><div class="special-choices">${COOP_SPECIAL_IDS.map((id) => {
     const a = COOP_SPECIALS[id], r = specialRule(id);
-    return `<button type="button" class="special-choice${id === chosen ? ' selected' : ''}" data-special="${id}" aria-pressed="${id === chosen}" style="--special-color:${a.color}"><strong>${a.name}</strong><span>${a.desc}</span><small>충전 ${r.charge} · 기본 총피해 ${r.damage} · ${r.durationMs / 1000}초</small></button>`;
+    return `<button type="button" class="special-choice${id === chosen ? ' selected' : ''}" data-special="${id}" aria-pressed="${id === chosen}" style="--special-color:${a.color}">
+      <div class="special-emblem">${coopSpecialIcon(id, 48)}</div>
+      <strong>${a.name}${id === chosen ? '<em>선택됨</em>' : ''}</strong><span>${a.desc}</span>
+      <div class="special-stats" aria-hidden="true"><div>충전량<i><s style="width:${r.charge / maxCharge * 100}%"></s></i></div><div>위력<i><s style="width:${r.damage / maxDamage * 100}%"></s></i></div></div>
+      <small>충전 ${r.charge} · 기본 총피해 ${r.damage} · ${r.durationMs / 1000}초</small></button>`;
   }).join('')}</div>`;
 }
 
@@ -19,8 +25,8 @@ export function renderSpecialHud(stage: HTMLElement, p: PlayerState | undefined,
   const charge = p.coopCharge ?? 0, ready = charge >= r.charge && !p.outAt;
   el.style.setProperty('--special-color', a.color);
   el.classList.toggle('ready', ready && !shield && !active);
-  const hint = p.outAt ? '관전 중' : active ? '공격 중' : shield ? '수정 파훼 후 사용 가능' : ready ? 'SPACE · 발동' : '원 획득 · 수정 타격 · 큰 원 제거로 충전';
-  el.innerHTML = `<div><b>${a.name}</b><span>${Math.floor(charge)} / ${r.charge}</span></div><div class="special-meter"><i style="width:${Math.min(100, charge / r.charge * 100)}%"></i></div><small>${hint}</small>`;
+  const hint = p.outAt ? '관전 중' : active ? '공격 중' : shield ? '수정 파훼 후 사용 가능' : ready ? '<kbd>SPACE</kbd> 발동' : '원 획득 · 수정 타격 · 큰 원 제거로 충전';
+  el.innerHTML = `<div><b>${coopSpecialIcon(id)}${a.name}</b><span>${Math.floor(charge)} / ${r.charge}</span></div><div class="special-meter"><i style="width:${Math.min(100, charge / r.charge * 100)}%"></i></div><small>${hint}</small>`;
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);

@@ -12,7 +12,15 @@ import {
   Heart, HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
   ChevronLeft, ChevronRight, User, Users, HeartPulse, Dumbbell, Clover, Orbit, BatteryFull, ShieldPlus, Sprout,
 } from 'lucide';
-import type { AbilityCategory, AbilityId, CoopItemId, EventId, ItemId, PatternId } from '@color-burst/shared';
+import type { AbilityCategory, AbilityId, CoopItemId, CoopSpecialId, EventId, ItemId, PatternId } from '@color-burst/shared';
+
+/** 스페셜 어택 전용 도형. 대기실과 전투 게이지에서 같은 아이콘을 쓴다. */
+const SPECIAL_PATH: Record<CoopSpecialId, string> = {
+  laser: '<circle cx="10" cy="24" r="6"/><path d="M16 24h26M20 17h18M20 31h18M35 10l3 4M35 38l3-4"/>',
+  meteor: '<circle cx="29" cy="30" r="10"/><path d="M8 6l17 14M5 16l14 12M19 5l14 15M26 32l4-5"/>',
+  blades: '<circle cx="24" cy="24" r="4"/><path d="M24 20C12 20 10 9 20 5l4 15ZM28 24c0-12 11-14 15-4l-15 4ZM24 28c12 0 14 11 4 15l-4-15ZM20 24C20 36 9 38 5 28l15-4Z"/>',
+};
+export const coopSpecialIcon = (id: CoopSpecialId, size = 24) => `<svg width="${size}" height="${size}" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SPECIAL_PATH[id]}</svg>`;
 
 const ABILITY_ICON: Record<AbilityId, IconNode> = {
   picky: UtensilsCrossed, yellowTaste: Citrus, rainbowHunt: Rainbow, comboArtist: Link2, headStart: Flag,
