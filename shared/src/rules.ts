@@ -99,8 +99,19 @@ export const RULES = {
     bossR: 145, bossY: 190, swingMs: 9_000, hpBase: 300, botWeight: 0.5,
     /** 보스가 뿜는 원: 사람·봇 한 명당 간격(ms, 봇 색은 × botGapMult), 속도, 노란 원 확률(%), 원 하나 피해(노랑은 yellowDmg) */
     orb: { gapMs: 450, botGapMult: 1.5, speed: 280, yellowPct: 20, dmg: 1, yellowDmg: 0.7 },
-    /** 피해 콤보 보너스: comboStep마다 +comboPer, 상한 comboCap */
-    comboStep: 10, comboPer: 0.1, comboCap: 0.5,
+    /** 피해 콤보 보너스: comboStep마다 +comboPer, 상한 comboCap (1.8배, 40콤보) */
+    comboStep: 10, comboPer: 0.2, comboCap: 0.8,
+    /**
+     * 폭딜 반격(분노 게이지, 새는 양동이): 원·약점 피해가 보스 최대 체력 대비 %로 차고 초당 drain%씩 빠진다. cap%에 닿으면 warnMs 예고 뒤
+     * 살아 있는 모두의 콤보를 0으로 (우클릭 보호막이면 지킴), 그 뒤 cooldownMs 동안 차지 않는다.
+     * 감각: 이지는 강화 아이템 둘이 겹쳐야, 노말은 최대 콤보 + 강화 하나, 하드는 최대 콤보로 거의 다 잡으면, 엑스퍼트는 최대 콤보면 금방 찬다
+     */
+    counter: {
+      warnMs: 2_000,
+      drain: { easy: 2.3, normal: 1.3, hard: 0.8, expert: 0.5 } as Record<CoopLevel, number>,
+      cap: { easy: 5, normal: 2.5, hard: 1.5, expert: 1 } as Record<CoopLevel, number>,
+      cooldownMs: { easy: 30_000, normal: 25_000, hard: 20_000, expert: 15_000 } as Record<CoopLevel, number>,
+    },
     /** 큰 피해 구간: 길이 = min(maxMs, baseMs + 보호막 남은 시간 × leftRatio), 피해 배율, 그동안 원 간격 */
     burst: { baseMs: 4_000, leftRatio: 0.5, maxMs: 10_000, mult: 2, orbGapMs: 400 },
     /**
