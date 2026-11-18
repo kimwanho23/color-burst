@@ -95,7 +95,7 @@ export class CoopRun {
     return s;
   }
 
-  /** 판 시작: 생명, 레이드 보스, 첫 원·공격 시각 */
+  /** 판 시작: 체력, 레이드 보스, 첫 원·공격 시각 */
   start(now: number) {
     for (const p of this.host.players()) {
       p.hp = p.bot ? 0 : C.hpMax; p.immuneUntil = 0; this.stat(p.id);

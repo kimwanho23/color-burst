@@ -45,7 +45,6 @@ export interface CoopPlayerResult {
 export interface CoopResult {
   win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase;
   maxHp: number; players: Record<string, CoopPlayerResult>;
-  /** 보호막마다 수정을 다 깨는 데 걸린 ms (처음 나온 때부터)와 그동안 분노 횟수 */
   /** 보호막마다: ms 수정을 다 깬 시간, rages 분노 횟수, burstMs 그 뒤 큰 피해 구간 길이 */
   breaks: { ms: number; rages: number; burstMs: number }[];
   /** 각 단계가 끝난 때 (판 시작부터 ms): 1단계 끝, 2단계 끝 */
@@ -265,7 +264,7 @@ export interface ServerToClient {
   'tutorial:beat': (d: TutorialBeatInfo) => void;
   /** 협력전: 단계·체력·카드가 바뀜 */
   'coop:state': (d: CoopState) => void;
-  /** 협력전: 누가 무엇에 맞아 생명이 줄었는지 (circleId: 놓친 공격 원) */
+  /** 협력전: 누가 무엇에 맞아 체력이 줄었는지 (circleId: 놓친 공격 원) */
   'coop:hit': (d: { playerId: string; by: CoopHitBy; hp: number; dmg: number; immuneUntil: number; circleId?: number; blocked?: true }) => void;
   /** 협력전: 내려찍기 경고 (사람마다) */
   'coop:slam': (d: Slam[]) => void;

@@ -398,7 +398,7 @@ export interface RoomRules {
   team: boolean;
   /** 서바이벌: 클래식은 30초마다, 아케이드는 뒤쪽 라운드마다 꼴찌 탈락 (팀전과 같이 켤 수 없음) */
   survival: boolean;
-  /** 협력전: 모두 같은 편, 개인 생명으로 레이드 보스 처치 (클래식만, 팀전·서바이벌·아케이드와 같이 켤 수 없음) */
+  /** 협력전: 모두 같은 편, 개인 체력으로 레이드 보스 처치 (클래식만, 팀전·서바이벌·아케이드와 같이 켤 수 없음) */
   coop: boolean;
   /** 협력전 난이도 (보스 공격 세기) */
   coopLevel: CoopLevel;
@@ -624,7 +624,7 @@ export interface Circle {
   rev?: boolean;
   /** 출발점 (없으면 필드 가운데). 협력전 공격 원은 보스 자리에서 출발 */
   from?: { x: number; y: number };
-  /** 협력전 공격 원: 놓치면 생명이 줄어드는 사람. 협력전 수정: 주인 */
+  /** 협력전 공격 원: 놓치면 체력이 줄어드는 사람. 협력전 수정: 주인 */
   target?: string;
   /** 협력전 수정: 주인의 색 */
   colorOf?: ColorIndex;
