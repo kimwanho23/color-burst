@@ -875,3 +875,11 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .barrier-hud.touch { pointer-events: auto; touch-action: none; min-width: 96px; min-height: 52px; cursor: pointer; }
 @media (max-width: 480px) { .barrier-hud { left: auto; right: 12px; } }
 @media (max-width: 480px) { .special-choice { padding: 8px; } .special-choice span { display: none; } .special-hud { padding: 6px 9px; width: 210px; } }
+/* 협력전 폭딜 반격 분노 게이지 (보스 체력 바 아래) */
+.coophud .ch-rage-gauge { position: relative; height: 5px; margin-top: 3px; border-radius: 4px; background: rgba(0,0,0,.4); overflow: hidden; }
+.coophud .ch-rage-gauge i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #ff6b6b, #ff2d55); transition: width .2s linear; }
+.coophud .ch-rage-gauge.firing i { animation: chRagePulse .4s ease-in-out infinite alternate; }
+.coophud .ch-rage-gauge.cooling { opacity: .45; height: 12px; }
+.coophud .ch-rage-gauge span { position: absolute; inset: 0; font-size: 10px; line-height: 12px; text-align: center; color: #fff; }
+@keyframes chRagePulse { from { filter: brightness(1); } to { filter: brightness(1.6); } }
+@media (prefers-reduced-motion: reduce) { .coophud .ch-rage-gauge.firing i { animation: none; } }

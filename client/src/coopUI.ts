@@ -1,5 +1,5 @@
 /** 협력전 화면: 보스 체력 바(위쪽), 결과 요약 */
-import { RULES, type CoopLevel, type CoopResult, type CoopState, type PlayerState } from '@color-burst/shared';
+import { RULES, counterValue, type CoopCounter, type CoopLevel, type CoopResult, type CoopState, type PlayerState } from '@color-burst/shared';
 import { UI, icon, coopSpecialIcon } from './icons.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId, specialRule } from '@color-burst/shared';
 
@@ -7,7 +7,7 @@ export function specialPickerHtml(p: PlayerState | undefined): string {
   const chosen = specialId(p?.coopSpecial);
   const maxCharge = Math.max(...COOP_SPECIAL_IDS.map((id) => specialRule(id).charge));
   const maxDamage = Math.max(...COOP_SPECIAL_IDS.map((id) => specialRule(id).damage));
-  return `<b>스페셜 어택</b><p>원 획득 +${RULES.coop.special.gain.orb} · 수정 타격 +${RULES.coop.special.gain.crystal} · 큰 원 제거 +${RULES.coop.special.gain.threat}<br>SPACE로 자동 공격 · 딜 타임 피해 ${RULES.coop.burst.mult}배<br>우클릭(휴대폰은 화면 버튼) 보호막: ${RULES.coop.barrier.durationMs / 1000}초 동안 피해를 막아요 · 판마다 이지 ${RULES.coop.barrier.uses.easy} · 노말 ${RULES.coop.barrier.uses.normal} · 하드 ${RULES.coop.barrier.uses.hard}회</p><div class="special-choices">${COOP_SPECIAL_IDS.map((id) => {
+  return `<b>스페셜 어택</b><p>원 획득 +${RULES.coop.special.gain.orb} · 수정 타격 +${RULES.coop.special.gain.crystal} · 큰 원 제거 +${RULES.coop.special.gain.threat}<br>SPACE로 자동 공격 · 딜 타임 피해 ${RULES.coop.burst.mult}배<br>우클릭(휴대폰은 화면 버튼) 보호막: ${RULES.coop.barrier.durationMs / 1000}초 동안 피해를 막아요 · 판마다 이지 ${RULES.coop.barrier.uses.easy} · 노말 ${RULES.coop.barrier.uses.normal} · 하드 ${RULES.coop.barrier.uses.hard}회<br>피해를 너무 몰아 넣으면 보스가 반격해 콤보가 0이 됩니다.</p><div class="special-choices">${COOP_SPECIAL_IDS.map((id) => {
     const a = COOP_SPECIALS[id], r = specialRule(id);
     return `<button type="button" class="special-choice${id === chosen ? ' selected' : ''}" data-special="${id}" aria-pressed="${id === chosen}" style="--special-color:${a.color}">
       <div class="special-emblem">${coopSpecialIcon(id, 48)}</div>
@@ -64,6 +64,15 @@ function ensure(stage: HTMLElement, id: string, cls: string) {
   return el;
 }
 
+/** 보스 체력 바 아래 분노 게이지: 차오를수록 진해지고, 예고 중이면 가득, 재사용 대기 중이면 흐리게 남은 초 */
+function counterGauge(g: CoopCounter, level: CoopLevel, now: number) {
+  const cap = RULES.coop.counter.cap[level];
+  const cooling = now < g.coolUntil;
+  const fill = g.fireAt > 0 ? 1 : cooling ? 0 : Math.min(1, counterValue(g, now, level) / cap);
+  const label = cooling ? `<span>반격 대기 ${Math.ceil((g.coolUntil - now) / 1000)}초</span>` : '';
+  return `<div class="ch-rage-gauge${cooling ? ' cooling' : ''}${g.fireAt > 0 ? ' firing' : ''}" title="분노 게이지"><i style="width:${fill * 100}%;opacity:${0.45 + 0.55 * fill}"></i>${label}</div>`;
+}
+
 /** 위쪽 보스 체력 바 (null이면 숨김). 보호막이면 자물쇠와 남은 초, 분노 경고·큰 피해 구간 표시 */
 export function renderCoopHud(stage: HTMLElement, s: CoopState | null, now = Date.now()) {
   const el = ensure(stage, 'coopHud', 'coophud');
@@ -72,7 +81,11 @@ export function renderCoopHud(stage: HTMLElement, s: CoopState | null, now = Dat
   const pct = s.maxHp > 0 ? Math.max(0, Math.min(100, (s.hp / s.maxHp) * 100)) : 0;
   const [a, b] = RULES.coop.phaseAt;
   const left = (t: number) => Math.max(0, Math.ceil((t - now) / 1000));
+  const g = s.counter;
+  const warn = g && g.fireAt > now
+    ? `<em class="ch-rage">보스 반격! ${left(g.fireAt)}초 · ${RULES.coop.barrier.uses[s.level] > 0 ? '보호막으로 콤보를 지키세요' : '콤보가 초기화됩니다'}</em>` : '';
   const status = s.rageAt ? '<em class="ch-rage">분노!</em>'
+    : warn ? warn
     : s.shield ? `<em class="ch-shield">${icon(UI.lock, 14)}보호막 · 수정 깨기 ${left(s.shield.until)}초</em>`
     : s.threatAt && s.threatAt > now ? `<em class="ch-rage">보스가 큰 원을 발사합니다! 클릭해서 제거하세요! (${left(s.threatAt)}초)</em>`
     : s.burstUntil > now ? `<em class="ch-burst">보스가 무너졌다! ${left(s.burstUntil)}초</em>` : '';
@@ -80,7 +93,7 @@ export function renderCoopHud(stage: HTMLElement, s: CoopState | null, now = Dat
   el.classList.toggle('raging', !!s.rageAt);
   el.innerHTML = `
     <div class="ch-top"><b>레이드 보스</b><span>${s.phase}단계 · ${LEVEL_NAME[s.level]}</span>${status}<em>${Math.ceil(pct)}%</em></div>
-    <div class="ch-bar"><i style="width:${pct}%"></i><s style="left:${a * 100}%"></s><s style="left:${b * 100}%"></s></div>`;
+    <div class="ch-bar"><i style="width:${pct}%"></i><s style="left:${a * 100}%"></s><s style="left:${b * 100}%"></s></div>${g ? counterGauge(g, s.level, now) : ''}`;
 }
 
 /** 체력 막대: 칸 안은 hp/hpMax 비율, 낮으면 붉게 */

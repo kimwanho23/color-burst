@@ -92,6 +92,8 @@ export interface DrawState {
   /** 색 → 표적 여부 */
   markedColors: Set<number>;
   now: number;
+  /** 협력전 폭딜 반격 발동 시각 (발동 뒤 잠깐 화면이 붉게 번쩍인다, 0이면 없음) */
+  counterFireAt?: number;
   /** 방해 전파를 맞아 원이 흐려 보이는 중 */
   blurred?: boolean;
   /** 장판 (color: 주인 색) */
@@ -435,8 +437,25 @@ export class Renderer {
     if (s.blind && s.blind.kind !== 'lens') this.drawBlind(s.blind, s.now);
     if (now < this.snipeUntil && !reduceMotion) this.drawSnipe(1 - (this.snipeUntil - now) / 600);
     if (s.cursor) this.drawCursor(s.cursor, now);
+    if (s.counterFireAt) this.drawCounterFlash(s.counterFireAt, s.now);
     if (this.coopDefeat) this.drawCoopDefeat(now);
     this.drawFieldEdge(s.myFever, now);
+    ctx.restore();
+  }
+
+  /** 폭딜 반격: 발동 뒤 400ms 동안 화면 전체가 붉게 덮였다 흐려진다 (효과 줄이기는 테두리만) */
+  private drawCounterFlash(fireAt: number, now: number) {
+    const k = (now - fireAt) / 400;
+    if (k < 0 || k >= 1) return;
+    const ctx = this.ctx;
+    ctx.save();
+    if (reduceMotion) {
+      ctx.strokeStyle = `rgba(255, 70, 90, ${0.9 * (1 - k)})`; ctx.lineWidth = 16;
+      ctx.strokeRect(0, 0, FIELD.w, FIELD.h);
+    } else {
+      ctx.fillStyle = `rgba(255, 50, 70, ${0.45 * (1 - k)})`;
+      ctx.fillRect(0, 0, FIELD.w, FIELD.h);
+    }
     ctx.restore();
   }
 

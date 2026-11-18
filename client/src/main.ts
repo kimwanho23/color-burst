@@ -109,6 +109,8 @@ let startAt = 0, endAt = 0, playing = false, lastCount = -1;
 let rules: RoomRules = DEFAULT_RULES;
 /** 협력전: 진행 상태, 열린 투표, 방금 뽑힌 카드(투표 창 강조) */
 let coopState: CoopState | null = null;
+/** 마지막 폭딜 반격 발동 시각 (화면 번쩍임) */
+let counterFireAt = 0;
 /** 협력전: 내려찍기 경고, 안전지대 */
 let coopSlams: Slam[] = [];
 let coopSafe: SafeZones | null = null;
@@ -682,6 +684,8 @@ socket.on('coop:state', (s) => {
     renderer.banner(`${COOP_SPECIALS[mySpecial.kind].name}!`, COOP_SPECIALS[mySpecial.kind].color);
     sfx.fever();
   }
+  // 폭딜 반격 예고가 새로 시작됨
+  if (s.counter?.fireAt && s.counter.fireAt !== coopState?.counter?.fireAt) { counterFireAt = s.counter.fireAt; sfx.patternWarn(); }
   if (s.threatAt && !coopState?.threatAt) {
     renderer.banner('보스가 큰 원을 발사합니다! 클릭해서 제거하세요!', '#64efff');
     sfx.patternWarn();
@@ -752,6 +756,21 @@ socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked, barrier }) =>
     if (!shown) myHurtFx(hp > 0 ? `체력 −${lost}` : '체력이 다 떨어졌어요');
     if (by === 'threat') sfx.comboBroken();
   } else if (p) pushFeed($('feed'), icon(UI.heart, 18), `${p.name}: ${what}에 맞아 체력 −${lost}`, COLORS[p.color].hex);
+});
+// 폭딜 반격 판정: 콤보를 잃었는지, 보호막으로 지켰는지
+socket.on('coop:counter', ({ lost, saved }) => {
+  for (const id of [...lost, ...saved]) {
+    const p = players.find((x) => x.id === id);
+    if (!p) continue;
+    const kept = saved.includes(id);
+    if (!kept) p.combo = 0;
+    if (id === myId()) {
+      const q = gameCursor.pos;
+      if (kept) { if (q && performance.now() - lastBlockFxAt >= BLOCK_FX_GAP_MS) { lastBlockFxAt = performance.now(); renderer.text(q.x, q.y - 40, '막음!', '#5ce1e6', 1); sfx.bossBlock(); } }
+      else { myHurtFx('반격으로 콤보 초기화'); sfx.comboBroken(); }
+    } else if (!p.bot) pushFeed($('feed'), kept ? coopItemIcon('guard', 18) : icon(UI.heart, 18), `${p.name}: ${kept ? '보호막으로 콤보 지킴' : '반격으로 콤보 초기화'}`, COLORS[p.color].hex);
+  }
+  renderScores();
 });
 socket.on('coop:slam', (d) => { coopSlams = d.length ? [...coopSlams.filter((x) => x.at > serverNow()), ...d] : []; if (d.some((x) => x.owner === myId())) sfx.patternWarn(); });
 socket.on('coop:crystal', ({ id, hp, maxHp }) => {
@@ -943,7 +962,7 @@ const scoreTier = (o: { jackpot?: number; fever?: boolean; special?: boolean; ki
 socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged, feverStarted, comboBonus }) => {
   const c = circles.get(circleId);
   if (c) c.hp = hp;
-  if (coopState && circleId === coopState.bossId) { coopState = { ...coopState, hp }; renderCoopHud($('stage'), coopState); }
+  if (coopState && circleId === coopState.bossId) { coopState = { ...coopState, hp }; renderCoopHud($('stage'), coopState, serverNow()); }
   if (by === myId() && c && (blocked || enraged)) {
     const p = circlePos(c, serverNow());
     // 방어형 보호막에 막힘 / 붉은 공격형을 때려 감점
@@ -1464,7 +1483,7 @@ function updateHud(now: number) {
   $('meterFill').style.width = `${Math.max(0, fill)}%`;
   // 협력전: 개인 피버가 없으니 게이지 줄을 숨기고, 보스 체력 바의 남은 초를 갱신한다
   document.body.classList.toggle('coop-on', playing && !!rules.coop);
-  if (coopState && playing && (coopState.shield || coopState.threatAt || coopState.burstUntil > now) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250); renderCoopHud($('stage'), coopState, now); }
+  if (coopState && playing && (coopState.shield || coopState.threatAt || coopState.burstUntil > now || (coopState.counter && (coopState.counter.value > 0 || coopState.counter.fireAt || coopState.counter.coolUntil > now))) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250); renderCoopHud($('stage'), coopState, now); }
   const after = !!m && !fever && now < m.afterUntil;
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
@@ -1575,6 +1594,7 @@ function frame() {
     colorOf: rules.coop ? new Map(players.map((p) => [p.id, p.color])) : undefined,
     coop: !!rules.coop,
     coopShield: rules.coop && !!coopState?.shield,
+    counterFireAt: rules.coop ? counterFireAt : 0,
     coopPhase: rules.coop ? coopState?.phase : undefined,
     slams: rules.coop ? coopSlams : undefined,
     safe: rules.coop ? coopSafe : undefined,
