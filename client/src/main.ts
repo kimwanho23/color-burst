@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, COOP_ITEMS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Seal, type Beam, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
@@ -14,8 +14,8 @@ import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lob
 import { renderResult } from './results.ts';
 import { coopResultHtml, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
-import { UI, abilityIcon, icon, itemIcon } from './icons.ts';
-import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
+import { UI, abilityIcon, coopItemIcon, icon, itemIcon } from './icons.ts';
+import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop, showCoopItemPop } from './effectsUI.ts';
 import { GameCursor, startCursorSync } from './cursor.ts';
 import { hideTip, initTips } from './tooltip.ts';
 import { ensureMusic, initAudio, sfx, startMusic, stopMusic } from './audio.ts';
@@ -114,6 +114,8 @@ let coopSeal: Seal | null = null;
 let coopBeam: Beam | null = null;
 /** 협력전 탄막 (서버는 무늬 단위로 보내고 위치는 시각으로 계산), 이미 알린 탄 (`${탄막}:${탄}`) */
 let coopVolleys: Volley[] = [];
+/** 협력전 미사일 (연출만, 발마다 보스에 닿는 시각·휘는 방향) */
+let coopMissiles: { from: { x: number; y: number }; at: number; side: number }[] = [];
 const coopSkip = new Set<string>();
 const NO_SKIP: ReadonlySet<string> = new Set();
 /** 내가 탄에 맞아 연출을 먼저 낸 시각 (서버의 coop:hit에서 같은 연출을 또 내지 않게) */
@@ -513,7 +515,7 @@ function resetToHome(err = '') {
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
   pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;
   arcade = null; offer = null;
-  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; setVolleys([]); renderCoop();
+  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; coopMissiles = []; setVolleys([]); renderCoop();
   $('pauseOv').hidden = true; $('pickOv').hidden = true; $('roundEnd').hidden = true;
   resetComboNotice();
   closeChipPop();
@@ -705,6 +707,29 @@ socket.on('coop:orb', ({ by, x, y, dmg }) => {
   const q = circlePos(b, serverNow());
   renderer.beam(x, y, q.x, q.y + 40, COLORS[who.color].hex);
   if (by === myId()) renderer.text(q.x + (Math.random() - 0.5) * 120, q.y + 60, String(Math.round(dmg * 10) / 10), coopState && serverNow() < coopState.burstUntil ? '#ffd43b' : '#fff', 0.8);
+});
+// 협력전 ? 원: 잡은 사람은 아이콘 룰렛, 남은 이름 글자
+socket.on('coop:item', ({ circleId, by, item, x, y }) => {
+  circles.delete(circleId); pending.delete(circleId);
+  const who = nameOf(by);
+  if (by === myId()) {
+    const sp = renderer.toScreen(x, y);
+    showCoopItemPop($('itemPops'), sp.x, sp.y, item, !fxOn());
+    sfx.item(1);
+  } else if (who) {
+    renderer.text(x, y, `${who.name} ${COOP_ITEMS[item].name}`, COLORS[who.color].hex, 0.75);
+    pushFeed($('feed'), coopItemIcon(item, 18), `${who.name}: ${COOP_ITEMS[item].name}`, COLORS[who.color].hex);
+  }
+  if (item === 'clear') renderer.flash();
+  if (item === 'weak' && by === myId()) renderer.banner('약점을 눌러요!', '#ffd43b');
+});
+// 미사일: 잡은 자리에서 보스로 gapMs 간격 n발 (닿을 때 작은 폭발)
+socket.on('coop:missile', ({ from, n, gapMs, at }) => {
+  for (let i = 0; i < n; i++) {
+    const hit = at + i * gapMs;
+    coopMissiles.push({ from, at: hit, side: i % 2 ? 1 : -1 });
+    window.setTimeout(() => { const q = coopBossPos(serverNow()); renderer.burst(q.x + (Math.random() - 0.5) * 80, q.y + 40, '#ffb347', false, 0.5); }, Math.max(0, hit - serverNow()));
+  }
 });
 socket.on('threat:popped', ({ circleId, by, gained }) => {
   const c = circles.get(circleId);
@@ -1206,7 +1231,15 @@ $('cv').addEventListener('pointerdown', (e) => {
   const hit = list.find((c) => c.kind !== 'boss' && !foreign(c) && !pending.has(c.id) && !pulls.has(c.id) && isHit(c, now, x, y))
     ?? list.find((c) => c.kind === 'boss' && isHit(c, now, x, y));
   // 협력전: 레이드 보스는 눌러도 아무 일 없음(헛클릭도 아님). 수정은 남아 있으니 숨기지 않고 두드리는 연출만
-  if (hit?.boss === 'raid') return;
+  // 약점 노출 중 약점 안이면 보스 클릭을 보낸다 (서버가 약점 피해)
+  if (hit?.boss === 'raid') {
+    const w = coopState?.weak, q = circlePos(hit, now);
+    if (w && now < w.until && Math.hypot(x - (q.x + w.dx), y - (q.y + w.dy)) <= RULES.coop.items.weakR) {
+      renderer.burst(x, y, '#ffd43b', false, 0.5); sfx.bossHit();
+      socket.emit('game:click', { circleId: hit.id, x, y });
+    }
+    return;
+  }
   if (hit?.kind === 'crystal') {
     if (hit.target === myId()) { renderer.burst(x, y, COLORS[hit.colorOf ?? 0].hex, false, 0.6); sfx.bossHit(); }
     socket.emit('game:click', { circleId: hit.id, x, y });
@@ -1406,6 +1439,7 @@ function frame() {
   updateHud(now);
   // 협력전 탄막: 끝난 무늬는 버리고, 내 커서가 닿았는지 본다
   if (coopVolleys.some((v) => volleyDone(v, now))) setVolleys(coopVolleys.filter((v) => !volleyDone(v, now)));
+  if (coopMissiles.length && coopMissiles[0]!.at <= now) coopMissiles = coopMissiles.filter((q) => q.at > now);
   checkBulletHit(m, now, live && playing);
   // 협력전: 맞은 뒤 무적 동안 내 커서가 깜빡인다
   const blink = !!m && rules.coop && now < m.immuneUntil && Math.floor(now / 120) % 2 === 0;
@@ -1437,6 +1471,8 @@ function frame() {
     seal: rules.coop ? coopSeal : undefined,
     beam: rules.coop && coopBeam ? { b: coopBeam, from: coopBossPos(now) } : undefined,
     volleys: rules.coop ? coopVolleys : undefined,
+    coopWeak: rules.coop ? coopState?.weak : undefined,
+    missiles: rules.coop && coopMissiles.length ? { list: coopMissiles, to: coopBossPos(now), flyMs: RULES.coop.items.missileFlyMs } : undefined,
     meId: myId(),
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),
   });

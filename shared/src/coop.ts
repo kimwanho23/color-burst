@@ -34,11 +34,14 @@ function floorHp(phase: CoopPhase, maxHp: number) {
   return phase === 3 ? 0 : maxHp * C.phaseAt[phase - 1];
 }
 
-/** 잡은 원 하나의 피해: (노랑이면 yellowDmg, 아니면 dmg) × (1 + 콤보 보너스) × (큰 피해 구간이면 burst.mult), 봇은 × botWeight */
-export function orbDamage(p: PlayerState, kind: CircleKind, burst: boolean): number {
+/**
+ * 잡은 원 하나의 피해: (노랑이면 yellowDmg, 아니면 dmg) × (1 + 콤보 보너스) × (큰 피해 구간이면 burst.mult), 봇은 × botWeight.
+ * mult: 아이템 배율 (coopDamageMult × 연쇄 폭발, 없으면 1)
+ */
+export function orbDamage(p: PlayerState, kind: CircleKind, burst: boolean, mult = 1): number {
   const base = kind === 'y' ? C.orb.yellowDmg : C.orb.dmg;
   const combo = Math.min(Math.floor(p.combo / C.comboStep) * C.comboPer, C.comboCap);
-  return base * (1 + combo) * (burst ? C.burst.mult : 1) * (p.bot ? C.botWeight : 1);
+  return base * (1 + combo) * (burst ? C.burst.mult : 1) * (p.bot ? C.botWeight : 1) * mult;
 }
 
 /**

@@ -832,8 +832,9 @@ export class Room {
       else {
         got = true;
         if (this.G.coop && typeof c.kind === 'number' && !this.owns(c.kind, p)) { got = false; this.rejectTo(id, c.id); }
-        // 협력전: 보스를 눌러도 아무 일 없음 (헛클릭도 아님). 수정은 주인만, 내 색·노란 원은 보스 피해
-        else if (c.boss === 'raid') { /* 아무 일 없음 */ }
+        // 협력전: 보스를 눌러도 아무 일 없음 (헛클릭도 아님, 약점 노출 중 약점 안이면 피해). 수정은 주인만, 내 색·노란 원은 보스 피해, ? 원은 아이템
+        else if (c.boss === 'raid') this.hitCoopWeak(p, d, now);
+        else if (this.coop && c.coopItem) this.catchCoopItem(p, c, now);
         else if (c.kind === 'crystal') this.hitCrystal(p, c, now);
         else if (c.kind === 'threat') this.popThreat(p, c, now);
         else if (this.coop && (c.kind === 'y' || typeof c.kind === 'number')) this.catchCoopOrb(p, c, now);
@@ -1511,6 +1512,7 @@ export class Room {
         const r = hazardStun(p, now, ms, this.G, this.players);
         if (r > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
       },
+      bossKilled: (p, now) => this.coopBossKilled(p, now),
     };
     this.coop = new CoopRun(host, this.rules.coopLevel);
     this.coop.setCrystalSource(() => [...this.circles.values()].filter((c) => c.kind === 'crystal'));
@@ -1530,11 +1532,33 @@ export class Room {
     const result: ClaimResult = { type: 'own', gained: r.gained, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via: 'click', jackpot: 1, zone: 0 };
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
     this.emitPlayers();
-    if (r.killed && this.phase === 'play') {
-      const b = this.coop.boss;
-      if (b) { this.circles.delete(b.id); const q = circlePos(b, now); this.io.to(this.code).emit('boss:killed', { circleId: b.id, by: p.id, gained: 0, mvp: null, mvpGained: 0, x: q.x, y: q.y, jackpot: 1, solo: [], soloFever: [], feverStarted: false, comboBonus: false }); }
-      this.end(true);
-    }
+    if (r.killed) this.coopBossKilled(p, now);
+  }
+
+  /** 협력전: 보스가 쓰러짐 → boss:killed, 이긴 판으로 끝 */
+  private coopBossKilled(p: PlayerState, now: number) {
+    if (!this.coop || this.phase !== 'play') return;
+    const b = this.coop.boss;
+    if (b) { this.circles.delete(b.id); const q = circlePos(b, now); this.io.to(this.code).emit('boss:killed', { circleId: b.id, by: p.id, gained: 0, mvp: null, mvpGained: 0, x: q.x, y: q.y, jackpot: 1, solo: [], soloFever: [], feverStarted: false, comboBonus: false }); }
+    this.end(true);
+  }
+
+  /** 협력전: ? 원을 잡음 → 종류를 굴려 효과 (coop:item으로 알림) */
+  private catchCoopItem(p: PlayerState, c: Circle, now: number) {
+    if (!this.coop || !this.circles.has(c.id)) return;
+    this.circles.delete(c.id);
+    const { x, y } = circlePos(c, now);
+    const item = this.coop.catchItem(p, c, now);
+    if (item) this.io.to(this.code).emit('coop:item', { circleId: c.id, by: p.id, item, x, y });
+  }
+
+  /** 협력전: 보스 클릭 (약점 노출 중 약점 안이면 피해, 아니면 아무 일 없음) */
+  private hitCoopWeak(p: PlayerState, pt: Point, now: number) {
+    if (!this.coop) return;
+    const r = this.coop.hitWeak(p, pt, now);
+    if (r.dmg <= 0) return;
+    this.emitPlayers();
+    if (r.killed) this.coopBossKilled(p, now);
   }
 
   /** 협력전: 화면이 알린 탄 맞음 (진행 중·멈추지 않았을 때만, 확인과 피해는 CoopRun.reportHurt) */
@@ -1637,7 +1661,8 @@ export class Room {
 
   /** 봇이 고를 수 있는 원: 남의 자석에 끌려가는 원은 뺀다 */
   private botCandidates() {
-    return [...this.circles.values()].filter((c) => !this.pulls.has(c.id));
+    // 협력전 ? 원은 사람만 줍는다
+    return [...this.circles.values()].filter((c) => !this.pulls.has(c.id) && !c.coopItem);
   }
 
   /** 새 원 생성 옵션: 아이템 원 확률, 라운드 테마, 내 색 비 */

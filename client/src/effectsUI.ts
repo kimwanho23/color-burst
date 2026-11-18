@@ -1,9 +1,9 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
-  COMBOS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, SYNERGY, combosOf, synergiesOf,
-  type BuffId, type PatternId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
+  COMBOS, COOP_ITEMS, COOP_ITEM_IDS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, RULES, SYNERGY, combosOf, synergiesOf,
+  type BuffId, type CoopItemId, type PatternId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
-import { UI, categoryIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
+import { UI, categoryIcon, coopItemIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
 import { comboTip } from './arcadeUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -81,6 +81,28 @@ export function showItemPop(host: HTMLElement, sx: number, sy: number, item: Ite
   setTimeout(() => el.remove(), 1400);
 }
 
+/** 협력전 아이템 팝업: 아이콘 룰렛 0.4초 뒤 결과 (reduce면 바로) */
+export function showCoopItemPop(host: HTMLElement, sx: number, sy: number, item: CoopItemId, reduce: boolean) {
+  const el = document.createElement('div');
+  el.className = 'itempop coop';
+  el.style.left = `${sx}px`;
+  el.style.top = `${sy}px`;
+  el.innerHTML = `<span class="ic"></span><b></b>`;
+  host.appendChild(el);
+  const ic = el.querySelector<HTMLElement>('.ic')!;
+  const name = el.querySelector<HTMLElement>('b')!;
+  const settle = () => { ic.innerHTML = coopItemIcon(item, 26); name.textContent = COOP_ITEMS[item].name; el.classList.add('done'); };
+  if (reduce) settle();
+  else {
+    let n = 0;
+    const spin = window.setInterval(() => {
+      ic.innerHTML = coopItemIcon(COOP_ITEM_IDS[Math.floor(Math.random() * COOP_ITEM_IDS.length)]!, 26);
+      if (++n >= 8) { clearInterval(spin); settle(); }
+    }, 50);
+  }
+  setTimeout(() => el.remove(), 1400);
+}
+
 /** 아이템 획득 알림: 화면 위쪽에 "이름: 아이템" 줄을 쌓는다 (최대 3줄, 줄마다 1.2초) */
 export function pushFeed(el: HTMLElement, iconHtml: string, text: string, col: string) {
   const row = document.createElement('div');
@@ -129,8 +151,25 @@ export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: 
     items.push(`<span class="buff it${ITEMS[id].tier}${left < 1000 ? ' blink' : ''}" style="--f:${frac}" title="${ITEMS[id].name}">${itemIcon(id, 18)}</span>`);
   }
   if (p.goldLeft > 0) items.push(`<span class="buff it1 gold" style="--f:1" title="${ITEMS.goldHand.name}">${itemIcon('goldHand', 18)}<em>${p.goldLeft}</em></span>`);
+  items.push(...coopBuffs(p, now));
   const html = items.join('');
   if (el.dataset.v !== html) { el.dataset.v = html; el.innerHTML = html; }
+}
+
+/** 협력전 아이템 효과: 방어막·화력(남은 시간), 공격력(×배율), 연쇄(남은 원 수) */
+function coopBuffs(p: PlayerState, now: number): string[] {
+  const fx = p.coopFx, I = RULES.coop.items;
+  if (!fx) return [];
+  const out: string[] = [];
+  const timed = (id: CoopItemId, until: number, ms: number) => {
+    const left = until - now;
+    if (left > 0) out.push(`<span class="buff coop${left < 1000 ? ' blink' : ''}" style="--f:${Math.min(1, left / ms)}" title="${COOP_ITEMS[id].name}">${coopItemIcon(id, 18)}</span>`);
+  };
+  timed('guard', fx.guardUntil, I.guardMs);
+  timed('fire', fx.fireUntil, I.fireMs);
+  if (fx.power > 0) out.push(`<span class="buff coop" style="--f:1" title="${COOP_ITEMS.power.name}">${coopItemIcon('power', 18)}<em>×${Math.round((1 + I.powerStep * fx.power) * 10) / 10}</em></span>`);
+  if (fx.chain > 0) out.push(`<span class="buff coop" style="--f:1" title="${COOP_ITEMS.chain.name}">${coopItemIcon('chain', 18)}<em>${fx.chain}</em></span>`);
+  return out;
 }
 
 /** 점수판 칩용 작은 버프 아이콘 */

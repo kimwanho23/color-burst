@@ -12,7 +12,7 @@ import {
   Heart, HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
   ChevronLeft, ChevronRight, User, Users, HeartPulse, Dumbbell, Clover, Orbit, BatteryFull, ShieldPlus, Sprout,
 } from 'lucide';
-import type { AbilityCategory, AbilityId, EventId, ItemId, PatternId } from '@color-burst/shared';
+import type { AbilityCategory, AbilityId, CoopItemId, EventId, ItemId, PatternId } from '@color-burst/shared';
 
 const ABILITY_ICON: Record<AbilityId, IconNode> = {
   picky: UtensilsCrossed, yellowTaste: Citrus, rainbowHunt: Rainbow, comboArtist: Link2, headStart: Flag,
@@ -39,6 +39,12 @@ export const ITEM_ICON: Record<ItemId, IconNode> = {
   feverCharge: BatteryCharging, instantFever: Flame, goldHand: HandCoins, double: ChevronsUp, paint: Paintbrush,
   rain: CloudRain, zone: CircleDot, bomb: Bomb, timeStop: Timer, fieldClear: Sparkles,
   slowCursor: Snail, invertCursor: ArrowLeftRight, blind: EyeOff, snipe: Crosshair,
+};
+
+/** 협력전 보스전 아이템 */
+export const COOP_ITEM_ICON: Record<CoopItemId, IconNode> = {
+  clear: Sparkles, guard: ShieldCheck, heal: Heart, healAll: HeartPulse, fire: Flame, power: Sword,
+  weak: Crosshair, chain: Radiation, combo: Link2, missile: Rocket,
 };
 
 export const EVENT_ICON: Record<EventId, IconNode> = {
@@ -70,6 +76,7 @@ export function icon(node: IconNode, size = 18, cls = '') {
 export const abilityIcon = (id: AbilityId, size = 18, cls = '') => icon(ABILITY_ICON[id], size, cls);
 export const categoryIcon = (c: AbilityCategory, size = 14) => icon(CATEGORY_ICON[c], size);
 export const itemIcon = (id: ItemId, size = 18, cls = '') => icon(ITEM_ICON[id], size, cls);
+export const coopItemIcon = (id: CoopItemId, size = 18, cls = '') => icon(COOP_ITEM_ICON[id], size, cls);
 export const eventIcon = (id: EventId, size = 18, cls = '') => icon(EVENT_ICON[id], size, cls);
 const PATTERN_ICON: Record<PatternId, IconNode> = { walls: BrickWall, spikes: Bomb, bar: RotateCw, vortex: Tornado, ice: Snowflake, ring: CircleDashed, fog: CloudFog };
 export const patternIcon = (id: PatternId, size = 18, cls = '') => icon(PATTERN_ICON[id], size, cls);

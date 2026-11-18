@@ -64,6 +64,8 @@ const MAX_FX = 400;
 const SKY = '#7fd3ff';
 const GOLD = '#ffd166';
 const ITEM_TIER_COLOR = ['#ffffff', '#4d9bff'] as const;
+/** 협력전 ? 원 테두리 */
+const COOP_ITEM_COLOR = '#5ce1e6';
 const PRISM = ['#ff5d73', '#ffb347', '#ffd43b', '#51cf66', '#4dabf7', '#b26cff'];
 
 const prefersReduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches; // 테스트(node)에서는 matchMedia가 없다
@@ -117,6 +119,10 @@ export interface DrawState {
   beam?: { b: Beam; from: { x: number; y: number } } | null;
   /** 협력전: 탄막 (원보다 위, 수정보다 아래) */
   volleys?: readonly Volley[];
+  /** 협력전 약점 노출: 보스 중심 + (dx, dy)의 노란 과녁 (until까지) */
+  coopWeak?: { until: number; dx: number; dy: number } | null;
+  /** 협력전 미사일: from에서 to(보스)로 곡선 비행, at에 닿는다 (flyMs 동안 날아감) */
+  missiles?: { list: readonly { from: { x: number; y: number }; at: number; side: number }[]; to: { x: number; y: number }; flyMs: number } | null;
 }
 
 export class Renderer {
@@ -341,6 +347,7 @@ export class Renderer {
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
     ctx.globalAlpha = base;
+    if (s.missiles?.list.length) this.drawMissiles(s.missiles, s.now);
     if (s.volleys?.length) this.drawBullets(s.volleys, s.now, now);
     for (const k of crystals) { fade(k.c); this.drawCrystal(k.c, k.x, k.y, k.r, s); }
     ctx.globalAlpha = base;
@@ -468,12 +475,58 @@ export class Renderer {
     ctx.strokeStyle = low ? '#ff5d73' : '#fff';
     ctx.beginPath(); ctx.arc(0, 0, r + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
     ctx.globalAlpha = 1;
+    // 협력전 약점 노출: 노란 과녁 (보스 몸 위, 끝나기 1초 전 깜빡임)
+    const wk = c.boss === 'raid' ? s?.coopWeak : null;
+    if (wk && t < wk.until && (wk.until - t > 1000 || Math.floor(frameNow / 120) % 2 === 0)) this.drawWeak(wk.dx * (size / c.r), wk.dy * (size / c.r), frameNow);
     // 방어형 보호막: 밝은 하늘색 육각 테두리 (이때는 피해가 안 들어감)
     if (st.shielded) {
       ctx.lineWidth = 6; ctx.strokeStyle = `rgba(127, 211, 255, ${0.6 + 0.4 * Math.abs(Math.sin(frameNow / 120))})`;
       ctx.beginPath();
       for (let i = 0; i <= 6; i++) { const a = (Math.PI / 3) * i + frameNow / 900; ctx.lineTo(Math.cos(a) * (r + 26), Math.sin(a) * (r + 26)); }
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 약점 과녁: 노란 겹원과 십자 (반지름 = 약점 판정 weakR) */
+  private drawWeak(x: number, y: number, frameNow: number) {
+    const ctx = this.ctx, R = RULES.coop.items.weakR;
+    const k = reduceMotion ? 1 : 1 + 0.08 * Math.sin(frameNow / 110);
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(k, k);
+    ctx.fillStyle = 'rgba(255, 212, 59, .28)';
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffd43b'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.5, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-R - 8, 0); ctx.lineTo(-R * 0.25, 0); ctx.moveTo(R * 0.25, 0); ctx.lineTo(R + 8, 0);
+    ctx.moveTo(0, -R - 8); ctx.lineTo(0, -R * 0.25); ctx.moveTo(0, R * 0.25); ctx.lineTo(0, R + 8); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 미사일: 잡은 자리에서 보스로 휘어 날아가는 작은 탄과 꼬리 */
+  private drawMissiles(m: NonNullable<DrawState['missiles']>, t: number) {
+    const ctx = this.ctx;
+    const at = (q: (typeof m.list)[number], k: number) => {
+      // 2차 곡선: 가운데 조절점을 옆으로 밀어 휘게 한다
+      const mx = (q.from.x + m.to.x) / 2, my = (q.from.y + m.to.y) / 2;
+      const dx = m.to.x - q.from.x, dy = m.to.y - q.from.y, L = Math.hypot(dx, dy) || 1;
+      const cx = mx + (-dy / L) * L * 0.35 * q.side, cy = my + (dx / L) * L * 0.35 * q.side;
+      const u = 1 - k;
+      return { x: u * u * q.from.x + 2 * u * k * cx + k * k * m.to.x, y: u * u * q.from.y + 2 * u * k * cy + k * k * m.to.y };
+    };
+    ctx.save();
+    for (const q of m.list) {
+      const k = (t - (q.at - m.flyMs)) / m.flyMs;
+      if (k < 0 || k >= 1) continue;
+      ctx.strokeStyle = 'rgba(255, 180, 80, .55)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let j = 0; j <= 6; j++) { const p = at(q, Math.max(0, k - 0.12 + 0.02 * j)); if (j) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); }
+      ctx.stroke();
+      const p = at(q, k);
+      ctx.fillStyle = '#ffe08a';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
@@ -726,10 +779,10 @@ export class Renderer {
       PRISM.forEach((col, i) => g.addColorStop(i / PRISM.length, col));
       g.addColorStop(1, PRISM[0]);
       ctx.strokeStyle = g;
-    } else ctx.strokeStyle = ITEM_TIER_COLOR[tier];
+    } else ctx.strokeStyle = c.coopItem ? COOP_ITEM_COLOR : ITEM_TIER_COLOR[tier];
     ctx.stroke();
     ctx.rotate(Math.sin(frameNow / 500) * 0.35);
-    ctx.fillStyle = tier === 2 ? '#ffd43b' : ITEM_TIER_COLOR[tier];
+    ctx.fillStyle = tier === 2 ? '#ffd43b' : c.coopItem ? COOP_ITEM_COLOR : ITEM_TIER_COLOR[tier];
     ctx.font = `${Math.round(r * 1.2)}px 'Black Han Sans', sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('?', 0, r * 0.06);

@@ -386,6 +386,7 @@ svg.lucide { display: inline-block; vertical-align: middle; flex: none; }
 .buff.it1 { --tc: var(--t1); } .buff.gold { --tc: var(--yellow); color: var(--yellow); }
 .buff em { position: absolute; right: -4px; bottom: -4px; font-style: normal; font-size: 11px; font-weight: 800; background: var(--yellow); color: #3a2a00; border-radius: 999px; padding: 0 5px; }
 .buff.blink { animation: pulse .25s steps(2) infinite; }
+.buff.coop { --tc: #5ce1e6; color: #5ce1e6; } .itempop.coop { --tc: #5ce1e6; }
 .itempops { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
 .itempop { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--fg); }
 .itempop .ic { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; background: var(--panel); border: 3px solid var(--t0); box-shadow: 0 0 18px rgba(255, 255, 255, .25); }

@@ -1,4 +1,5 @@
 import type { CoopHitBy } from './protocol.ts';
+import type { CoopFx, CoopItemId } from './coopItems.ts';
 import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, evolvedCap, evolvedOf, synergiesOf, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
 
 /**
@@ -98,6 +99,20 @@ export const RULES = {
     /** 내려오는 벽: 경고 시간(그동안 제자리 미리보기, 맞지 않음), [2단계, 3단계] 틈 수, 속도(필드/초) */
     wall: { warnMs: 2_000, gaps: [2, 1], speed: [140, 180] },
     threatR: 30, threatPoints: 3,
+    /**
+     * 보스전 아이템(? 원): 보스가 원 하나를 뿜을 때 chance(%, 난이도별)로 아이템 원. 큰 피해 구간이 끝나고(단계가 오르고) boostMs 동안 × boostMult.
+     * weight 종류 가중치(엑스퍼트는 회복 둘 제외). guardMs 방어막(한 번 막음), heal·healAll 회복, fireMs·fireMult 화력 강화,
+     * powerStep·powerMax 공격력 강화(단계가 오르면 0), weakMs·weakR·weakDmg·weakAt 약점(원 기본 피해 × weakDmg, 보스 중심에서 bossR × weakAt),
+     * chainN·chainMult 연쇄 폭발, comboAdd 콤보, missiles·missileGapMs·missilePct·missileFlyMs 미사일(합계 최대 체력 × missilePct, 첫 발은 missileFlyMs 뒤)
+     */
+    items: {
+      chance: { easy: 4, normal: 3, hard: 2.5, expert: 1.5 } as Record<CoopLevel, number>,
+      boostMult: 2, boostMs: 10_000,
+      weight: { clear: 1, guard: 1, heal: 1, healAll: 1, fire: 1, power: 1, weak: 1, chain: 1, combo: 1, missile: 1 } as Record<CoopItemId, number>,
+      guardMs: 3_000, heal: 20, healAll: 10, fireMs: 5_000, fireMult: 1.5, powerStep: 0.2, powerMax: 3,
+      weakMs: 5_000, weakR: 34, weakDmg: 1.5, weakAt: 0.6, chainN: 3, chainMult: 2, comboAdd: 10,
+      missiles: 8, missileGapMs: 200, missilePct: 0.04, missileFlyMs: 600,
+    },
     /** 별: 살아남은 사람 비율 ≥ alive 이고 남은 시간 ≥ leftSec */
     stars: { three: { alive: 1, leftSec: 60 }, two: { alive: 0.5, leftSec: 0 } },
     /**
@@ -596,6 +611,8 @@ export interface Circle {
   target?: string;
   /** 협력전 수정: 주인의 색 */
   colorOf?: ColorIndex;
+  /** 협력전 아이템 원 (kind 'item', 무슨 아이템인지는 잡을 때 정해진다) */
+  coopItem?: true;
 }
 
 /** 결과 화면 칭호 계산용 기록 (한 판 단위) */
@@ -721,6 +738,8 @@ export interface PlayerState {
   /** 협력전: 남은 체력, 맞은 뒤 무적이 끝나는 서버 시각 */
   hp: number;
   immuneUntil: number;
+  /** 협력전: 아이템 효과 (판 시작에 새로, 판이 끝나면 지움) */
+  coopFx?: CoopFx;
   /** 스택형 증강: 지금 쌓인 칸 (게임 끝까지) */
   stacks: Partial<Record<StackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */

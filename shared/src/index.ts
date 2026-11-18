@@ -10,3 +10,4 @@ export * from './bossScore.ts';
 export * from './coop.ts';
 export * from './coopBullets.ts';
 export * from './coopBosses.ts';
+export * from './coopItems.ts';

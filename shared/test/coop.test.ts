@@ -345,7 +345,8 @@ test('coop 원: 판 가운데 원 없음, 보스 자리에서 사람·봇 색 �
   const colors = new Set(room.players.map((p) => p.color as Circle['kind']));
   for (const o of orbs) {
     assert.ok(o.from, '보스 자리에서 출발');
-    assert.ok(colors.has(o.kind) || o.kind === 'y', String(o.kind));
+    // 가끔 ? 원 (보스전 아이템)
+    assert.ok(colors.has(o.kind) || o.kind === 'y' || (o.kind === 'item' && o.coopItem), String(o.kind));
   }
   room.destroy();
 });

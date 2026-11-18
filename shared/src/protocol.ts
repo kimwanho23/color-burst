@@ -6,6 +6,7 @@ import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules,
 import type { TutorialStep, CoopLevel } from './rules.ts';
 import type { CoopPhase } from './coop.ts';
 import type { Volley } from './coopBullets.ts';
+import type { CoopItemId } from './coopItems.ts';
 
 /** 협력전 진행 상태 */
 export interface CoopState {
@@ -22,6 +23,8 @@ export interface CoopState {
   /** 구역 봉인, 회전 빔 (경고 중이거나 나와 있는 것, 없으면 null) */
   seal: Seal | null;
   beam: Beam | null;
+  /** 약점 노출 아이템: until까지 보스 중심 + (dx, dy) 자리 (없으면 null) */
+  weak: { until: number; dx: number; dy: number } | null;
   /**
    * 아직 끝나지 않은 탄막. 시작·재개(shift)·보스 무너짐·재접속 때만 실린다 (있으면 화면이 통째로 바꾸고, 없으면 그대로 둔다).
    * 평소에는 coop:volley로 하나씩 간다
@@ -270,6 +273,10 @@ export interface ServerToClient {
   'coop:volley': (v: Volley) => void;
   /** 협력전: before 시각 이전에 쏜 탄막 모두 지움 (큰 피해 구간 시작, 보스가 무너짐) */
   'coop:clear': (d: { before: number }) => void;
+  /** 협력전: 아이템 원을 잡음 (item: 굴린 종류, x·y 잡은 자리) */
+  'coop:item': (d: { circleId: number; by: string; item: CoopItemId; x: number; y: number }) => void;
+  /** 협력전: 미사일 n발이 from에서 보스로 (첫 발이 at에 닿고 gapMs 간격, 연출만) */
+  'coop:missile': (d: { by: string; from: { x: number; y: number }; n: number; gapMs: number; at: number }) => void;
   /** 협력전: 공격 원을 터뜨림 */
   'threat:popped': (d: { circleId: number; by: string; gained: number }) => void;
 }
