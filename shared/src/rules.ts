@@ -99,6 +99,11 @@ export const RULES = {
     slam: { warnMs: 1_500, r: 110 },
     /** 안전지대: 경고 시간, 시작·끝 반지름, 경고 동안 옮겨 가는 최대 거리 */
     safe: { warnMs: 3_500, r0: 230, r1: 150, move: 180 },
+    /**
+     * 단계가 오르면 같은 패턴도 세진다 ([1단계, 2단계, 3단계]): threatAdd 추적 원 수에 더함,
+     * singleShift 레이저 한 줄 비율(%p)을 그만큼 덜어 여러 줄 무늬(평행·십자·방사)에 원래 비율대로 나눔 (없던 무늬는 생기지 않음)
+     */
+    phaseUp: { threatAdd: [0, 1, 2], singleShift: [0, 15, 30] },
     /** 고유 패턴: skillEveryMs마다 단계 목록(COOP_BOSSES.core.skills)에서 하나 (직전과 다른 것). 판 시작 첫 패턴은 RULES.laser.startQuietMs 뒤 */
     skillEveryMs: 10_000,
     /** 구역 봉인: 경고 시간, 막혀 있는 시간 (2단계 1줄, 3단계 2줄) */

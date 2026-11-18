@@ -1463,3 +1463,56 @@ test('회전 빔 지연 보정: stillMs보다 오래 새 커서가 없으면 그
   assert.equal(me.hp, C.hpMax - N.beam);
   room.destroy();
 });
+
+test('단계가 오르면 세짐: 추적 원 수 + phaseUp.threatAdd, 레이저는 한 줄 비율이 phaseUp.singleShift만큼 여러 줄로', async () => {
+  const { coopThreatCount, coopVolleyOdds } = await import('../src/index.ts');
+  const U = C.phaseUp;
+  assert.deepEqual(U.threatAdd.length, 3);
+  assert.equal(U.threatAdd[0], 0);
+  assert.equal(U.singleShift[0], 0);
+  for (const level of ['easy', 'normal', 'hard', 'expert'] as const) {
+    const L = C.levels[level];
+    assert.equal(coopThreatCount(level, 1), L.threatCount);
+    assert.equal(coopThreatCount(level, 3), L.threatCount + U.threatAdd[2]!);
+    assert.ok(coopThreatCount(level, 3) > coopThreatCount(level, 1));
+    assert.deepEqual(coopVolleyOdds(level, 1), L.volleyOdds);
+    const o3 = coopVolleyOdds(level, 3);
+    const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
+    assert.ok(Math.abs(sum(o3) - sum(L.volleyOdds)) < 1e-9, '합은 그대로');
+    assert.equal(o3.single, Math.max(0, L.volleyOdds.single - U.singleShift[2]!));
+    assert.ok(o3.single < L.volleyOdds.single, level);
+    // 원래 없던 무늬(쉬움의 십자·방사)는 생기지 않는다
+    for (const k of ['parallel', 'cross', 'radial'] as const) assert.equal(o3[k] > 0, L.volleyOdds[k] > 0, `${level} ${k}`);
+  }
+});
+
+test('단계가 오르면 세짐: 3단계 추적 원은 1단계보다 많고, 레이저는 단계 비율로 굴림', () => {
+  const counts: number[] = [];
+  for (const phase of [1, 3] as const) {
+    const { room, r } = coopRoom(1, 0);
+    noSkills(r);
+    r.coop.phase = phase;
+    sent.length = 0;
+    (r.coop as unknown as SkillRun).useSkill('threat', r.startAt + 5000);
+    counts.push(sent.filter((s) => s.ev === 'circle:spawn' && (s.d as Circle).kind === 'threat').length);
+    room.destroy();
+  }
+  assert.deepEqual(counts, [C.levels.normal.threatCount, C.levels.normal.threatCount + C.phaseUp.threatAdd[2]!]);
+  // 레이저: 한 줄이 나올 난수(0.3 → 1단계 single 40% 안)가 3단계에서는 여러 줄
+  const lines: number[] = [];
+  for (const phase of [1, 3] as const) {
+    const { room, r } = coopRoom(1, 0);
+    noSkills(r);
+    r.coop.phase = phase;
+    const run = r.coop as unknown as SkillRun;
+    const rand = run.rand;
+    run.rand = () => 0.3;
+    sent.length = 0;
+    run.useSkill('laser', r.startAt + 5000);
+    run.rand = rand;
+    lines.push((sent.find((s) => s.ev === 'laser:warn')!.d as { lines: unknown[] }).lines.length);
+    room.destroy();
+  }
+  assert.equal(lines[0], 1);
+  assert.ok(lines[1]! > 1, String(lines[1]));
+});

@@ -7,7 +7,7 @@
  * 계산은 shared/src/coop.ts, 수치는 RULES.coop.
  */
 import {
-  COOP_BOSSES, RULES, addSrc, coopDamageMult, newCoopFx, rollCoopItem, applyRaidDamage, beamHits, circlePos, coopStars, crystalHits, inSafe, inSeal, makeCrystal, makeOrb,
+  COOP_BOSSES, RULES, addSrc, coopDamageMult, coopThreatCount, coopVolleyOdds, newCoopFx, rollCoopItem, applyRaidDamage, beamHits, circlePos, coopStars, crystalHits, inSafe, inSeal, makeCrystal, makeOrb,
   burstMsFor, makeRaid, makeThreat, makeVolley, orbDamage, pickSkill, placeCrystals, raidMaxHp, rollSafe, rollSeal, rollVolley, hitShot, shotGone, shotPos, threatSpeed, volleyDone,
   type Beam, type Circle, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopPlayerResult, type CoopResult, type CoopSkill, type CoopState,
   type LaserLine, type PlayerState, type Point, type SafeZones, type Seal, type ServerToClient, type Slam,
@@ -165,7 +165,7 @@ export class CoopRun {
     const L = C.levels[this.level];
     // 판 패턴(봉인·벽·빔) 수치는 [2단계, 3단계] 배열이라 phase − 2로 찾는다. 1단계 목록에는 판 패턴이 없어 쓰이지 않지만 0으로 막아 둔다
     const p2 = Math.max(0, this.phase - 2);
-    if (k === 'laser') this.host.fireLaser(rollVolley(this.rand, this.host.laserHalf(), L.volleyOdds).lines, now + L.laserWarnMs);
+    if (k === 'laser') this.host.fireLaser(rollVolley(this.rand, this.host.laserHalf(), coopVolleyOdds(this.level, this.phase)).lines, now + L.laserWarnMs);
     else if (k === 'threat') this.spawnThreats(now);
     else if (k === 'slam') this.startSlam(now);
     else if (k === 'safe') {
@@ -354,12 +354,12 @@ export class CoopRun {
     return I.chance[this.level] * (now < this.boostUntil ? I.boostMult : 1);
   }
 
-  /** 추적 원: 보스 자리에서 아래쪽 반원으로 고르게 퍼진다. 표적은 살아 있는 사람 중 돌아가며 */
+  /** 추적 원: 보스 자리에서 아래쪽 반원으로 고르게 퍼진다 (단계가 오르면 더 많이). 표적은 살아 있는 사람 중 돌아가며 */
   private spawnThreats(now: number) {
     const alive = this.alive();
     if (!alive.length || !this.boss) return;
     const from = circlePos(this.boss, now);
-    const n = C.levels[this.level].threatCount;
+    const n = coopThreatCount(this.level, this.phase);
     const sp = threatSpeed(this.level);
     for (let i = 0; i < n; i++) {
       const a = Math.PI * (0.12 + 0.76 * ((i + 0.5) / n)) + (this.rand() - 0.5) * 0.15;

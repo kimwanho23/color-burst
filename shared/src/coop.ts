@@ -3,7 +3,7 @@
  * 한 판의 상태는 서버의 CoopRun(server/src/coop.ts)이 들고, 여기는 순수 함수만 둔다. 수치는 RULES.coop.
  */
 import { FIELD, RULES, zoneOf, type Circle, type CircleKind, type ColorIndex, type CoopLevel, type PlayerState } from './rules.ts';
-import type { Point } from './cursor.ts';
+import type { Point, VolleyKind } from './cursor.ts';
 import type { CoopSkill } from './coopBosses.ts';
 
 const C = RULES.coop;
@@ -65,6 +65,23 @@ export function makeThreat(id: number, now: number, from: Point, angle: number, 
 
 export function threatSpeed(level: CoopLevel): number {
   return C.levels[level].threatSpeed;
+}
+
+/** 추적 원 수: 난이도 threatCount + 단계 phaseUp.threatAdd */
+export function coopThreatCount(level: CoopLevel, phase: CoopPhase): number {
+  return C.levels[level].threatCount + C.phaseUp.threatAdd[phase - 1]!;
+}
+
+/** 레이저 무늬 비율: 난이도 volleyOdds에서 한 줄을 phaseUp.singleShift만큼 덜어 여러 줄 무늬에 원래 비율대로 나눈다 (합은 그대로) */
+export function coopVolleyOdds(level: CoopLevel, phase: CoopPhase): Record<VolleyKind, number> {
+  const o = { ...C.levels[level].volleyOdds };
+  const multi = (['parallel', 'cross', 'radial'] as const).filter((k) => o[k] > 0);
+  const total = multi.reduce((a, k) => a + o[k], 0);
+  const moved = total > 0 ? Math.min(o.single, C.phaseUp.singleShift[phase - 1]!) : 0;
+  if (moved <= 0) return o;
+  o.single -= moved;
+  for (const k of multi) o[k] += (moved * o[k]) / total;
+  return o;
 }
 
 /** 보스가 뿜는 원: from(보스 자리)에서 angle 방향으로. 크기는 일반 원과 같은 범위 */
