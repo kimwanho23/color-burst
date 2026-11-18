@@ -152,3 +152,30 @@ test('리뷰: 맵 패턴 중 오오라에 끌려도 벽 안으로 들어가지 �
   g.pull({ x: 600, y: 450 }, 10);
   assert.ok(g.pos!.x < 500 || g.pos!.x > 540, `벽 밖 ${g.pos!.x}`);
 });
+
+// ---------- 기절 ----------
+test('GameCursor 기절: 커서가 그 자리에 멈추고 이동이 버려진다', (t) => {
+  clock(t);
+  const g = new GameCursor();
+  g.move({ x: 100, y: 100 }, { x: 0, y: 0 });
+  g.frame(null, 16);
+  g.frame(null, 16, false, null, true);
+  g.move({ x: 400, y: 400 }, { x: 300, y: 300 });
+  g.frame(null, 16, false, null, true);
+  assert.deepEqual(round(g.pos), { x: 100, y: 100 });
+});
+
+test('GameCursor 기절이 풀리면 진짜 위치로 미끄러져 돌아온다', (t) => {
+  const c = clock(t);
+  const g = new GameCursor();
+  g.move({ x: 100, y: 100 }, { x: 0, y: 0 });
+  g.frame(null, 16);
+  g.frame(null, 16, false, null, true);
+  g.move({ x: 400, y: 400 }, { x: 300, y: 300 });
+  g.frame(null, 16, false, null, true);
+  g.frame(null, 16);
+  assert.ok(Math.abs(g.pos!.x - 100) < 5, `${g.pos!.x}`);
+  c.now += RULES.sabotage.slideMs * 2;
+  g.frame(null, 16);
+  assert.deepEqual(round(g.pos), { x: 400, y: 400 });
+});

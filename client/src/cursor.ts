@@ -28,10 +28,13 @@ export class GameCursor {
   private fx: FieldFx | null = null;
   /** 갇힌 소용돌이 번호 (없으면 −1). 패턴이 끝날 때까지 그 눈 밖으로 못 나간다 */
   trapped = -1;
+  /** 기절 중이면 참: 커서가 그 자리에 멈춘다 (마지막 frame 기준) */
+  private frozen = false;
 
   /** real: 진짜 마우스의 필드 좌표, delta: 이번 이동량(필드 단위) */
   move(real: Point, delta: Point) {
     this.real = real;
+    if (this.frozen) return; // 기절 중: 진짜 위치만 기억하고 커서는 그대로
     this.delta = { x: this.delta.x + delta.x, y: this.delta.y + delta.y };
     if (!this.pos) { this.pos = cursorTarget(real, null); return; }
     // 효과가 없으면 프레임을 기다리지 않고 바로 따라간다
@@ -42,10 +45,15 @@ export class GameCursor {
    * 매 프레임: 효과에 맞춰 커서를 옮긴다. 반대는 거울 위치, 감도 감소는 늦게 따라감, 오오라만이면 이동량 그대로.
    * 효과가 바뀌어 목표가 튀는 순간(반대가 걸리거나 풀림, 효과가 끝남)은 slideMs 동안 미끄러져 옮겨 간다
    */
-  frame(mode: CursorMode | null, dtMs: number, inAura = false, fx: FieldFx | null = null) {
+  frame(mode: CursorMode | null, dtMs: number, inAura = false, fx: FieldFx | null = null, frozen = false) {
     const d = this.delta;
     this.delta = { x: 0, y: 0 };
+    const wasFrozen = this.frozen;
+    this.frozen = frozen;
     if (!this.real || !this.pos) return;
+    if (frozen) return; // 기절: 그 자리에 멈추고 쌓인 이동량은 버린다
+    // 기절이 풀리는 순간: 멈춘 자리에서 진짜 위치로 미끄러져 돌아온다
+    if (wasFrozen) { this.slideFrom = this.pos; this.slideAt = performance.now(); this.iceVel = { x: 0, y: 0 }; }
     // 벽·회전 막대·소용돌이·빙판이 나와 있으면 맵 패턴 움직임 ('p')
     const field = fx && patternActive(fx.pattern, fx.t) && movesCursor(fx.pattern.id) ? fx : null;
     const key = field ? 'p' : mode ? `${mode.slow ? 's' : ''}${mode.invert ? 'i' : ''}` || 'a' : '';
@@ -114,7 +122,7 @@ export class GameCursor {
 
   /** 오오라 끌림: target 쪽으로 dist만큼 (넘어가지 않음). 반대·감도 감소 중이면 끌린 양을 따로 쌓아 다음 프레임에도 유지 */
   pull(target: Point, dist: number) {
-    if (!this.pos) return;
+    if (!this.pos || this.frozen) return;
     const dx = target.x - this.pos.x, dy = target.y - this.pos.y, dd = Math.hypot(dx, dy);
     if (dd < 1e-6) return;
     const k = Math.min(1, dist / dd);
@@ -131,7 +139,7 @@ export class GameCursor {
    * 미끄러지는 중·감도 감소·오오라만 걸린 때는 그대로 (그때는 늦게 따라가는 게 효과)
    */
   snap(mode: CursorMode | null) {
-    if (!this.real || !this.pos || this.slideFrom || mode?.slow || this.key === 'a' || this.key === 'p') return;
+    if (!this.real || !this.pos || this.frozen || this.slideFrom || mode?.slow || this.key === 'a' || this.key === 'p') return;
     this.pos = this.targetOf(mode);
   }
 

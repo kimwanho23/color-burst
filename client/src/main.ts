@@ -1087,8 +1087,11 @@ document.addEventListener('pointerlockchange', () => {
   if (room?.solo) socket.emit('game:pause');
   else pushFeed($('feed'), icon(UI.pause, 18), '마우스 잠금이 풀렸어요. 판을 클릭하면 다시 잠가요', '#9ca2d6');
 });
+/** 기절 중이면 참 (frame()이 갱신): 커서가 멈추고 잠금 위치도 움직이지 않는다 */
+let cursorFrozen = false;
 const moveCursor = (e: PointerEvent) => {
   if (locked()) {
+    if (cursorFrozen) return;
     const o = renderer.toField(0, 0), u = renderer.toField(e.movementX, e.movementY);
     const next = inField({ x: lockPos.x + (u.x - o.x) * settings.sens, y: lockPos.y + (u.y - o.y) * settings.sens });
     const d = { x: next.x - lockPos.x, y: next.y - lockPos.y };
@@ -1319,7 +1322,9 @@ function frame() {
   cursorMode = live && m ? cursorModeOf(m, now) ?? (aura ? {} : null) : null;
   const fx = live && mapPattern ? { pattern: mapPattern, t: now } : null;
   const wasTrapped = gameCursor.trapped;
-  gameCursor.frame(cursorMode, dt * 1000, !!aura, fx);
+  const stunnedNow = live && !!m && isStunned(m, now);
+  cursorFrozen = stunnedNow;
+  gameCursor.frame(cursorMode, dt * 1000, !!aura, fx, stunnedNow);
   // 소용돌이에 갇힘: 글자·소리
   if (wasTrapped < 0 && gameCursor.trapped >= 0 && gameCursor.pos) { sfx.aura(); renderer.text(gameCursor.pos.x, gameCursor.pos.y - 40, '갇힘!', '#d4bcff', 1.1); }
   // 두 번째 소용돌이 미리보기가 시작되면 작은 경고음
