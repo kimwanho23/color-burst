@@ -134,11 +134,6 @@ export function attackGap(kind: CoopAttack, level: CoopLevel, phase: CoopPhase, 
   return base * (phase === 3 ? L.phase3Mult : 1);
 }
 
-/** 맞은 뒤 무적 시간 */
-export function immuneMs(): number {
-  return C.immuneMs;
-}
-
 /** 별: 진 판 0. 이긴 판은 살아남은 비율·남은 시간으로 1~3 */
 export function coopStars(win: boolean, aliveRatio: number, leftMs: number): 0 | 1 | 2 | 3 {
   if (!win) return 0;

@@ -5,7 +5,7 @@
  * 계산은 shared/src/coop.ts, 수치는 RULES.coop.
  */
 import {
-  RULES, addSrc, applyRaidDamage, attackGap, circlePos, coopStars, crystalHits, immuneMs, inSafe, makeCrystal, makeOrb, makePattern,
+  RULES, addSrc, applyRaidDamage, attackGap, circlePos, coopStars, crystalHits, inSafe, makeCrystal, makeOrb, makePattern,
   makeRaid, makeThreat, orbDamage, placeCrystals, raidMaxHp, rollSafe, rollVolley, threatSpeed,
   type Circle, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopPlayerResult, type CoopResult, type CoopState,
   type LaserLine, type MapPattern, type PatternId, type PlayerState, type Point, type SafeZones, type ServerToClient, type Slam,
@@ -26,14 +26,14 @@ export interface CoopHost {
   /** 맵 패턴 예약(경고 시각이 되면 나타남), null이면 지우기 */
   setPattern(p: MapPattern | null): void;
   eliminate(p: PlayerState, now: number): void;
-  finish(win: boolean): void;
+  finish(win: boolean, reason?: CoopResult['reason']): void;
   emitPlayers(): void;
   /** 레이저 맞는 거리 (난이도 두께) */
   laserHalf(): number;
   /** 사람 커서 (없으면 판정하지 않음) */
   cursorOf(id: string): Point | null;
-  /** 피격 스턴 (레이저와 같은 처리) */
-  stun(p: PlayerState, now: number): void;
+  /** 피격 기절 (레이저와 같은 처리, ms 동안) */
+  stun(p: PlayerState, now: number, ms: number): void;
 }
 
 type Pattern = 'laser' | 'threat' | 'slam' | 'safe' | 'map';
@@ -57,6 +57,8 @@ export class CoopRun {
   private breaks: { ms: number; rages: number }[] = [];
   /** 큰 피해 구간이 끝나면 다음 단계 패턴 일정을 잡는다 */
   private afterBurst = false;
+  /** 진 이유 (결과에 실림) */
+  private reason: CoopResult['reason'];
 
   constructor(private host: CoopHost, readonly level: CoopLevel, private rand: () => number = Math.random) {}
 
@@ -70,7 +72,7 @@ export class CoopRun {
 
   /** 판 시작: 생명, 레이드 보스, 첫 원·공격 시각 */
   start(now: number) {
-    for (const p of this.host.players()) { p.lives = p.bot ? 0 : C.lives; p.immuneUntil = 0; this.stat(p.id); }
+    for (const p of this.host.players()) { p.hp = p.bot ? 0 : C.hpMax; p.immuneUntil = 0; this.stat(p.id); }
     const ps = this.host.players();
     const hp = raidMaxHp(ps.filter((p) => !p.bot).length, ps.filter((p) => p.bot).length);
     this.boss = makeRaid(this.host.nextId(), now, hp);
@@ -246,6 +248,8 @@ export class CoopRun {
     this.phase = Math.min(3, this.phase + 1) as CoopPhase;
     this.burstUntil = now + C.burst.ms;
     this.afterBurst = true;
+    // 큰 피해 구간 시작: 살아 있는 사람 회복 (엑스퍼트는 없음)
+    if (this.level !== 'expert') for (const p of this.alive()) p.hp = Math.min(C.hpMax, p.hp + C.heal.burstStart);
     this.host.setPattern(null);
     this.host.clearLasers();
     this.host.emit('coop:state', this.state());
@@ -277,6 +281,8 @@ export class CoopRun {
   private tickRage(now: number) {
     if (!this.rageAt || now < this.rageAt || !this.shield) return;
     this.rageAt = 0;
+    // 엑스퍼트: 수정 구간을 못 깨면 바로 패배
+    if (!Number.isFinite(C.levels[this.level].hurt.rage)) { this.reason = 'crystal'; this.host.finish(false, 'crystal'); return; }
     this.shield.rages++;
     this.botNext.clear();
     for (const p of this.alive()) this.damage(p, 'rage', now);
@@ -309,7 +315,7 @@ export class CoopRun {
     for (const s of due) {
       for (const p of this.alive()) {
         const q = this.host.cursorOf(p.id);
-        if (q && Math.hypot(q.x - s.x, q.y - s.y) <= s.r && this.damage(p, 'slam', now)) this.host.stun(p, now);
+        if (q && Math.hypot(q.x - s.x, q.y - s.y) <= s.r && this.damage(p, 'slam', now)) continue;
       }
     }
   }
@@ -320,7 +326,7 @@ export class CoopRun {
     this.safe = null;
     for (const p of this.alive()) {
       const q = this.host.cursorOf(p.id);
-      if (q && !inSafe(q, s, now) && this.damage(p, 'safe', now)) this.host.stun(p, now);
+      if (q && !inSafe(q, s, now) && this.damage(p, 'safe', now)) continue;
     }
     this.host.emit('coop:safe', null);
   }
@@ -332,7 +338,7 @@ export class CoopRun {
 
   /** 사람이 나가거나 끊겼을 때: 모두 탈락이면 패배, 보호막 중이면 그 사람 수정을 치운다 */
   recheck() {
-    if (!this.alive().length) { this.host.finish(false); return; }
+    if (!this.alive().length) { this.host.finish(false, 'wipe'); return; }
     if (!this.shield) return;
     // 탈락했거나 방에서 빠진 사람만 (잠깐 끊긴 사람은 돌아와서 깰 수 있게 수정을 남긴다)
     const gone = new Set(this.host.players().filter((p) => p.outAt).map((p) => p.id));
@@ -354,15 +360,17 @@ export class CoopRun {
     return g;
   }
 
-  /** 생명 −1. 봇·탈락·무적이면 false (호출 쪽은 true일 때만 스턴) */
+  /** 체력을 hurt[by]만큼 깎고 무적·기절을 건다. 봇·탈락·무적이면 false. hazard의 기절은 방이 따로 건다 */
   damage(p: PlayerState, by: CoopHitBy, now: number, circleId?: number): boolean {
-    if (p.bot || p.outAt || now < p.immuneUntil || p.lives <= 0) return false;
-    p.lives--;
-    p.immuneUntil = now + immuneMs();
-    this.host.emit('coop:hit', { playerId: p.id, by, lives: p.lives, immuneUntil: p.immuneUntil, ...(circleId !== undefined ? { circleId } : {}) });
-    if (p.lives <= 0) {
+    if (p.bot || p.outAt || now < p.immuneUntil || p.hp <= 0) return false;
+    const fx = C.hurtFx[by];
+    p.hp = Math.max(0, p.hp - C.levels[this.level].hurt[by]);
+    p.immuneUntil = now + fx.immuneMs;
+    this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, immuneUntil: p.immuneUntil, ...(circleId !== undefined ? { circleId } : {}) });
+    if (fx.stunMs > 0 && by !== 'hazard') this.host.stun(p, now, fx.stunMs);
+    if (p.hp <= 0) {
       this.host.eliminate(p, now);
-      if (!this.alive().length) { this.host.finish(false); return true; }
+      if (!this.alive().length) { this.host.finish(false, 'wipe'); return true; }
       // 보호막 중이면 그 사람 수정은 깬 것으로 친다
       if (this.shield) {
         const ids = new Set(this.crystals().filter((c) => c.target === p.id).map((c) => c.id));
@@ -404,7 +412,7 @@ export class CoopRun {
     };
   }
 
-  result(now: number, startAt: number, win: boolean): CoopResult {
+  result(now: number, startAt: number, win: boolean, reason?: CoopResult['reason']): CoopResult {
     const hs = this.humans();
     const ratio = hs.length ? hs.filter((p) => !p.outAt).length / hs.length : 0;
     const timeMs = Math.max(0, Math.min(C.timeSec * 1000, now - startAt));
@@ -414,6 +422,7 @@ export class CoopRun {
       win, stars: coopStars(win, ratio, C.timeSec * 1000 - timeMs), timeMs,
       bossHpPct: this.boss ? Math.round(((this.boss.hp ?? 0) / (this.boss.maxHp || 1)) * 100) : 0,
       phase: this.phase, maxHp: this.boss?.maxHp ?? 0, players, breaks: [...this.breaks],
+      ...(!win && (reason ?? this.reason) ? { reason: reason ?? this.reason } : {}),
     };
   }
 

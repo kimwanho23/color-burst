@@ -88,7 +88,7 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     <div class="modes three">
       <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade && !coop}" title="${rules.roundSec}초 한 판 승부" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b></button>
       <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade}" title="${ARCADE.rounds}라운드, 라운드마다 능력 선택" ${dis}>${icon(UI.arcade, 26, 'mi')}<b>아케이드</b></button>
-      <button type="button" class="mode" data-m="coop" aria-pressed="${coop}" title="다 같이 거대 보스를 잡아요, 생명 ${RULES.coop.lives}개 · ${RULES.coop.timeSec}초" ${dis}>${icon(UI.coop, 26, 'mi')}<b>협력전</b></button>
+      <button type="button" class="mode" data-m="coop" aria-pressed="${coop}" title="다 같이 거대 보스를 잡아요, 체력 ${RULES.coop.hpMax} · ${RULES.coop.timeSec}초" ${dis}>${icon(UI.coop, 26, 'mi')}<b>협력전</b></button>
     </div>
     ${second}
     ${coop ? '<p class="coop-note">다 같이 거대 보스를 잡아요. 난이도가 오를수록 공격이 빨라지고 수정이 단단해져요.</p>' : ''}

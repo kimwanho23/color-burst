@@ -9,7 +9,7 @@ import {
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
   WAVE_PATTERNS, makeWave, nextWaveIn,
-  type BotLevel, type Circle, type ClaimResult, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
+  type BotLevel, type Circle, type ClaimResult, type CoopResult, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
 } from '@color-burst/shared';
 import { Bot } from './bot.ts';
@@ -1300,7 +1300,7 @@ export class Room {
     if (this.tutorial) return this.tickTutorial(now);
     // 서바이벌(클래식): 탈락 판정이 판 끝 판정보다 먼저 (마지막 탈락이 곧 판 끝)
     if (this.nextCutAt) { this.updateSurvival(now); if (this.phase !== 'play') return; }
-    if (now >= this.endAt) return this.G.arcade && this.round < ARCADE.rounds ? this.endRound() : this.end();
+    if (now >= this.endAt) return this.G.arcade && this.round < ARCADE.rounds ? this.endRound() : this.end(false, 'time');
     while (now - this.startAt >= this.nextSample) {
       for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
       this.nextSample += HISTORY_STEP_MS;
@@ -1451,9 +1451,13 @@ export class Room {
         const cur = this.freshCursor(p.id, now);
         if (p.bot || l.hit.has(p.id) || !cur || !volleyHits(cur, l.lines, this.G.laserHalf)) continue;
         l.hit.add(p.id);
-        // 협력전: 생명이 줄었을 때만 스턴 (무적이면 아무 일 없음)
-        if (this.coop && !this.coop.damage(p, 'laser', now)) continue;
-        if (this.phase !== 'play') return;
+        // 협력전: 체력이 줄었을 때만 (기절은 CoopRun.damage가 건다. 무적이면 아무 일 없음)
+        if (this.coop) {
+          if (!this.coop.damage(p, 'laser', now)) continue;
+          if (this.phase !== 'play') return;
+          stunned = true;
+          continue;
+        }
         // 위험 스턴 공통: 철벽·무적 시간, 방해 내성, 피버 중이면 피버 절반
         const r = hazardStun(p, now, L.stunMs, this.G, this.players);
         if (r < 0) continue;
@@ -1504,12 +1508,12 @@ export class Room {
       clearLasers: () => { this.lasers = []; },
       setPattern: (p) => { if (p) this.pendingPattern = p; else this.clearPattern(); },
       eliminate: (p, now) => this.eliminate(p, now),
-      finish: (win) => { if (this.phase === 'play') this.end(win); },
+      finish: (win, reason) => { if (this.phase === 'play') this.end(win, reason); },
       emitPlayers: () => this.emitPlayers(),
       laserHalf: () => this.G.laserHalf,
       cursorOf: (id) => { const c = this.freshCursor(id, Date.now()); return c ? { x: c.x, y: c.y } : null; },
-      stun: (p, now) => {
-        const r = hazardStun(p, now, RULES.laser.stunMs, this.G, this.players);
+      stun: (p, now, ms) => {
+        const r = hazardStun(p, now, ms, this.G, this.players);
         if (r > 0) this.io.to(this.code).emit('stun', { playerId: p.id, until: p.stunUntil, by: 'laser' });
       },
     };
@@ -1777,8 +1781,8 @@ export class Room {
     return hitWithin(c, now, x, y, pad, LAG_WINDOW_MS);
   }
 
-  private end(coopWin = false) {
-    const coopResult = this.coop?.result(Date.now(), this.startAt, coopWin);
+  private end(coopWin = false, coopReason?: CoopResult['reason']) {
+    const coopResult = this.coop?.result(Date.now(), this.startAt, coopWin, coopReason);
     this.coop?.dispose();
     this.coop = null;
     this.resolvePulls(Date.now(), true);

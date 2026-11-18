@@ -41,7 +41,7 @@ export function rulesSummary(r: RoomRules): { title: string; detail: string } {
     : r.coop ? `${RULES.coop.timeSec}초`
     : r.survival ? `${RULES.survival.everyMs / 1000}초마다 꼴찌 탈락` : `${r.roundSec}초`;
   // 협력전은 일반 보스·레이저·맵 패턴을 끈다 (toGameRules)
-  if (r.coop) return { title, detail: time };
+  if (r.coop) return { title, detail: `${time} · 체력 ${RULES.coop.hpMax}` };
   const on = [r.boss && '보스', r.items && '아이템', r.laser && '레이저', r.mapPct > 0 && '맵 패턴'].filter(Boolean);
   return { title, detail: [time, `피버 ×${r.feverMult} ${r.feverSec}초`, ...on].join(' · ') };
 }
@@ -54,7 +54,7 @@ export function rulesChips(r: RoomRules): RuleChip[] {
   const time = r.mode === 'arcade' ? `${ARCADE.rounds}라운드 × ${r.arcadeRoundSec}초`
     : r.coop ? `${RULES.coop.timeSec}초` : r.survival ? `${RULES.survival.everyMs / 1000}초마다 꼴찌 탈락` : `${r.roundSec}초`;
   // 협력전은 난이도와 제한 시간만
-  if (r.coop) return [{ icon: 'coop', text: `협력전 · ${COOP_NAME[r.coopLevel]}` }, { icon: 'timer', text: time }];
+  if (r.coop) return [{ icon: 'coop', text: `협력전 · ${COOP_NAME[r.coopLevel]}` }, { icon: 'timer', text: time }, { icon: 'coop', text: `체력 ${RULES.coop.hpMax}` }];
   const chips: RuleChip[] = [{ icon: 'timer', text: time }];
   chips.push({ icon: 'fever', text: `피버 ×${r.feverMult} · ${r.feverSec}초` });
   chips.push({ icon: 'speed', text: `속도 ×${r.speed} · 원 개수 ×${r.density}` });

@@ -61,7 +61,7 @@ test('roomLink: 주소 뒤에 #방코드', () => {
 test('rulesSummary: 협력전은 꺼지는 보스·레이저·맵 패턴을 적지 않고, 클래식 서바이벌은 탈락 간격을 적음', () => {
   const coop = rulesSummary({ ...DEFAULT_RULES, coop: true }).detail;
   for (const w of ['보스', '레이저', '맵 패턴']) assert.ok(!coop.includes(w), coop);
-  assert.equal(coop, `${RULES.coop.timeSec}초`);
+  assert.equal(coop, `${RULES.coop.timeSec}초 · 체력 ${RULES.coop.hpMax}`);
   const surv = rulesSummary({ ...DEFAULT_RULES, survival: true }).detail;
   assert.ok(surv.startsWith('30초마다 꼴찌 탈락'), surv);
   assert.ok(!surv.startsWith('60초'), surv);
@@ -72,6 +72,7 @@ test('협력전 엑스퍼트: 칩·요약은 난이도와 시간만', () => {
   const texts = rulesChips(r).map((c) => c.text);
   assert.ok(texts.includes('협력전 · 엑스퍼트'), texts.join('/'));
   assert.ok(texts.includes(`${RULES.coop.timeSec}초`));
+  assert.ok(texts.includes(`체력 ${RULES.coop.hpMax}`), texts.join('/'));
   for (const w of ['레이저', '맵 패턴', '보스']) assert.ok(!texts.some((x) => x.includes(w)), w);
   assert.equal(rulesSummary(r).title, '협력전 · 엑스퍼트');
 });

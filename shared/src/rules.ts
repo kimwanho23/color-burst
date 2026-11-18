@@ -1,3 +1,4 @@
+import type { CoopHitBy } from './protocol.ts';
 import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, evolvedCap, evolvedOf, synergiesOf, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
 
 /**
@@ -46,11 +47,20 @@ export const RULES = {
   /** 서바이벌: 클래식 탈락 간격, 탈락 경고 (인원은 늘 4명이 되게 봇으로 채움) */
   survival: { everyMs: 30_000, warnMs: 3_000 },
   /**
-   * 협력전: 모두 같은 편, 개인 생명으로 180초 안에 3단계 레이드 보스를 잡는다.
-   * 난이도(levels)는 보스 공격 세기만 바꾼다. 생명·시간·보스 체력은 공통
+   * 협력전: 모두 같은 편, 개인 체력(hpMax)으로 180초 안에 3단계 레이드 보스를 잡는다.
+   * 난이도(levels)는 보스 공격 세기와 공격별 피해(hurt)를 바꾼다. 체력 바·시간·보스 체력은 공통. hurt의 Infinity는 즉시 패배(JSON에 싣지 않는다)
    */
   coop: {
-    timeSec: 180, lives: 3, immuneMs: 2_000,
+    timeSec: 180, hpMax: 100,
+    /** 큰 피해 구간 시작에 살아 있는 사람 모두 회복하는 체력 (엑스퍼트는 회복 없음) */
+    heal: { burstStart: 25 },
+    /** 공격 종류별 맞은 뒤 무적(ms)·기절(ms). 기절 중에는 무적이 함께 걸려 있다. hazard는 방이 기절을 따로 건다 */
+    hurtFx: {
+      bullet: { immuneMs: 600, stunMs: 0 }, wall: { immuneMs: 600, stunMs: 0 }, threat: { immuneMs: 1_000, stunMs: 0 },
+      beam: { immuneMs: 2_000, stunMs: 1_000 }, laser: { immuneMs: 2_000, stunMs: 1_000 }, slam: { immuneMs: 2_000, stunMs: 1_000 },
+      seal: { immuneMs: 2_000, stunMs: 1_000 }, safe: { immuneMs: 2_000, stunMs: 1_000 }, rage: { immuneMs: 2_000, stunMs: 0 },
+      hazard: { immuneMs: 2_000, stunMs: 1_000 },
+    } as Record<CoopHitBy, { immuneMs: number; stunMs: number }>,
     /** 단계 경계 (체력 비율). 경계에 닿으면 보호막 */
     phaseAt: [0.67, 0.33],
     /** 레이드 보스: 반지름, 높이(y), 좌우 한 번 왕복 시간, 체력 = hpBase × (사람 + 봇 × botWeight) */
@@ -89,21 +99,25 @@ export const RULES = {
      */
     levels: {
       easy: {
+        hurt: { bullet: 5, wall: 5, threat: 15, beam: 20, laser: 20, slam: 20, seal: 10, safe: 30, rage: 30, hazard: 10 } as Record<CoopHitBy, number>,
         laserEvery: [9_000, 12_000], laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
         threatEvery: 6_000, threatCount: 2, threatSpeed: 160, phase3Mult: 0.85,
         crystalHits: [6, 9], crystalSec: 15, slamEvery: 11_000, safeEvery: 22_000, safeCount: 2, mapEvery: 20_000, orbMult: 1.1, bulletEveryMs: 1_600, bulletSpeed: 220,
       },
       normal: {
+        hurt: { bullet: 10, wall: 10, threat: 20, beam: 25, laser: 30, slam: 30, seal: 20, safe: 40, rage: 50, hazard: 20 } as Record<CoopHitBy, number>,
         laserEvery: [7_000, 10_000], laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
         threatEvery: 5_000, threatCount: 3, threatSpeed: 200, phase3Mult: 0.75,
         crystalHits: [8, 12], crystalSec: 12, slamEvery: 9_000, safeEvery: 18_000, safeCount: 2, mapEvery: 16_000, orbMult: 1, bulletEveryMs: 1_200, bulletSpeed: 260,
       },
       hard: {
+        hurt: { bullet: 15, wall: 15, threat: 25, beam: 30, laser: 40, slam: 40, seal: 30, safe: 50, rage: 70, hazard: 30 } as Record<CoopHitBy, number>,
         laserEvery: [5_000, 7_500], laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
         threatEvery: 4_000, threatCount: 4, threatSpeed: 250, phase3Mult: 0.65,
         crystalHits: [10, 15], crystalSec: 10, slamEvery: 7_000, safeEvery: 14_000, safeCount: 1, mapEvery: 12_000, orbMult: 0.9, bulletEveryMs: 950, bulletSpeed: 300,
       },
       expert: {
+        hurt: { bullet: 20, wall: 20, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity, hazard: 40 } as Record<CoopHitBy, number>,
         laserEvery: [3_800, 5_800], laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
         threatEvery: 3_200, threatCount: 5, threatSpeed: 300, phase3Mult: 0.55,
         crystalHits: [13, 19], crystalSec: 8, slamEvery: 5_500, safeEvery: 11_000, safeCount: 1, mapEvery: 9_000, orbMult: 0.8, bulletEveryMs: 750, bulletSpeed: 340,
@@ -697,8 +711,8 @@ export interface PlayerState {
   /** 서바이벌: 탈락한 서버 시각 (0 = 살아 있음), 최종 순위 (0 = 아직) */
   outAt: number;
   outRank: number;
-  /** 협력전: 남은 생명, 맞은 뒤 무적이 끝나는 서버 시각 */
-  lives: number;
+  /** 협력전: 남은 체력, 맞은 뒤 무적이 끝나는 서버 시각 */
+  hp: number;
   immuneUntil: number;
   /** 스택형 증강: 지금 쌓인 칸 (게임 끝까지) */
   stacks: Partial<Record<StackId, number>>;
@@ -822,7 +836,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
-    pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, lives: 0, immuneUntil: 0, stacks: {}, autoAt: {},
+    pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
   };
 }
 
@@ -831,7 +845,7 @@ export function resetForRound(p: PlayerState) {
   p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false; p.rankReach = 0;
   p.pausesLeft = RULES.pause.perGame;
   p.stacks = {}; p.autoAt = {};
-  p.outAt = 0; p.outRank = 0; p.lives = 0; p.immuneUntil = 0;
+  p.outAt = 0; p.outRank = 0; p.hp = 0; p.immuneUntil = 0;
 }
 
 /** 능력(또는 저주)을 고른 직후 처리 */

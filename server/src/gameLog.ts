@@ -41,7 +41,7 @@ export function gameRecord(g: GameInfo) {
       bot: p.bot,
       color: p.color,
       ...(rules.team ? { team: p.team } : {}),
-      ...(g.coop && !p.bot ? { lives: p.lives, outAt: p.outAt ? Math.max(0, p.outAt - (g.startAt ?? 0)) : 0 } : {}),
+      ...(g.coop && !p.bot ? { hp: p.hp, outAt: p.outAt ? Math.max(0, p.outAt - (g.startAt ?? 0)) : 0 } : {}),
       score: p.score,
       picks: (p.picks ?? []).map((x) => `${x.id}:${x.tier}`),
       stats: p.stats,

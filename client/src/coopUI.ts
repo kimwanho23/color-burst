@@ -29,9 +29,18 @@ export function renderCoopHud(stage: HTMLElement, s: CoopState | null, now = Dat
     <div class="ch-bar"><i style="width:${pct}%"></i><s style="left:${a * 100}%"></s><s style="left:${b * 100}%"></s></div>`;
 }
 
-/** 점수판 칩에 붙이는 하트 */
-export const heartsHtml = (p: PlayerState) =>
-  p.bot ? '' : `<span class="hearts" aria-label="생명 ${p.lives}">${p.outAt ? '탈락' : Array.from({ length: p.lives }, () => icon(UI.heart, 12)).join('')}</span>`;
+/** 체력 막대: 칸 안은 hp/hpMax 비율, 낮으면 붉게 */
+const hpFill = (hp: number) => `<i style="width:${Math.max(0, Math.min(100, (hp / RULES.coop.hpMax) * 100))}%"></i>`;
+const hpLow = (hp: number) => hp <= RULES.coop.hpMax * 0.3;
+
+/** 점수판 칩에 붙이는 작은 체력 막대 + 숫자 */
+export const hpBarHtml = (p: PlayerState) =>
+  p.bot ? '' : p.outAt ? '<span class="hpbar out" aria-label="탈락">탈락</span>'
+    : `<span class="hpbar${hpLow(p.hp) ? ' low' : ''}" aria-label="체력 ${p.hp}"><span class="hb-track">${hpFill(p.hp)}</span><b>${p.hp}</b></span>`;
+
+/** 아래 줄(피버 자리)의 내 체력 막대 (크게) */
+export const myHpHtml = (p: PlayerState | undefined) =>
+  !p || p.bot ? '' : `<span class="hb-label">${icon(UI.heart, 16)}<span>체력</span></span><span class="hb-track">${hpFill(p.outAt ? 0 : p.hp)}</span><b>${p.outAt ? '탈락' : p.hp}</b>`;
 
 export interface CoopRow { id: string; name: string; dmg: number; pct: number; burstDmg: number; crystals: number; threats: number; top: boolean }
 
@@ -57,17 +66,17 @@ export function coopResultHtml(r: CoopResult) {
   const breaks = coopBreaksText(r.breaks);
   return `<div class="coopres ${r.win ? 'win' : 'lose'}">
     ${stars}
-    <p>${r.win ? `${Math.floor(sec / 60)}분 ${sec % 60}초 만에 처치` : `보스 체력 ${r.bossHpPct}% 남음 · ${r.phase}단계`}</p>
+    <p>${r.win ? `${Math.floor(sec / 60)}분 ${sec % 60}초 만에 처치` : `${r.reason === 'crystal' ? '수정 구간 실패 · ' : ''}보스 체력 ${r.bossHpPct}% 남음 · ${r.phase}단계`}</p>
     ${breaks.length ? `<p class="cr-breaks">${breaks.join(' · ')}</p>` : ''}
   </div>`;
 }
 
-/** 결과 화면 기여도: 사람마다 가한 대미지(큰 숫자)와 %막대, 작은 글씨로 큰 피해 대미지·수정·추적 원·생명 */
+/** 결과 화면 기여도: 사람마다 가한 대미지(큰 숫자)와 %막대, 작은 글씨로 큰 피해 대미지·수정·추적 원·체력 */
 export function coopRankHtml(r: CoopResult, players: readonly PlayerState[], myId: string, startAt: number, swatch: (p: PlayerState) => string) {
   const byId = new Map(players.map((p) => [p.id, p]));
   return coopResultRows(r, players).map((row, i) => {
     const p = byId.get(row.id)!;
-    const life = p.bot ? '' : p.outAt ? ` · ${Math.max(0, Math.round((p.outAt - startAt) / 1000))}초에 탈락` : ` · 생명 ${p.lives}`;
+    const life = p.bot ? '' : p.outAt ? ` · ${Math.max(0, Math.round((p.outAt - startAt) / 1000))}초에 탈락` : ` · 체력 ${p.hp}`;
     return `<div class="coopdmg${row.id === myId ? ' me' : ''}">
       <span class="pos">${i + 1}</span>${swatch(p)}
       <span class="who"><span>${esc(row.name)}${row.id === myId ? ' (나)' : ''}${row.top ? ' <em class="cd-top">최다 대미지</em>' : ''}</span>

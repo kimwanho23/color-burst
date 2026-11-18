@@ -27,8 +27,11 @@ export interface CoopResult {
   maxHp: number; players: Record<string, CoopPlayerResult>;
   /** 보호막마다 수정을 다 깨는 데 걸린 ms (처음 나온 때부터)와 그동안 분노 횟수 */
   breaks: { ms: number; rages: number }[];
+  /** 진 이유: 수정 구간 실패(엑스퍼트 분노) / 모두 탈락 / 시간 끝 */
+  reason?: 'crystal' | 'wipe' | 'time';
 }
-export type CoopHitBy = 'laser' | 'hazard' | 'threat' | 'slam' | 'safe' | 'rage';
+/** 'hazard'(아케이드 맵 패턴)는 협력전 맵 패턴을 없앨 때 함께 지운다 */
+export type CoopHitBy = 'bullet' | 'wall' | 'threat' | 'beam' | 'laser' | 'slam' | 'seal' | 'safe' | 'rage' | 'hazard';
 import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';
@@ -241,7 +244,7 @@ export interface ServerToClient {
   /** 협력전: 단계·체력·카드가 바뀜 */
   'coop:state': (d: CoopState) => void;
   /** 협력전: 누가 무엇에 맞아 생명이 줄었는지 (circleId: 놓친 공격 원) */
-  'coop:hit': (d: { playerId: string; by: CoopHitBy; lives: number; immuneUntil: number; circleId?: number }) => void;
+  'coop:hit': (d: { playerId: string; by: CoopHitBy; hp: number; immuneUntil: number; circleId?: number }) => void;
   /** 협력전: 내려찍기 경고 (사람마다) */
   'coop:slam': (d: Slam[]) => void;
   /** 협력전: 안전지대 경고 (끝나면 null) */

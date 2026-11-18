@@ -12,7 +12,7 @@ import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type Scor
 import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
-import { coopResultHtml, heartsHtml, renderCoopHud } from './coopUI.ts';
+import { coopResultHtml, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, abilityIcon, icon, itemIcon } from './icons.ts';
 import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop } from './effectsUI.ts';
@@ -622,17 +622,22 @@ socket.on('coop:state', (s) => {
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
   coopState = s; coopSlams = s.slams; coopSafe = s.safe; renderCoop();
 });
-socket.on('coop:hit', ({ playerId, by, lives, circleId }) => {
+socket.on('coop:hit', ({ playerId, by, hp, circleId }) => {
   const p = players.find((x) => x.id === playerId);
-  if (p) { p.lives = lives; renderScores(); }
+  const was = p?.hp ?? hp;
+  if (p) { p.hp = hp; renderScores(); renderMyHp(playerId === myId()); }
   if (circleId !== undefined) circles.delete(circleId);
-  const what = by === 'laser' ? '레이저' : by === 'hazard' ? '장판' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : '추적 원';
+  const what = by === 'laser' || by === 'beam' ? '레이저' : by === 'hazard' ? '장판' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '수정 구간 실패' : by === 'bullet' || by === 'wall' ? '탄막' : '추적 원';
+  const lost = Math.max(0, was - hp);
   if (playerId === myId()) {
     const c = gameCursor.pos ?? { x: CX, y: CY };
-    renderer.text(c.x, c.y - 70, lives > 0 ? `생명 −1 (${lives}개 남음)` : '생명이 다 떨어졌어요', '#ff5d73', 1.2);
+    renderer.text(c.x, c.y - 70, hp > 0 ? `체력 −${lost}` : '체력이 다 떨어졌어요', '#ff5d73', 1.2);
     renderer.shakeFor(0.25, 8);
+    const st = $('stage');
+    st.classList.remove('hurt'); void st.offsetWidth; st.classList.add('hurt');
+    setTimeout(() => st.classList.remove('hurt'), 300);
     if (by === 'threat') sfx.comboBroken();
-  } else if (p) pushFeed($('feed'), icon(UI.heart, 18), `${p.name}: ${what}에 맞아 생명 −1`, COLORS[p.color].hex);
+  } else if (p) pushFeed($('feed'), icon(UI.heart, 18), `${p.name}: ${what}에 맞아 체력 −${lost}`, COLORS[p.color].hex);
 });
 socket.on('coop:slam', (d) => { coopSlams = d.length ? [...coopSlams.filter((x) => x.at > serverNow()), ...d] : []; if (d.some((x) => x.owner === myId())) sfx.patternWarn(); });
 socket.on('coop:crystal', ({ id, hp, maxHp }) => {
@@ -1207,13 +1212,14 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
+  renderMyHp();
   // 팀전: 팀별로 묶고 팀 합계를 앞에. 대기실에서는 점수판이 숨겨져 있으니 합계 칸을 빼서 한 줄로 둔다
   // (합계 칸으로 두 줄이 되면 판 높이·앱 폭이 줄어 게임 설정 창 크기가 바뀌었다)
   const team = !!room?.rules.team && players.length > 0 && !document.body.classList.contains('lobby-on');
   const list = team ? [...players].sort((a, b) => a.team - b.team) : players;
   const sums = team ? ([0, 1] as const).map((t) => `<div class="teamsum t${t}"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${players.filter((p) => p.team === t).reduce((a, p) => a + p.score, 0)}</span></div>`).join('') : '';
   const warnId = outWarn && serverNow() < outWarn.at ? outWarn.id : null;
-  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}${p.outAt ? ' out' : ''}${p.id === warnId ? ' danger' : ''}" data-id="${p.id}"${p.outAt ? ` data-rank="${p.outRank}등"` : ''}>${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${playing && rules.coop ? heartsHtml(p) : ''}${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
+  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}${p.outAt ? ' out' : ''}${p.id === warnId ? ' danger' : ''}" data-id="${p.id}"${p.outAt ? ` data-rank="${p.outRank}등"` : ''}>${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${playing && rules.coop ? hpBarHtml(p) : ''}${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
   renderChipPop();
 }
 
@@ -1252,6 +1258,14 @@ $('scores').addEventListener('pointerleave', () => { if (!popPinned && popFor) {
 document.addEventListener('click', (e) => { if (popPinned && !chipPop.contains(e.target as Node)) closeChipPop(); });
 
 let lastBuffSec = 0;
+/** 아래 줄 내 체력 막대 (협력전). hit이면 막대가 흔들린다 */
+function renderMyHp(hit = false) {
+  const el = $('myhp');
+  const m = playing && rules.coop ? me() : undefined;
+  el.innerHTML = myHpHtml(m);
+  el.classList.toggle('low', !!m && m.hp <= RULES.coop.hpMax * 0.3);
+  if (hit) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
+}
 let lastCoopHud = 0;
 function updateHud(now: number) {
   const m = me();

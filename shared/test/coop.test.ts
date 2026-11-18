@@ -1,7 +1,7 @@
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, immuneMs, inSafe, isGuarded, isHit, isOut,
+  DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, inSafe, isGuarded, isHit, isOut,
   makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, toGameRules, zoneOf,
   type Circle, type CoopHitBy, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones,
 } from '../src/index.ts';
@@ -13,6 +13,7 @@ mock.method(console, 'log', () => {});
 const sent: { ev: string; d: unknown }[] = [];
 const fakeIo = () => ({ to: () => ({ emit(ev: string, d?: unknown) { sent.push({ ev, d }); } }), sockets: { sockets: new Map() } }) as never;
 const C = RULES.coop;
+const N = C.levels.normal.hurt;
 
 /** 고정 난수 (같은 순서로 반복) */
 const seq = (...xs: number[]) => { let i = 0; return () => xs[i++ % xs.length]!; };
@@ -76,10 +77,6 @@ test('coopStars: 진 판 0, 모두 생존·60초 남음 3, 절반 생존 2, 그 
   assert.equal(coopStars(true, 1, 60_000), 3);
   assert.equal(coopStars(true, 0.5, 0), 2);
   assert.equal(coopStars(true, 0.25, 0), 1);
-});
-
-test('immuneMs: 기본 2000', () => {
-  assert.equal(immuneMs(), 2000);
 });
 
 test('crystalHits: 난이도·두 번째 보호막', () => {
@@ -214,11 +211,11 @@ type CRoom = {
   updateLaser(now: number): void; tick(): void; clickLog: Map<string, number[]>;
 };
 
-function coopRoom(humans = 1, bots = 4 - humans) {
+function coopRoom(humans = 1, bots = 4 - humans, level: 'easy' | 'normal' | 'hard' | 'expert' = 'normal') {
   const room = new Room(fakeIo(), 'COOP', () => {});
   const ids: string[] = [];
   for (let i = 0; i < humans; i++) ids.push((room.join(`s${i}`, `k${i}`, `P${i}`) as { id: string }).id);
-  room.setRules(ids[0]!, { rules: { coop: true } });
+  room.setRules(ids[0]!, { rules: { coop: true, coopLevel: level } });
   for (let i = 0; i < bots; i++) room.addBot(ids[0]!); // 봇을 넣으면 준비가 풀리므로 먼저
   for (const id of ids.slice(1)) room.setReady(id, true);
   sent.length = 0;
@@ -243,14 +240,14 @@ function breakMine(r: CRoom, p: PlayerState, now: number) {
   while (r.circles.has(c.id)) r.coop.hitCrystal(p, c, now);
 }
 
-test('coop 시작: 레이드 보스 1마리, 사람 생명 3·봇 0, 판 180초', () => {
+test('coop 시작: 레이드 보스 1마리, 사람 체력 100·봇 0, 판 180초', () => {
   const { room, r, me } = coopRoom();
   assert.equal(room.players.length, 4);
   const raids = [...r.circles.values()].filter((c) => c.boss === 'raid');
   assert.equal(raids.length, 1);
   assert.equal(raids[0]!.maxHp, raidMaxHp(1, 3));
-  assert.equal(me.lives, C.lives);
-  assert.ok(room.players.filter((p) => p.bot).every((p) => p.lives === 0));
+  assert.equal(me.hp, C.hpMax);
+  assert.ok(room.players.filter((p) => p.bot).every((p) => p.hp === 0));
   assert.equal(r.G.roundMs, C.timeSec * 1000);
   room.destroy();
 });
@@ -370,7 +367,7 @@ test('coop 큰 피해 구간에도 단계 경계에서 멈추고 보호막', () 
   room.destroy(); room2.destroy();
 });
 
-test('coop 분노: 제한 시간 안에 못 깨면 경고 뒤 모두 생명 −1, 남은 수정 횟수 처음으로', () => {
+test('coop 분노: 제한 시간 안에 못 깨면 경고 뒤 모두 체력 −(노말 분노), 남은 수정 횟수 처음으로', () => {
   const { room, r, me } = coopRoom(2, 0);
   const now = r.startAt + 5000;
   toShield(r, me, now);
@@ -380,18 +377,19 @@ test('coop 분노: 제한 시간 안에 못 깨면 경고 뒤 모두 생명 −1
   r.coop.tick(end + 1);
   assert.ok(r.coop.state().rageAt > 0);
   r.coop.tick(end + 1 + C.rageWarnMs + 1);
-  assert.ok(room.players.filter((p) => !p.bot).every((p) => p.lives === 2));
+  assert.ok(room.players.filter((p) => !p.bot).every((p) => p.hp === C.hpMax - C.levels.normal.hurt.rage));
   assert.equal(c.hp, crystalHits('normal', 0));
   assert.equal(r.coop.result(end + 5000, r.startAt, false).breaks.length, 0, '아직 안 깨짐');
   room.destroy();
 });
 
-test('coop 보호막 중 주인이 탈락하면 그 수정은 깬 것으로', () => {
+test('수정 구간 중 탈락하면 그 사람 수정이 치워진다 (깬 것으로 침)', () => {
   const { room, r, me, ids } = coopRoom(2, 0);
   const other = room.players.find((p) => p.id === ids[1])!;
   const now = r.startAt + 5000;
   toShield(r, me, now);
-  for (let i = 0; i < 3; i++) r.coop.damage(other, 'laser', now + i * 3000);
+  other.hp = 1;
+  r.coop.damage(other, 'laser', now + 10);
   assert.ok(other.outAt > 0);
   assert.equal(crystals(r).filter((c) => c.target === other.id).length, 0);
   breakMine(r, me, now + 9000);
@@ -427,11 +425,11 @@ test('coop 내려찍기: 경고 원 안에 그대로 있으면 −1, 피하면 �
   assert.equal(slams.length, 2);
   r.cursors.set(other.id, { x: 900, y: 400, at: Date.now() + 1e9 }); // 피함
   r.coop.tick(slams[0]!.at + 1);
-  assert.deepEqual([me.lives, other.lives], [2, 3]);
+  assert.deepEqual([me.hp, other.hp], [100 - N.slam, 100]);
   room.destroy();
 });
 
-test('coop 안전지대: 발동 순간 밖이면 −1, 안이면 그대로', () => {
+test('coop 안전지대: 발동 순간 밖이면 −(노말 안전지대), 안이면 그대로', () => {
   const { room, r, me, ids } = coopRoom(2, 0);
   const other = room.players.find((p) => p.id === ids[1])!;
   r.coop.phase = 3;
@@ -445,8 +443,8 @@ test('coop 안전지대: 발동 순간 밖이면 −1, 안이면 그대로', () 
   r.cursors.set(me.id, { x: z.x, y: z.y, at: Date.now() + 1e9 });
   r.cursors.set(other.id, { x: 5, y: FIELD.h - 5, at: Date.now() + 1e9 });
   r.coop.tick(s.at + 1);
-  assert.equal(me.lives, 3);
-  assert.equal(other.lives, 2);
+  assert.equal(me.hp, 100);
+  assert.equal(other.hp, 100 - N.safe);
   room.destroy();
 });
 
@@ -480,7 +478,7 @@ test('coop 결과: 사람마다 대미지·큰 피해 대미지·수정·추적 
   room.destroy();
 });
 
-test('coop 생명: 레이저에 맞으면 −1과 스턴, 2초 동안 다시 안 줄어듦', () => {
+test('피격: 노말 레이저 −30, 무적 2초, 기절 1초', () => {
   const { room, r, me } = coopRoom();
   const shoot = (now: number) => {
     r.cursors.set(me.id, { x: 100, y: 100, at: now });
@@ -489,54 +487,127 @@ test('coop 생명: 레이저에 맞으면 −1과 스턴, 2초 동안 다시 안
   };
   const t0 = r.startAt + 5000;
   shoot(t0);
-  assert.equal(me.lives, 2);
-  assert.ok(me.stunUntil > t0);
-  shoot(t0 + 1500);
-  assert.equal(me.lives, 2);
-  shoot(t0 + C.immuneMs + 100);
-  assert.equal(me.lives, 1);
+  assert.equal(me.hp, C.hpMax - 30);
+  assert.equal(N.laser, 30);
+  assert.equal(me.immuneUntil, t0 + C.hurtFx.laser.immuneMs);
+  assert.equal(C.hurtFx.laser.immuneMs, 2000);
+  assert.equal(me.stunUntil, t0 + 1000);
   room.destroy();
 });
 
-test('coop 생명: 겹친 피격은 한 번', () => {
+test('피격: 무적 중이면 깎이지 않음', () => {
   const { room, r, me } = coopRoom();
   const now = r.startAt + 5000;
   assert.equal(r.coop.damage(me, 'laser', now), true);
-  r.coop.threatEscaped(makeThreat(999, now, { x: 0, y: 0 }, 0, 100, me.id), now);
-  assert.equal(r.coop.damage(me, 'hazard', now), false);
-  assert.equal(me.lives, 2);
+  assert.equal(r.coop.damage(me, 'slam', now + 1500), false);
+  assert.equal(me.hp, C.hpMax - N.laser);
+  assert.equal(r.coop.damage(me, 'slam', now + 2000), true);
+  assert.equal(me.hp, C.hpMax - N.laser - N.slam);
   room.destroy();
 });
 
-test('coop 추적 원: 놓치면 표적만 −1, 봇·탈락한 표적이면 그대로', () => {
-  const { room, r, me } = coopRoom(2);
-  const other = room.players.find((p) => !p.bot && p.id !== me.id)!;
-  const bot = room.players.find((p) => p.bot)!;
+test('피격: 종류별 무적·기절 (탄 0.6초 기절 없음, 추적 1초, 분노 2초 기절 없음)', () => {
+  const { room, r, me } = coopRoom();
   const now = r.startAt + 5000;
-  r.coop.threatEscaped(makeThreat(900, now, { x: 0, y: 0 }, 0, 100, me.id), now);
-  assert.deepEqual([me.lives, other.lives], [2, 3]);
-  r.coop.threatEscaped(makeThreat(901, now + 3000, { x: 0, y: 0 }, 0, 100, bot.id), now + 3000);
-  assert.equal(bot.lives, 0);
-  other.outAt = 1;
-  const before = other.lives;
-  r.coop.threatEscaped(makeThreat(902, now + 6000, { x: 0, y: 0 }, 0, 100, other.id), now + 6000);
-  assert.equal(other.lives, before);
+  r.coop.damage(me, 'bullet', now);
+  assert.deepEqual([me.hp, me.immuneUntil, me.stunUntil], [C.hpMax - N.bullet, now + 600, 0]);
+  r.coop.damage(me, 'threat', now + 600);
+  assert.deepEqual([me.hp, me.immuneUntil, me.stunUntil], [C.hpMax - N.bullet - N.threat, now + 1600, 0]);
+  r.coop.damage(me, 'rage', now + 1600);
+  assert.equal(me.immuneUntil, now + 3600);
+  assert.equal(me.stunUntil, 0);
+  r.coop.damage(me, 'seal', now + 3600);
+  assert.equal(me.stunUntil, now + 4600);
   room.destroy();
 });
 
-test('coop 탈락: 생명 0이면 원을 잡아도 피해 없음, 사람이 모두 탈락하면 패배로 끝', () => {
+test('피격: 체력 0이면 탈락, 모두 탈락이면 패배', () => {
   const { room, r, me, ids } = coopRoom(2);
   const other = room.players.find((p) => p.id === ids[1])!;
   const t = r.startAt + 5000;
-  for (let i = 0; i < 3; i++) r.coop.damage(me, 'laser', t + i * 3000);
+  me.hp = 20;
+  r.coop.damage(me, 'laser', t);
+  assert.equal(me.hp, 0);
   assert.ok(me.outAt > 0);
   assert.equal(room.phase, 'play');
   const hp = r.coop.boss.hp;
   r.coop.catchOrb(me, orbOf(me.color, t + 10_000), t + 10_000);
   assert.equal(r.coop.boss.hp, hp);
-  for (let i = 0; i < 3; i++) r.coop.damage(other, 'laser', t + 20_000 + i * 3000);
+  other.hp = 30;
+  r.coop.damage(other, 'slam', t + 20_000);
   assert.equal(room.phase, 'lobby');
   assert.equal(overOf()?.coop?.win, false);
+  assert.equal(overOf()?.coop?.reason, 'wipe');
+  room.destroy();
+});
+
+test('회복: 큰 피해 구간 시작에 +25(최대 100), 엑스퍼트는 회복 없음', () => {
+  const { room, r, me, ids } = coopRoom(2, 0);
+  const other = room.players.find((p) => p.id === ids[1])!;
+  me.hp = 50; other.hp = 90;
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  breakMine(r, me, now);
+  breakMine(r, other, now);
+  assert.equal(r.coop.inBurst(now + 1), true);
+  assert.deepEqual([me.hp, other.hp], [50 + C.heal.burstStart, C.hpMax]);
+  room.destroy();
+  const ex = coopRoom(1, 0, 'expert');
+  ex.me.hp = 50;
+  toShield(ex.r, ex.me, ex.r.startAt + 5000);
+  breakMine(ex.r, ex.me, ex.r.startAt + 5000);
+  assert.equal(ex.me.hp, 50);
+  ex.room.destroy();
+});
+
+test('엑스퍼트 분노: 바로 패배, reason crystal', () => {
+  const { room, r, me } = coopRoom(1, 0, 'expert');
+  assert.equal(C.levels.expert.hurt.rage, Infinity);
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  const end = now + C.levels.expert.crystalSec * 1000;
+  r.coop.tick(end + 1);
+  assert.equal(room.phase, 'play');
+  r.coop.tick(end + 1 + C.rageWarnMs + 1);
+  assert.equal(room.phase, 'lobby');
+  assert.equal(overOf()?.coop?.win, false);
+  assert.equal(overOf()?.coop?.reason, 'crystal');
+  assert.equal(me.hp, C.hpMax);
+  room.destroy();
+});
+
+test('난이도 표: 모든 단계에 모든 공격의 피해, 분노만 엑스퍼트에서 Infinity', () => {
+  const by = Object.keys(C.hurtFx);
+  for (const k of ['easy', 'normal', 'hard', 'expert'] as const) {
+    assert.deepEqual(Object.keys(C.levels[k].hurt).sort(), [...by].sort());
+    for (const b of by) assert.ok(C.levels[k].hurt[b as CoopHitBy] > 0);
+    assert.equal(Number.isFinite(C.levels[k].hurt.rage), k !== 'expert');
+  }
+});
+
+test('coop 피격: 겹친 피격은 한 번', () => {
+  const { room, r, me } = coopRoom();
+  const now = r.startAt + 5000;
+  assert.equal(r.coop.damage(me, 'laser', now), true);
+  r.coop.threatEscaped(makeThreat(999, now, { x: 0, y: 0 }, 0, 100, me.id), now);
+  assert.equal(r.coop.damage(me, 'hazard', now), false);
+  assert.equal(me.hp, C.hpMax - N.laser);
+  room.destroy();
+});
+
+test('coop 추적 원: 놓치면 표적만 −(추적), 봇·탈락한 표적이면 그대로', () => {
+  const { room, r, me } = coopRoom(2);
+  const other = room.players.find((p) => !p.bot && p.id !== me.id)!;
+  const bot = room.players.find((p) => p.bot)!;
+  const now = r.startAt + 5000;
+  r.coop.threatEscaped(makeThreat(900, now, { x: 0, y: 0 }, 0, 100, me.id), now);
+  assert.deepEqual([me.hp, other.hp], [C.hpMax - N.threat, C.hpMax]);
+  r.coop.threatEscaped(makeThreat(901, now + 3000, { x: 0, y: 0 }, 0, 100, bot.id), now + 3000);
+  assert.equal(bot.hp, 0);
+  other.outAt = 1;
+  const before = other.hp;
+  r.coop.threatEscaped(makeThreat(902, now + 6000, { x: 0, y: 0 }, 0, 100, other.id), now + 6000);
+  assert.equal(other.hp, before);
   room.destroy();
 });
 
