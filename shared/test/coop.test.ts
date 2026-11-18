@@ -996,6 +996,23 @@ test('reportHurt: 무적 중·탈락·봇·끊김이면 무시', () => {
   room.destroy();
 });
 
+test('여럿: 한 사람이 탈락해도 다른 사람이 살아 있으면 판이 계속되고, 탈락한 사람의 coop:hurt는 무시', () => {
+  const { room, r, me, ids } = coopRoom(2, 0);
+  const b = room.players.find((p) => p.id === ids[1])!;
+  const { v } = firstVolley(r, r.startAt);
+  const t = liveAt(v, 0);
+  me.hp = N.bullet; // 한 방이면 탈락
+  assert.equal(r.coop.reportHurt(me, v.id, 0, t), true);
+  assert.equal(me.hp, 0);
+  assert.ok(me.outAt, '탈락');
+  assert.equal(overOf(), undefined, '다른 사람이 살아 있으니 판은 계속');
+  assert.equal(b.hp, C.hpMax);
+  assert.equal(r.coop.reportHurt(me, v.id, 1, t + C.hurtFx.bullet.immuneMs + 1), false, '탈락한 사람의 보고는 무시');
+  assert.equal(me.hp, 0);
+  assert.equal(overOf(), undefined);
+  room.destroy();
+});
+
 test('reportHurt: 없는 탄막·지워진 탄·발사 전 탄이면 무시', () => {
   const { room, r, me } = coopRoom(1, 0);
   const { v } = firstVolley(r, r.startAt);

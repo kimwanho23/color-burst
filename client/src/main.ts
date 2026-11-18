@@ -1424,6 +1424,11 @@ function frame() {
   const out = playing && !!me()?.outAt;
   $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView && !out);
   $('outBanner').hidden = !out;
+  if (out) {
+    const left = rules.coop ? players.filter((p) => !p.bot && !p.outAt).length : 0;
+    const txt = rules.coop ? `탈락 · 구경 중 · 남은 사람 ${left}명` : '탈락 · 구경 중';
+    if ($('outBanner').textContent !== txt) $('outBanner').textContent = txt;
+  }
   // 게임이 멈추거나(일시정지·증강 선택·라운드 끝·게임 끝) 감도를 1.0으로 되돌리면 잠금을 푼다
   if (locked() && (!aimLive() || !wantLock())) document.exitPointerLock();
   // 자석에 끌려오는 원은 화면 밖으로 나가도 잡힐 때까지 그린다
@@ -1464,7 +1469,7 @@ function frame() {
     blurred: !!m && now < m.blurUntil,
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
-    cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView && !blink
+    cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView && !blink && !out
       ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now, gameCursor.pos) : 0 }
       : null,
     lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),
