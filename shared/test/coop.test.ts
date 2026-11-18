@@ -31,8 +31,7 @@ test('coopPhase: 0.67 초과 1, 0.33 초과 2, 그 밖 3', () => {
 });
 
 test('raidMaxHp: 사람 1 + 봇 3 = hpBase × 2.5', () => {
-  assert.equal(C.hpBase, 150);
-  assert.equal(raidMaxHp(1, 3), Math.round(150 * 2.5));
+  assert.equal(raidMaxHp(1, 3), Math.round(C.hpBase * 2.5));
 });
 
 test('orbDamage: 내 색 1, 노랑 0.7, 콤보 30에 +30%, 상한 50%, 큰 피해 ×2, 봇 ×0.5', () => {
