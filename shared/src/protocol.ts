@@ -271,7 +271,7 @@ export interface ServerToClient {
   /** 협력전: 단계·체력·카드가 바뀜 */
   'coop:state': (d: CoopState) => void;
   /** 협력전: 누가 무엇에 맞아 체력이 줄었는지 (circleId: 놓친 공격 원) */
-  'coop:hit': (d: { playerId: string; by: CoopHitBy; hp: number; dmg: number; immuneUntil: number; circleId?: number; blocked?: true }) => void;
+  'coop:hit': (d: { playerId: string; by: CoopHitBy; hp: number; dmg: number; immuneUntil: number; circleId?: number; blocked?: true; barrier?: true }) => void;
   /** 협력전: 내려찍기 경고 (사람마다) */
   'coop:slam': (d: Slam[]) => void;
   /** 협력전: 안전지대 경고 (끝나면 null) */
@@ -344,6 +344,8 @@ export interface ClientToServer {
   /** 협력전: 내 커서가 탄에 닿음 (화면 판정, 서버가 확인하고 깎는다) */
   'coop:hurt': (d: { volleyId: number; shot: number }) => void;
   'coop:special': () => void;
+  /** 협력전: 우클릭 보호막 켜기 (서버가 횟수·조건을 확인한다) */
+  'coop:barrier': () => void;
   /** 협력전: 투표할 카드 (다시 고르면 표가 옮겨 간다) */
   /** 서버 시각 맞추기 */
   'time:ping': (ack: (serverNow: number) => void) => void;

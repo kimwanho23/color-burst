@@ -24,10 +24,10 @@ export const COOP_ITEMS: Record<CoopItemId, { name: string; desc: string }> = {
   missile: { name: '미사일 세례', desc: `보스에게 미사일 ${I.missiles}발` },
 };
 
-/** 사람마다 걸린 아이템 효과 (서버 시각). power 0~powerMax, chain 남은 원 수 */
-export interface CoopFx { guardUntil: number; fireUntil: number; power: number; chain: number }
+/** 사람마다 걸린 아이템 효과 (서버 시각). power 0~powerMax, chain 남은 원 수. barrierUntil·barrierLeft 우클릭 보호막 종료 시각·남은 횟수 */
+export interface CoopFx { guardUntil: number; fireUntil: number; power: number; chain: number; barrierUntil: number; barrierLeft: number }
 
-export const newCoopFx = (): CoopFx => ({ guardUntil: 0, fireUntil: 0, power: 0, chain: 0 });
+export const newCoopFx = (): CoopFx => ({ guardUntil: 0, fireUntil: 0, power: 0, chain: 0, barrierUntil: 0, barrierLeft: 0 });
 
 /** 아이템 종류: 가중치대로 (엑스퍼트는 응급 치료·함께 치료 제외) */
 export function rollCoopItem(level: CoopLevel, rand: () => number): CoopItemId {

@@ -108,7 +108,7 @@ export class CoopRun {
     for (const p of this.host.players()) {
       p.coopCharge = 0;
       p.hp = p.bot ? 0 : C.hpMax; p.immuneUntil = 0; this.stat(p.id);
-      if (p.bot) delete p.coopFx; else p.coopFx = newCoopFx();
+      if (p.bot) delete p.coopFx; else p.coopFx = { ...newCoopFx(), barrierLeft: C.barrier.uses[this.level] };
     }
     this.weak = null; this.missiles = []; this.boostUntil = 0;
     const ps = this.host.players();
@@ -149,6 +149,17 @@ export class CoopRun {
     this.specials.push({ by: p.id, kind: specialId(p.coopSpecial), from: { x: from.x, y: from.y }, at: now, hit: 0 });
     this.host.emitPlayers();
     this.host.emit('coop:state', this.state());
+    return true;
+  }
+
+  /** 우클릭 보호막 켜기: 조건과 횟수는 서버에서 확인한다. 켜져 있는 동안 다시 눌러도 횟수를 깎지 않는다 */
+  activateBarrier(p: PlayerState, now: number): boolean {
+    const fx = p.coopFx;
+    if (p.bot || p.outAt || !p.connected || p.hp <= 0 || now < p.stunUntil || !fx) return false;
+    if (fx.barrierLeft <= 0 || now < fx.barrierUntil) return false;
+    fx.barrierLeft--;
+    fx.barrierUntil = now + C.barrier.durationMs;
+    this.host.emitPlayers();
     return true;
   }
 
@@ -787,6 +798,11 @@ export class CoopRun {
   damage(p: PlayerState, by: CoopHitBy, now: number, circleId?: number): boolean {
     if (p.bot || p.outAt || (by !== 'crush' && now < p.immuneUntil) || p.hp <= 0) return false;
     const fx = C.hurtFx[by];
+    // 우클릭 보호막: 켜진 동안 피해·기절·무적 없이 막는다. 아이템 방어막은 소모하지 않는다. 압살·분노·큰 구체 놓침은 관통
+    if (by !== 'crush' && by !== 'rage' && by !== 'threat' && p.coopFx && now < p.coopFx.barrierUntil) {
+      this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, dmg: 0, immuneUntil: p.immuneUntil, blocked: true, barrier: true, ...(circleId !== undefined ? { circleId } : {}) });
+      return true;
+    }
     // 방어막 아이템: 한 번 막고 사라진다. 피해 없이 맞은 것처럼 무적을 건다 (기절 없음). 봉인·빔도 그 패턴에 맞은 것으로 친다
     if (by !== 'crush' && p.coopFx && now < p.coopFx.guardUntil) {
       p.coopFx.guardUntil = 0;
@@ -850,12 +866,16 @@ export class CoopRun {
     if (this.weak) this.weak.until += delta;
     for (const m of this.missiles) m.at += delta;
     if (this.boostUntil) this.boostUntil += delta;
+    let barrierShifted = false;
     for (const p of this.host.players()) {
       const fx = p.coopFx;
       if (!fx) continue;
       if (fx.guardUntil) fx.guardUntil += delta;
       if (fx.fireUntil) fx.fireUntil += delta;
+      if (fx.barrierUntil) { fx.barrierUntil += delta; barrierShifted = true; }
     }
+    // 화면의 보호막 구체가 일시정지 동안 줄지 않게 밀린 종료 시각을 다시 보낸다
+    if (barrierShifted) this.host.emitPlayers();
     if (this.slams.length) this.host.emit('coop:slam', this.slams);
     if (this.safe) this.host.emit('coop:safe', this.safe);
     if (this.seal) this.host.emit('coop:seal', this.seal);

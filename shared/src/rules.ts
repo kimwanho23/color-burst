@@ -67,6 +67,11 @@ export const RULES = {
         blades: { charge: 75, damage: 55, hits: 20, durationMs: 4_000 },
       },
     },
+    /** 우클릭 보호막: durationMs 동안 피해를 막는다. uses 판당 횟수. 압살·분노·큰 구체 놓침(crush·rage·threat)은 관통한다 */
+    barrier: {
+      durationMs: 1_500,
+      uses: { easy: 3, normal: 2, hard: 1, expert: 0 },
+    },
     /** 공격 종류별 맞은 뒤 무적(ms)·기절(ms). 기절 중에는 무적이 함께 걸려 있다 */
     hurtFx: {
       bullet: { immuneMs: 600, stunMs: 0 }, wall: { immuneMs: 600, stunMs: 0 }, threat: { immuneMs: 1_000, stunMs: 0 },

@@ -111,6 +111,7 @@ io.on('connection', (socket) => {
   socket.on('lobby:ready', (on) => { const s = here(); if (s) s.room.setReady(s.id, on === true); });
   socket.on('lobby:special', (kind) => { const s = here(); if (s) s.room.setSpecial(s.id, kind); });
   socket.on('coop:special', () => { const s = here(); if (s) s.room.coopSpecial(s.id); });
+  socket.on('coop:barrier', () => { const s = here(); if (s) s.room.coopBarrier(s.id); });
   socket.on('lobby:host', (to) => { const s = here(); if (s && typeof to === 'string') s.room.giveHost(s.id, to); });
   socket.on('lobby:kick', (to) => {
     const s = here();

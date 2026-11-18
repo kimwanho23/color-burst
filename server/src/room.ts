@@ -590,6 +590,13 @@ export class Room {
     if (p) this.coop.activateSpecial(p, now);
   }
 
+  coopBarrier(id: string) {
+    const now = Date.now();
+    if (!this.coop || this.phase !== 'play' || this.pausedAt || now < this.startAt) return;
+    const p = this.players.find((x) => x.id === id);
+    if (p) this.coop.activateBarrier(p, now);
+  }
+
   /** 방장을 뺀 사람 중 아직 준비하지 않은 수 (봇 제외) */
   notReady() {
     // 끊긴 사람은 시작할 때 어차피 빠지므로 세지 않는다
