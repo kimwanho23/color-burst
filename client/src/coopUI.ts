@@ -1,5 +1,5 @@
 /** 협력전 화면: 보스 체력 바(위쪽), 결과 요약 */
-import { RULES, type CoopResult, type CoopState, type PlayerState } from '@color-burst/shared';
+import { RULES, type CoopLevel, type CoopResult, type CoopState, type PlayerState } from '@color-burst/shared';
 import { UI, icon, coopSpecialIcon } from './icons.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId, specialRule } from '@color-burst/shared';
 
@@ -27,6 +27,26 @@ export function renderSpecialHud(stage: HTMLElement, p: PlayerState | undefined,
   el.classList.toggle('ready', ready && !shield && !active);
   const hint = p.outAt ? '관전 중' : active ? '공격 중' : shield ? '수정 파훼 후 사용 가능' : ready ? '<kbd>SPACE</kbd> 발동' : '원 획득 · 수정 타격 · 큰 원 제거로 충전';
   el.innerHTML = `<div><b>${coopSpecialIcon(id)}${a.name}</b><span>${Math.floor(charge)} / ${r.charge}</span></div><div class="special-meter"><i style="width:${Math.min(100, charge / r.charge * 100)}%"></i></div><small>${hint}</small>`;
+}
+
+/** 우클릭 보호막 남은 횟수. 터치면 누를 수 있는 버튼이 된다. 판당 횟수가 0인 난이도(엑스퍼트)·관전·봇이면 숨긴다 */
+export function renderBarrierHud(stage: HTMLElement, p: PlayerState | undefined, level: CoopLevel, touch: boolean, onUse: () => void) {
+  let el = document.getElementById('coopBarrierHud') as HTMLButtonElement | null;
+  if (!el) {
+    el = document.createElement('button'); el.id = 'coopBarrierHud'; el.type = 'button'; el.className = 'barrier-hud';
+    // 버튼을 누른 터치가 캔버스 클릭으로 이어지지 않게 막는다
+    el.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (!el!.disabled) onUse(); });
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    stage.appendChild(el);
+  }
+  const uses = RULES.coop.barrier.uses[level];
+  el.hidden = !p || p.bot || !!p.outAt || uses <= 0;
+  if (el.hidden || !p) return;
+  const left = p.coopFx?.barrierLeft ?? 0;
+  el.disabled = left <= 0;
+  el.classList.toggle('touch', touch);
+  el.innerHTML = `<span class="barrier-dot" aria-hidden="true"></span><b>보호막 ${left}</b><small>${touch ? '눌러서 사용' : '우클릭'}</small>`;
+  el.setAttribute('aria-label', `보호막 ${left}회 남음`);
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);

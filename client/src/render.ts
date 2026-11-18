@@ -99,7 +99,8 @@ export interface DrawState {
   /** 시간 정지 중 */
   frozen?: boolean;
   /** 게임 커서 (내 커서만): 스턴이면 회색, 넓은 손·자석 범위 */
-  cursor?: { x: number; y: number; stunned: boolean; reach: number; magnet: number } | null;
+  /** barrier: 우클릭 보호막 남은 비율 1→0 (0이면 꺼짐) */
+  cursor?: { x: number; y: number; stunned: boolean; reach: number; magnet: number; barrier?: number } | null;
   /** 레이저: at 전에는 경고선, at부터 fireMs 동안 빛줄기 */
   lasers?: { lines: { a: { x: number; y: number }; b: { x: number; y: number } }[]; at: number }[];
   /** 시야 방해: 종류·시드·끝나는 시각 */
@@ -755,10 +756,27 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** 우클릭 보호막: 커서를 감싸는 투명하고 연한 파란 구체. 남은 비율 0.25 아래에서 줄며 흐려진다 (원점은 커서) */
+  private drawBarrier(left: number, frameNow: number) {
+    const ctx = this.ctx;
+    const fade = Math.min(1, left / 0.25);
+    const wobble = reduceMotion ? 0 : Math.sin(frameNow / 120) * 1.5;
+    const r = (26 + 8 * fade) + wobble;
+    const g = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
+    g.addColorStop(0, `rgba(220, 240, 255, ${0.22 * fade})`);
+    g.addColorStop(0.7, `rgba(140, 200, 255, ${0.14 * fade})`);
+    g.addColorStop(1, `rgba(110, 180, 255, ${0.28 * fade})`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(170, 220, 255, ${0.65 * fade})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+  }
+
   private drawCursor(c: NonNullable<DrawState['cursor']>, frameNow: number) {
     const ctx = this.ctx;
     ctx.save();
     ctx.translate(c.x, c.y);
+    if (c.barrier && c.barrier > 0) this.drawBarrier(c.barrier, frameNow);
     if (c.reach > 0) { ctx.strokeStyle = 'rgba(127, 211, 255, .55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, c.reach + RULES.hitPad, 0, Math.PI * 2); ctx.stroke(); }
     if (c.magnet > 0) {
       ctx.setLineDash([6, 6]); ctx.strokeStyle = 'rgba(127, 211, 255, .45)'; ctx.lineWidth = 2;

@@ -13,7 +13,8 @@ import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
-import { renderSpecialHud, specialPickerHtml } from './coopUI.ts';
+import { renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
+import { pointerAction } from './pointer.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId } from '@color-burst/shared';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, abilityIcon, coopItemIcon, icon, itemIcon } from './icons.ts';
@@ -131,6 +132,16 @@ function setVolleys(vs: Volley[]) {
 function renderCoop() {
   renderCoopHud($('stage'), playing ? coopState : null, serverNow());
   renderSpecialHud($('stage'), playing && rules.coop ? me() : undefined, !!coopState?.shield, !!coopState?.specials?.some((a) => a.by === myId()));
+  renderBarrier();
+}
+/** 우클릭 보호막: 터치 기기면 화면 버튼으로 쓴다 */
+let usedTouch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+function useBarrier() {
+  if (!playing || !rules.coop || pausedView || serverNow() < startAt) return;
+  socket.emit('coop:barrier');
+}
+function renderBarrier() {
+  renderBarrierHud($('stage'), playing && rules.coop ? me() : undefined, coopState?.level ?? rules.coopLevel, usedTouch, useBarrier);
 }
 /** 일시정지 중이면 멈춘 순간의 서버 시각. 화면은 이 시각에 멈춰 있다 */
 let pausedView = 0;
@@ -704,13 +715,15 @@ function checkBulletHit(m: PlayerState | undefined, now: number, live: boolean) 
   const v = coopVolleys.find((x) => x.id === hit.volleyId);
   const C = RULES.coop, by = v?.wall ? 'wall' as const : 'bullet' as const;
   const dmg = C.levels[coopState?.level ?? rules.coopLevel].hurt[by];
+  // 우클릭 보호막: 서버가 막고 무적도 걸지 않는다. 화면도 무적을 걸지 않는다
+  if (m.coopFx && now < m.coopFx.barrierUntil) return;
   m.immuneUntil = now + C.hurtFx[by].immuneMs;
   // 방어막이 있으면 서버가 막는다: 맞은 연출은 서버 응답(막음!)으로만
   if (m.coopFx && now < m.coopFx.guardUntil) return;
   coopHurtShownAt = performance.now();
   myHurtFx(m.hp - dmg > 0 ? `체력 −${dmg}` : '체력이 다 떨어졌어요');
 }
-socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked }) => {
+socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked, barrier }) => {
   const p = players.find((x) => x.id === playerId);
   if (p) { p.hp = hp; renderScores(); renderMyHp(playerId === myId()); }
   if (circleId !== undefined) circles.delete(circleId);
@@ -718,7 +731,7 @@ socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked }) => {
   if (blocked) {
     const q = playerId === myId() ? gameCursor.pos : null;
     if (q) { renderer.text(q.x, q.y - 40, '막음!', '#5ce1e6', 1); sfx.bossBlock(); }
-    else if (p) pushFeed($('feed'), coopItemIcon('guard', 18), `${p.name}: 방어막으로 막음`, COLORS[p.color].hex);
+    else if (p) pushFeed($('feed'), coopItemIcon('guard', 18), `${p.name}: ${barrier ? '보호막' : '방어막'}으로 막음`, COLORS[p.color].hex);
     return;
   }
   const what = by === 'homing' ? '유도탄' : by === 'crush' ? '압살' : by === 'laser' ? '레이저' : by === 'beam' ? '회전 빔' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'wall' ? '내려오는 벽' : by === 'bullet' ? '탄막' : '추적 원';
@@ -982,8 +995,13 @@ socket.on('boss:escaped', ({ circleId }) => {
 socket.on('click:rejected', ({ circleId }) => pending.delete(circleId));
 socket.on('players', (p) => {
   const before = me()?.stacks ?? {};
+  const barrierBefore = me()?.coopFx?.barrierUntil ?? 0;
   players = p; renderScores(); if (picking()) showPick();
   const m = me();
+  // 서버가 보호막을 켜 주면(종료 시각이 새로 생기면) 켜는 소리. 일시정지 보정으로 밀린 것은 제외
+  const barrierNow = m?.coopFx?.barrierUntil ?? 0;
+  if (playing && rules.coop && !pausedView && barrierNow > barrierBefore && barrierBefore <= serverNow()) sfx.barrierOn();
+  renderBarrier();
   // 스택형 증강: 내 칸이 오르면 한 줄 알림
   for (const id of STACK_IDS) {
     const n = m?.stacks?.[id] ?? 0;
@@ -1266,7 +1284,13 @@ function tutorialClick(e: PointerEvent, tb: NonNullable<ReturnType<typeof curren
   if (v === 'send') socket.emit('game:click', { circleId: hit?.id ?? null, x, y });
   else hintBeat();
 }
+// 게임 화면에서는 브라우저 메뉴를 띄우지 않는다 (우클릭은 협력전 보호막)
+$('cv').addEventListener('contextmenu', (e) => e.preventDefault());
 $('cv').addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch' && !usedTouch) { usedTouch = true; renderBarrier(); }
+  // 우클릭은 클릭 판정이 아니다: 협력전이면 보호막, 아니면 아무 일도 하지 않는다
+  const act = pointerAction(e.pointerType, e.button);
+  if (act !== 'click') { if (act === 'barrier' && !popPinned && !room?.tutorial) useBarrier(); return; }
   // 고정한 빌드 카드가 열려 있으면 이 클릭은 닫기만 한다 (빈 곳 감점이 되지 않게)
   if (popPinned) { closeChipPop(); return; }
   // 튜토리얼 짚기·설명 장면: 받을 동작만 서버로, 그 밖에는 효과·소리 없이 짚은 곳만 다시 알린다
@@ -1413,6 +1437,7 @@ function renderMyHp(hit = false) {
   const m = playing && rules.coop ? me() : undefined;
   el.innerHTML = myHpHtml(m);
   renderSpecialHud($('stage'), m, !!coopState?.shield, !!coopState?.specials?.some((a) => a.by === myId()));
+  renderBarrier();
   el.classList.toggle('low', !!m && m.hp <= RULES.coop.hpMax * RULES.coop.hpLowRatio);
   if (hit) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 }
@@ -1524,7 +1549,8 @@ function frame() {
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
     cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView && !blink && !out
-      ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now, gameCursor.pos) : 0 }
+      ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now, gameCursor.pos) : 0,
+        barrier: rules.coop && m?.coopFx && now < m.coopFx.barrierUntil ? (m.coopFx.barrierUntil - now) / RULES.coop.barrier.durationMs : 0 }
       : null,
     lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),
     blind: live && m?.blind && (m.debuffs.blind ?? 0) > now ? { ...m.blind, until: m.debuffs.blind! } : null,

@@ -864,4 +864,14 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .special-meter i { display: block; height: 100%; background: var(--special-color); }
 .special-hud.ready { border-color: var(--special-color); }
 .special-hud.ready small { color: var(--special-color); font-weight: bold; }
+/* 우클릭 보호막 남은 횟수 (스페셜 게이지 오른쪽). 터치에서는 누르는 버튼 */
+.barrier-hud { position: absolute; bottom: 12px; left: calc(min(260px, 100% - 24px) + 20px); display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; border: 1px solid #6fa8dc; border-radius: 10px; background: rgba(10, 14, 31, .88); color: #cfe6ff; font: inherit; pointer-events: none; z-index: 3; }
+.barrier-hud[hidden] { display: none; }
+.barrier-hud b { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.barrier-hud small { font-size: 11px; color: #9fb8d6; }
+.barrier-dot { position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; background: rgba(140, 200, 255, .35); border: 1.5px solid rgba(160, 215, 255, .9); }
+.barrier-hud { padding-right: 26px; }
+.barrier-hud:disabled { opacity: .45; border-color: #555b77; }
+.barrier-hud.touch { pointer-events: auto; touch-action: none; min-width: 96px; min-height: 52px; cursor: pointer; }
+@media (max-width: 480px) { .barrier-hud { left: auto; right: 12px; } }
 @media (max-width: 480px) { .special-choice { padding: 8px; } .special-choice span { display: none; } .special-hud { padding: 6px 9px; width: 210px; } }

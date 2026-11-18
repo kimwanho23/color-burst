@@ -127,6 +127,8 @@ export const sfx = {
   bomb: () => { tone(120, 0.3, 'sawtooth', 0.12, 0, 0.4); tone(60, 0.35, 'square', 0.08, 0.02, 0.5); },
   clear: () => [262, 392, 523, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.06, i * 0.04)),
   freeze: () => tone(1800, 0.4, 'sine', 0.08, 0, 0.3),
+  /** 우클릭 보호막 켜짐: 부드럽게 올라가는 맑은 음 */
+  barrierOn: () => { tone(520, 0.28, 'sine', 0.1, 0, 2); tone(1040, 0.22, 'triangle', 0.05, 0.06, 1.6); },
   zone: () => tone(440, 0.25, 'triangle', 0.1, 0, 1.5),
   /** 레이저 예고·발사, 스턴, 자석 끌기 */
   laserWarn: () => [880, 880].forEach((f, i) => tone(f, 0.08, 'square', 0.05, i * 0.16)),
