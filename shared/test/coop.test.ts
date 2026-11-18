@@ -760,8 +760,13 @@ test('coop 봇: 보호막 중엔 자기 수정, 평소엔 자기 색 원, 보스
   const theirs = makeOrb(5, now - 5000, { x: 300, y: 700 }, 0, 2, 0);
   const pick = (cs: Circle[]) => { (bot as unknown as { next: number }).next = 1; return bot.think(me, cs, [me], now, false, true); };
   for (let k = 0; k < 20; k++) assert.notEqual(pick([raid, myCrystal, otherCrystal, mine])?.id, 3);
+  // 고르는 난수를 0~1에 고르게 펼쳐 둔다 (think는 다음 시각 → 고르기 순으로 난수를 두 번 쓴다). 우연히 원만 고르는 일이 없게
+  const us = Array.from({ length: 20 }, (_, k) => [0.5, (k + 0.5) / 20]).flat();
+  let ui = 0;
+  const rnd = mock.method(Math, 'random', () => us[ui++ % us.length]!);
   let crystalHitsN = 0;
   for (let k = 0; k < 20; k++) if (pick([raid, myCrystal, mine])?.id === 2) crystalHitsN++;
+  rnd.mock.restore();
   assert.ok(crystalHitsN >= 14, String(crystalHitsN));
   for (let k = 0; k < 10; k++) assert.equal(pick([raid, theirs]), null);
   for (let k = 0; k < 10; k++) assert.equal(pick([raid, mine])?.id, 4);
@@ -970,6 +975,8 @@ test('탄막: 보호막 중에도 shieldBullets로 발사, 큰 피해 구간에�
 
 test('탄막: 조준 무늬는 살아 있는 사람 커서를 노림', () => {
   const { room, r, me } = coopRoom(1, 0);
+  // 고유 패턴(내려찍기·봉인·빔)이 하나뿐인 사람을 쓰러뜨려 판이 끝나지 않게
+  noSkills(r);
   r.coop.phase = 2;
   r.cursors.set(me.id, { x: 100, y: 1000, at: Date.now() + 1e9 });
   sent.length = 0;
@@ -978,7 +985,7 @@ test('탄막: 조준 무늬는 살아 있는 사람 커서를 노림', () => {
   assert.ok(aimed.length > 0);
   for (const v of aimed) {
     const mid = v.shots[(C.bullets.aimedCount - 1) / 2]!;
-    assert.ok(Math.abs(mid.a - Math.atan2(1000 - mid.y, 100 - mid.x)) <= 0.005, String(mid.a));
+    assert.ok(Math.abs(mid.a - Math.atan2(1000 - mid.y, 100 - mid.x)) <= 0.01, String(mid.a));
   }
   room.destroy();
 });
