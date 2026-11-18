@@ -88,8 +88,6 @@ export interface RoomSnapshot {
   rules: RoomRules;
   /** 혼자 하기 방 (다른 사람 입장 불가, 빈 자리는 항상 봇) */
   solo: boolean;
-  /** 타임어택 방 (혼자·봇 없이, 규칙 고정) */
-  timeAttack: boolean;
   /** 튜토리얼 방 (혼자, 단계별 연습) */
   tutorial: boolean;
   /** 이 방에서의 누적 승수 (사람만) */
@@ -264,7 +262,7 @@ export interface ClientToServer {
   'room:create': (d: { name: string; key: string }, ack: Ack<{ code: string; you: string }>) => void;
   'room:join': (d: { code: string; name: string; key: string }, ack: Ack<{ code: string; you: string }>) => void;
   /** 혼자 하기: 봇과 하는 비공개 방 */
-  'room:solo': (d: { name: string; key: string; timeAttack?: boolean; tutorial?: boolean }, ack: Ack<{ code: string; you: string }>) => void;
+  'room:solo': (d: { name: string; key: string; tutorial?: boolean }, ack: Ack<{ code: string; you: string }>) => void;
   'room:leave': () => void;
   /** 튜토리얼: 설명 카드 넘기기 */
   'tutorial:next': () => void;

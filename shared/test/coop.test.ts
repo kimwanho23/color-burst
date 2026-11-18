@@ -584,7 +584,7 @@ test('gameRecord: 협력전이면 사람마다 대미지와 보호막 기록', (
   const now = r.startAt + 5000;
   r.coop.catchOrb(me, orbOf(me.color, now), now);
   const res = r.coop.result(now + 1000, r.startAt, false);
-  const rec = gameRecord({ rules: room.rules, ranking: room.players, roundMs: C.timeSec * 1000, solo: false, timeAttack: false, coop: res } as never) as { coopResult?: { damage: Record<string, number>; breaks: unknown[] } };
+  const rec = gameRecord({ rules: room.rules, ranking: room.players, roundMs: C.timeSec * 1000, solo: false, coop: res } as never) as { coopResult?: { damage: Record<string, number>; breaks: unknown[] } };
   assert.ok(rec.coopResult!.damage[me.id]! > 0);
   assert.deepEqual(rec.coopResult!.breaks, []);
   room.destroy();

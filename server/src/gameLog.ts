@@ -10,7 +10,6 @@ const VERSION: string = JSON.parse(readFileSync(new URL('../../package.json', im
 export interface GameInfo {
   rules: RoomRules;
   solo: boolean;
-  timeAttack: boolean;
   /** 실제 판 길이(ms). 서바이벌은 인원에 따라 다름 */
   roundMs: number;
   /** 순위 순서대로 */
@@ -26,7 +25,7 @@ export function gameRecord(g: GameInfo) {
   return {
     v: VERSION,
     at: (g.now ?? new Date()).toISOString(),
-    mode: g.timeAttack ? 'timeAttack' : rules.mode,
+    mode: rules.mode,
     team: rules.team,
     survival: rules.survival,
     coop: !!rules.coop,
@@ -34,7 +33,7 @@ export function gameRecord(g: GameInfo) {
     solo: g.solo,
     /** 아케이드는 라운드 하나 길이 × rounds */
     roundSec: Math.round(g.roundMs / 1000),
-    rounds: rules.mode === 'arcade' && !g.timeAttack ? ARCADE.rounds : 1,
+    rounds: rules.mode === 'arcade' ? ARCADE.rounds : 1,
     humans: g.ranking.filter((p) => !p.bot).length,
     bots: g.ranking.filter((p) => p.bot).length,
     players: g.ranking.map((p, i) => ({

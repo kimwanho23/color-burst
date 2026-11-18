@@ -10,7 +10,7 @@ test('판 기록: 순위·점수·잡은 원 수·고른 능력·출처, 이름�
   const a = newPlayer('id-a', '철수', 0), b = newPlayer('id-b', '봇 A', 1, true);
   a.score = 120; a.stats.hits = 40; a.stats.misses = 3; a.picks = [{ id: 'magnet', tier: 2 }];
   b.score = 80; b.stats.hits = 30;
-  const rec = gameRecord({ rules: { ...DEFAULT_RULES, mode: 'arcade' }, solo: false, timeAttack: false, roundMs: 30_000, ranking: [a, b], now: new Date(0) });
+  const rec = gameRecord({ rules: { ...DEFAULT_RULES, mode: 'arcade' }, solo: false, roundMs: 30_000, ranking: [a, b], now: new Date(0) });
   assert.equal(rec.mode, 'arcade');
   assert.equal(rec.rounds, ARCADE.rounds);
   assert.deepEqual([rec.humans, rec.bots, rec.roundSec], [1, 1, 30]);

@@ -6,7 +6,6 @@ import {
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
-import { taVerdict } from './timeAttack.ts';
 import { closeGuide, openGuide } from './guide.ts';
 import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
@@ -254,7 +253,9 @@ let slotPanel: { kind: 'color' } | { kind: 'member'; id: string } | null = null;
 function show(id: 'home' | 'lobby' | 'result' | null) {
   for (const s of ['home', 'lobby', 'result']) $(s).hidden = s !== id;
   // 대기실에서는 위쪽 점수판을 숨긴다 (자리 칸과 겹쳐 보여 헷갈림). 자리는 그대로 두어 판 위치가 흔들리지 않게
+  const wasLobby = document.body.classList.contains('lobby-on');
   document.body.classList.toggle('lobby-on', id === 'lobby');
+  if (wasLobby !== (id === 'lobby')) renderScores();
   // 대기실을 떠나면 규칙 창·자리 아래 칸도 닫는다
   if (id !== 'lobby') { $('rulesModal').hidden = true; $('scoreModal').hidden = true; $('linkBox').hidden = true; slotPanel = null; }
 }
@@ -270,28 +271,6 @@ const getName = () => {
   try { localStorage.setItem('cb-name', n); } catch {}
   return n;
 };
-/** 타임어택 최고 기록 (브라우저 저장, 못 읽으면 null) */
-const TA_KEY = 'cb-timeattack-best';
-function taBest(): number | null {
-  try { const v = Number(localStorage.getItem(TA_KEY)); return v > 0 ? v : null; } catch { return null; }
-}
-function renderTaBest() {
-  const b = taBest();
-  $('taBest').hidden = !b;
-  if (b) $('taBest').textContent = `타임어택 최고 기록 ${b}점`;
-}
-renderTaBest();
-/** 타임어택: 봇 없는 비공개 방을 만들고 바로 시작 */
-/** 혼자 하기 대기실에서 타임어택을 골랐는지 (화면에서만, [게임 시작]을 누르면 타임어택 방으로) */
-let taPick = false;
-function startTimeAttack() {
-  initAudio();
-  taPick = false;
-  socket.emit('room:solo', { name: getName(), key: KEY, timeAttack: true }, (r) => {
-    entered(r);
-    if (r.ok) socket.emit('game:start', (s) => { if (!s.ok) $('lobbyErr').textContent = s.error; });
-  });
-}
 const entered = (r: { ok: true; code: string; you: string } | { ok: false; error: string }) => {
   $('homeErr').textContent = r.ok ? '' : r.error;
   if (r.ok) { myPlayerId = r.you; store('cb-room', r.code); renderScores(); renderLobby(); }
@@ -354,7 +333,7 @@ socket.on('room:state', (s) => {
   if (!playing) rules = s.rules;
   if (!playing) players = s.players;
   $('roomTag').hidden = false;
-  $('roomTag').textContent = s.tutorial ? '연습' : s.timeAttack ? '타임어택' : s.solo ? '혼자 하기' : `방 ${s.code}`;
+  $('roomTag').textContent = s.tutorial ? '연습' : s.solo ? '혼자 하기' : `방 ${s.code}`;
   document.body.classList.toggle('tutorial', s.tutorial);
   history.replaceState(null, '', s.solo ? location.pathname : `#${s.code}`);
   renderScores();
@@ -377,17 +356,15 @@ const RULE_ICON = { timer: UI.timer, fever: UI.fever, speed: UI.speed, mark: UI.
 function renderLobby() {
   if (!room) return;
   const host = room.hostId === myId();
-  // 타임어택 방: 규칙은 고정이라 보여 주기만. 혼자 하기 대기실에서 타임어택을 고르면 고정 규칙 안내 + [타임어택 시작]
-  if (!room.solo || room.timeAttack) taPick = false;
-  $('lobbyName').textContent = room.timeAttack || taPick ? '타임어택' : room.solo ? '혼자 하기' : `방 ${room.code}`;
+  $('lobbyName').textContent = room.solo ? '혼자 하기' : `방 ${room.code}`;
   $('copyLinkBtn').hidden = room.solo;
   $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>나가기</span>`;
 
   renderSlots(host);
 
   const sum = rulesSummary(room.rules);
-  $('rulesTitle').textContent = taPick || room.timeAttack ? '타임어택 · 봇 없이 60초' : sum.title;
-  $('rulesChips').innerHTML = taPick || room.timeAttack ? '' : rulesChips(room.rules)
+  $('rulesTitle').textContent = sum.title;
+  $('rulesChips').innerHTML = rulesChips(room.rules)
     .map((c) => `<span class="rchip${c.off ? ' off' : ''}">${icon(RULE_ICON[c.icon], 15)}${c.text}</span>`).join('');
   $('rulesBtn').innerHTML = `${icon(UI.settings, 16)}<span>게임 설정</span>`;
   renderRulesBox();
@@ -398,7 +375,6 @@ function renderLobby() {
   const meP = room.players.find((p) => p.id === myId());
   $<HTMLButtonElement>('startBtn').hidden = !host;
   $<HTMLButtonElement>('startBtn').disabled = waiting > 0;
-  $('startBtn').textContent = taPick ? '타임어택 시작' : '게임 시작';
   const rb = $<HTMLButtonElement>('readyBtn');
   rb.hidden = host || room.solo;
   rb.textContent = meP?.ready ? '준비 취소' : '준비';
@@ -409,11 +385,9 @@ function renderLobby() {
 function renderRulesBox() {
   if (!room) return;
   const host = room.hostId === myId();
-  renderRules($('rulesBox'), room.rules, host && !room.timeAttack, {
+  renderRules($('rulesBox'), room.rules, host, {
     preset: (preset) => socket.emit('lobby:rules', { preset }),
-    // 클래식·아케이드를 다시 누르면 타임어택 선택이 풀린다
-    change: (patch) => { if (taPick && 'mode' in patch) { taPick = false; renderLobby(); } socket.emit('lobby:rules', { rules: patch }); },
-    ...(room.solo && !room.timeAttack ? { timeAttack: { selected: taPick, best: taBest(), select: () => { taPick = true; renderLobby(); } } } : {}),
+    change: (patch) => socket.emit('lobby:rules', { rules: patch }),
   });
 }
 const closeRulesModal = () => { $('rulesModal').hidden = true; };
@@ -426,9 +400,6 @@ $('rulesModal').addEventListener('click', (e) => { if (e.target === $('rulesModa
 /** 대기실 자리 4칸: 사람·봇·빈 칸. 팀전이면 팀 A 두 칸 | 팀 B 두 칸 */
 function renderSlots(host: boolean) {
   if (!room) return;
-  const hide = room.timeAttack || taPick;
-  $('slots').hidden = hide;
-  if (hide) { $('slotPanel').hidden = true; return; }
   const team = room.rules.team;
   const slots = lobbySlots(room.players, room.hostId, myId(), team);
   const cell = (s: Slot) => {
@@ -519,12 +490,11 @@ $('slotPanel').addEventListener('click', async (e) => {
 });
 $('readyBtn').onclick = () => { const m = room?.players.find((p) => p.id === myId()); socket.emit('lobby:ready', !m?.ready); };
 socket.on('room:kicked', () => { store('cb-room', null); resetToHome('방장이 내보냈어요'); });
-$('startBtn').onclick = () => { if (taPick) { startTimeAttack(); return; } initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
+$('startBtn').onclick = () => { initAudio(); socket.emit('game:start', (r) => { $('lobbyErr').textContent = r.ok ? '' : r.error; }); };
 function resetToHome(err = '') {
   closeConfirm();
   hideTutorial();
   document.body.classList.remove('tutorial');
-  taPick = false;
   room = null; players = []; playing = false; circles.clear(); pending.clear();
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
   pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;
@@ -587,7 +557,7 @@ socket.on('player:out', ({ id }) => {
 });
 socket.on('player:left', ({ name }) => pushFeed($('feed'), icon(UI.leave, 18), `${name}님이 나갔어요. 봇이 이어받아요.`, '#9ca2d6'));
 $('rematchBtn').onclick = () => { initAudio(); socket.emit('game:start', { rematch: true }, (r: { ok: true } | { ok: false; error: string }) => { $('resultHint').textContent = r.ok ? '' : r.error; }); };
-$('toLobbyBtn').onclick = () => { if (room?.timeAttack) { leaveRoom(); return; } show('lobby'); renderLobby(); };
+$('toLobbyBtn').onclick = () => { show('lobby'); renderLobby(); };
 
 
 
@@ -1089,16 +1059,6 @@ socket.on('game:over', (d) => {
   $<HTMLButtonElement>('rematchBtn').hidden = !again;
   $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
   $('resultHint').textContent = again ? '' : '방장이 한 판 더를 누르면 바로 시작해요';
-  // 타임어택: 최고 기록과 비교해 신기록이면 저장
-  if (room?.timeAttack) {
-    const score = d.ranking.find((p) => p.id === myId())?.score ?? 0;
-    const v = taVerdict(score, taBest());
-    if (v.record) { try { localStorage.setItem(TA_KEY, String(score)); } catch { /* 저장 못 하는 환경 */ } }
-    $('resTitle').textContent = v.title;
-    $('resultHint').textContent = v.hint;
-    $('toLobbyBtn').textContent = '처음으로';
-    renderTaBest();
-  }
   closeChipPop();
   show('result');
 });
@@ -1244,8 +1204,9 @@ updatePing();
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!); }
 
 function renderScores() {
-  // 팀전: 팀별로 묶고 팀 합계를 앞에
-  const team = !!room?.rules.team && players.length > 0;
+  // 팀전: 팀별로 묶고 팀 합계를 앞에. 대기실에서는 점수판이 숨겨져 있으니 합계 칸을 빼서 한 줄로 둔다
+  // (합계 칸으로 두 줄이 되면 판 높이·앱 폭이 줄어 게임 설정 창 크기가 바뀌었다)
+  const team = !!room?.rules.team && players.length > 0 && !document.body.classList.contains('lobby-on');
   const list = team ? [...players].sort((a, b) => a.team - b.team) : players;
   const sums = team ? ([0, 1] as const).map((t) => `<div class="teamsum t${t}"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${players.filter((p) => p.team === t).reduce((a, p) => a + p.score, 0)}</span></div>`).join('') : '';
   const warnId = outWarn && serverNow() < outWarn.at ? outWarn.id : null;

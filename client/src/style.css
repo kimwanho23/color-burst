@@ -211,10 +211,6 @@ td:nth-child(2), td:nth-child(3), th:nth-child(2), th:nth-child(3) { text-align:
 .modes.three { grid-template-columns: repeat(3, 1fr); }
 .mopt .mi { color: var(--yellow); }
 .mopt[aria-pressed="true"] .mi { color: var(--yellow); }
-.tabox { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
-.tabox ul { margin: 0; padding-left: 18px; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); font-size: 13.5px; line-height: 1.6; }
-.tabest { margin: 2px 0 0; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
-.tabest b { color: var(--yellow); }
 .members { display: flex; flex-direction: column; gap: 6px; }
 .member { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .member.off { opacity: .55; }
@@ -804,6 +800,10 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 /* 게임 설정 창은 고른 모드에 따라 내용이 바뀌어도 크기가 흔들리지 않게 높이를 고정 */
 .rules-card { height: min(680px, calc(100% - 16px)); }
 .score-card { height: auto; max-height: calc(100% - 16px); }
+/* 게임 설정·점수표 창: 제목과 닫기(X)는 위에 고정, 내용만 스크롤. 스크롤바 자리를 늘 잡아 둬 모드를 바꿔도 폭이 그대로 */
+.rules-card { overflow: hidden; }
+.rules-card > .cx-head { flex: none; }
+.rules-card > .rulesbox, .rules-card > .scoretable { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding-right: 4px; }
 .scoretable td:first-child, .scoretable th:first-child { white-space: nowrap; }
 .scoretable td:nth-child(2), .scoretable td:nth-child(3), .scoretable th:nth-child(2), .scoretable th:nth-child(3) { white-space: normal; }
 /* 팀전처럼 내용이 길어져 스크롤바가 생겨도 대기실 폭이 줄어들지 않게 자리를 미리 잡아 둔다 */

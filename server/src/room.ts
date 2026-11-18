@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TIME_ATTACK_RULES, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -136,10 +136,8 @@ export class Room {
   /** 아직 안 내보낸 웨이브 원 (born이 되면 내보낸다) */
   private spawnQueue: Circle[] = [];
 
-  /** timeAttack: 혼자·봇 없이 기록 도전 (규칙 고정) */
   /** tutorial: 혼자 단계별 연습 (단계별 판만, 결과·기록 없음) */
-  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly timeAttack = false, readonly tutorial = false) {
-    if (timeAttack) this.rules = { ...TIME_ATTACK_RULES };
+  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly tutorial = false) {
     if (tutorial) this.rules = { ...TUTORIAL_RULES };
   }
 
@@ -414,8 +412,8 @@ export class Room {
     this.keyToId.set(key, np.id);
     this.attach(np, socketId);
     if (!this.hostId) this.hostId = np.id;
-    // 혼자 하기: 처음부터 보통 봇 3명 (타임어택·연습 제외)
-    if (this.solo && !this.timeAttack && !this.tutorial && this.humans.length === 1) while (this.hasSeat() && this.pushBot(1));
+    // 혼자 하기: 처음부터 보통 봇 3명 (연습 제외)
+    if (this.solo && !this.tutorial && this.humans.length === 1) while (this.hasSeat() && this.pushBot(1));
     this.broadcastState();
     return { id: np.id };
   }
@@ -531,7 +529,7 @@ export class Room {
 
   /** 방장: 빈 칸에 보통 봇 (팀전이면 그 팀에 자리가 있을 때만) */
   addBot(id: string, team?: 0 | 1) {
-    if (id !== this.hostId || this.phase !== 'lobby' || this.timeAttack || this.tutorial || !this.hasSeat()) return;
+    if (id !== this.hostId || this.phase !== 'lobby' || this.tutorial || !this.hasSeat()) return;
     if (this.rules.team && team !== undefined && this.players.filter((p) => p.team === team).length >= RULES.team.size) return;
     if (!this.pushBot(1, this.rules.team ? team : undefined)) return;
     this.unready();
@@ -555,7 +553,7 @@ export class Room {
   }
 
   setRules(id: string, d: { preset?: PresetId; rules?: Partial<RoomRules> }) {
-    if (id !== this.hostId || this.phase !== 'lobby' || this.timeAttack) return;
+    if (id !== this.hostId || this.phase !== 'lobby' || this.tutorial) return;
     let base = this.rules;
     // 프리셋은 점수·속도 규칙만 바꾸고 모드 설정은 유지
     if (d.preset && d.preset in PRESETS) {
@@ -636,7 +634,7 @@ export class Room {
     this.players = this.players.filter((p) => !p.bot || (p.botLevel !== undefined && !p.filler));
     // 팀전(2:2)만 빈 칸을 보통 봇으로 채운다. 서바이벌·협력전·개인전은 있는 인원 그대로
     if (this.rules.team) while (this.hasSeat() && this.pushBot(1, undefined, true));
-    if (this.players.length < 2 && !this.timeAttack && !this.tutorial && !this.rules.coop) {
+    if (this.players.length < 2 && !this.tutorial && !this.rules.coop) {
       this.players = this.players.filter((p) => !p.filler);
       return '혼자서는 시작할 수 없어요. 친구를 부르거나 봇을 추가해 주세요.';
     }
@@ -967,7 +965,7 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, tutorial: this.tutorial, wins: Object.fromEntries(this.wins) };
+    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, rules: this.rules, solo: this.solo, tutorial: this.tutorial, wins: Object.fromEntries(this.wins) };
   }
 
   destroy() {
@@ -1800,7 +1798,7 @@ export class Room {
     const winners = coopResult ? new Set(coopResult.win ? this.humans.map((p) => p.id) : []) : teams ? new Set(teamDraw ? [...teams[0].ids, ...teams[1].ids] : teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
     for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
     // 판 기록 한 줄 (튜토리얼은 end()까지 오지 않는다)
-    logGame({ rules: this.rules, solo: this.solo, timeAttack: this.timeAttack, roundMs: this.G.roundMs, ranking: rank, coop: coopResult, startAt: this.startAt });
+    logGame({ rules: this.rules, solo: this.solo, roundMs: this.G.roundMs, ranking: rank, coop: coopResult, startAt: this.startAt });
     this.io.to(this.code).emit('game:over', {
       ranking: rank,
       teams,

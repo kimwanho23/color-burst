@@ -18,7 +18,7 @@ function tutorialRoom(t: TestContext) {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_000_000 });
   const log: Sent[] = [];
   const io = { to: () => ({ emit(ev: string, d: unknown) { log.push({ ev, d }); } }), sockets: { sockets: new Map() } } as never;
-  const room = new Room(io, 'T', () => {}, true, false, true);
+  const room = new Room(io, 'T', () => {}, true, true);
   const a = room.join('s1', 'k1', 'A') as { id: string };
   assert.equal(room.start(a.id), null);
   const r = room as unknown as R;

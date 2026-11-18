@@ -39,10 +39,10 @@ const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
 ];
 /** 협력전에서 쓰지 않는 설정 (고급 설정에서 숨김) */
 const COOP_OFF = new Set<string>(['roundSec', 'markSec', 'mapPct', 'laserWidth', 'laserFreq', 'boss', 'stealPenalty', 'comeback', 'laser', 'sabotage']);
-const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string]> = {
-  easy: ['이지', '레이저가 얇고 공격이 느려요'],
-  normal: ['노말', '보통 세기의 공격'],
-  hard: ['하드', '굵은 레이저와 빠른 공격 원'],
+const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string, keyof typeof UI]> = {
+  easy: ['이지', '레이저가 얇고 공격이 느려요', 'chill'],
+  normal: ['노말', '보통 세기의 공격', 'basic'],
+  hard: ['하드', '굵은 레이저와 빠른 공격 원', 'hardcore'],
 };
 /** 커스텀 규칙: 방장 브라우저에만 저장 (모드 설정은 빼고) */
 const CUSTOM_KEY = 'cb-custom-rules';
@@ -58,16 +58,6 @@ function saveCustom(r: RoomRules) {
 export interface RulesUIHandlers {
   preset: (id: PresetId) => void;
   change: (patch: Partial<RoomRules>) => void;
-  /** 혼자 하기: 타임어택 (있으면 모드 세 번째 칸). selected면 고른 상태로 고정 규칙만 보여 준다 */
-  timeAttack?: { selected: boolean; best: number | null; select: () => void };
-}
-
-/** 모드 칸(클래식·아케이드·타임어택) 누르기 */
-function bind(el: HTMLElement, rules: RoomRules, on: RulesUIHandlers) {
-  el.querySelectorAll<HTMLButtonElement>('.mode[data-m]').forEach((b) => { b.onclick = () => on.change({ mode: b.dataset.m as RoomRules['mode'] }); });
-  const ta = el.querySelector<HTMLButtonElement>('[data-ta]');
-  if (ta && on.timeAttack) ta.onclick = on.timeAttack.select;
-  void rules;
 }
 
 export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean, on: RulesUIHandlers) {
@@ -76,51 +66,36 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
   if (editable && !current) saveCustom(rules);
   const advOpen = el.querySelector<HTMLDetailsElement>('details.adv')?.open ?? false;
   const dis = editable ? '' : 'disabled';
-  const arcade = rules.mode === 'arcade';
-  const ta = on.timeAttack;
-  const taOn = !!ta?.selected;
-  const modes = `
-    <div class="lbl">모드${editable ? '' : ' (방장이 정해요)'}</div>
-    <div class="modes${ta ? ' three' : ''}">
-      <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade && !taOn}" title="${rules.roundSec}초 한 판 승부" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b></button>
-      <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade && !taOn}" title="${ARCADE.rounds}라운드, 라운드마다 능력 선택" ${dis}>${icon(UI.arcade, 26, 'mi')}<b>아케이드</b></button>
-      ${ta ? `<button type="button" class="mode ta" data-ta aria-pressed="${taOn}" title="봇 없이 60초 기록 도전${ta.best ? ` · 최고 ${ta.best}점` : ''}" ${dis}>${icon(UI.timer, 26, 'mi')}<b>타임어택</b>${ta.best ? `<span>최고 ${ta.best}점</span>` : ''}</button>` : ''}
-    </div>`;
-  // 타임어택을 고르면 규칙은 고정이라 안내만
-  if (taOn) {
-    el.innerHTML = `${modes}
-      <div class="tabox">
-        <div class="lbl">타임어택 규칙 (고정)</div>
-        <ul>
-          <li>봇 없이 혼자, 60초 동안 최고 점수에 도전해요</li>
-          <li>원은 내 색·노란·무지개·황금·아이템만 나와요</li>
-          <li>보스·레이저·방해 아이템·맵 패턴·랜덤 이벤트는 없어요</li>
-        </ul>
-        ${ta!.best ? `<p class="tabest">${icon(UI.trophy, 16)} 최고 기록 <b>${ta!.best}점</b></p>` : '<p class="tabest">아직 기록이 없어요</p>'}
-      </div>`;
-    bind(el, rules, on);
-    return;
-  }
-  const solo = !rules.team && !rules.survival && !rules.coop;
   const coop = !!rules.coop;
-  el.innerHTML = `${modes}
-    <div class="lbl">인원 모드${editable ? '' : ' (방장이 정해요)'}</div>
+  const arcade = rules.mode === 'arcade' && !coop;
+  const solo = !rules.team && !rules.survival;
+  const by = editable ? '' : ' (방장이 정해요)';
+  // 게임 모드: 클래식·아케이드·협력전. 둘째 줄은 같은 모양의 버튼 세 칸으로, 협력전이면 인원 모드 대신 난이도
+  const second = coop
+    ? `<div class="lbl">협력전 난이도${by}</div>
+    <div class="modeopts">
+      ${COOP_LEVELS.map((l) => `<button type="button" class="mopt" data-lv="${l}" aria-pressed="${rules.coopLevel === l}" title="${COOP_LEVEL_LABEL[l][1]}" ${dis}>${icon(UI[COOP_LEVEL_LABEL[l][2]], 22, 'mi')}<b>${COOP_LEVEL_LABEL[l][0]}</b></button>`).join('')}
+    </div>`
+    : `<div class="lbl">인원 모드${by}</div>
     <div class="modeopts">
       <button type="button" class="mopt" data-o="solo" aria-pressed="${solo}" title="모두가 각자 경쟁, 점수가 가장 높은 사람이 승리" ${dis}>${icon(UI.solo, 22, 'mi')}<b>개인전</b></button>
       <button type="button" class="mopt" data-o="team" aria-pressed="${rules.team}" title="같은 팀 색은 내 색, 팀 점수 합으로 승부" ${dis}>${icon(UI.team, 22, 'mi')}<b>팀전 2:2</b></button>
       <button type="button" class="mopt" data-o="survival" aria-pressed="${rules.survival}" title="${arcade ? '뒤쪽 라운드가 끝날 때마다' : `${RULES.survival.everyMs / 1000}초마다`} 꼴찌 탈락, 마지막 1명이 승리" ${dis}>${icon(UI.survival, 22, 'mi')}<b>서바이벌</b></button>
-      <button type="button" class="mopt" data-o="coop" aria-pressed="${coop}" title="다 같이 거대 보스를 잡아요, 생명 ${RULES.coop.lives}개 · ${RULES.coop.timeSec}초 (클래식)" ${dis}>${icon(UI.coop, 22, 'mi')}<b>협력전</b></button>
+    </div>`;
+  el.innerHTML = `
+    <div class="lbl">게임 모드${by}</div>
+    <div class="modes three">
+      <button type="button" class="mode" data-m="classic" aria-pressed="${!arcade && !coop}" title="${rules.roundSec}초 한 판 승부" ${dis}>${icon(UI.classic, 26, 'mi')}<b>클래식</b></button>
+      <button type="button" class="mode" data-m="arcade" aria-pressed="${arcade}" title="${ARCADE.rounds}라운드, 라운드마다 능력 선택" ${dis}>${icon(UI.arcade, 26, 'mi')}<b>아케이드</b></button>
+      <button type="button" class="mode" data-m="coop" aria-pressed="${coop}" title="다 같이 거대 보스를 잡아요, 생명 ${RULES.coop.lives}개 · ${RULES.coop.timeSec}초" ${dis}>${icon(UI.coop, 26, 'mi')}<b>협력전</b></button>
     </div>
-    ${coop ? `<div class="lbl">협력전 난이도${editable ? '' : ' (방장이 정해요)'}</div>
-    <div class="modeopts coop-levels">
-      ${COOP_LEVELS.map((l) => `<button type="button" class="mopt" data-lv="${l}" aria-pressed="${rules.coopLevel === l}" title="${COOP_LEVEL_LABEL[l][1]}" ${dis}><b>${COOP_LEVEL_LABEL[l][0]}</b></button>`).join('')}
-    </div>
-    <p class="coop-note">협력전에서는 견제·표적·보스 원·레이저 설정·방해 아이템·맵 패턴·꼴찌 보정을 쓰지 않아요. 보스가 직접 레이저·공격 원·장판으로 공격해요.</p>` : ''}
+    ${second}
+    ${coop ? '<p class="coop-note">협력전은 견제·표적·보스 원·레이저 설정·방해 아이템·맵 패턴·꼴찌 보정을 쓰지 않고, 보스가 직접 공격해요.</p>' : ''}
     ${arcade ? `<label class="adv-row" for="rule-arcadeRoundSec"><span>라운드 시간</span>
       <select id="rule-arcadeRoundSec" data-k="arcadeRoundSec" ${dis}>
         ${RULE_CHOICES.arcadeRoundSec.map((v) => `<option value="${v}" ${rules.arcadeRoundSec === v ? 'selected' : ''}>${v}초</option>`).join('')}
       </select></label>` : ''}
-    <div class="lbl">방 규칙${editable ? '' : ' (방장이 정해요)'}</div>
+    <div class="lbl">방 규칙${by}</div>
     <div class="presets">
       ${(Object.entries(PRESETS) as [PresetId, (typeof PRESETS)[PresetId]][]).map(([id, p]) =>
         `<button type="button" class="preset" data-p="${id}" aria-pressed="${current === id}" title="${p.desc}${'warn' in p ? ` · ${p.warn}` : ''}" ${dis}>${icon(UI[id], 20, 'pi')}<b>${p.name}</b></button>`).join('')}
@@ -144,11 +119,15 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
 
   // 다시 그려도 열려 있던 상태 유지
   el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen;
-  bind(el, rules, on);
+  // 게임 모드: 협력전은 클래식 위에서 도는 별도 모드 (서버가 아케이드·팀전·서바이벌을 끈다)
+  el.querySelectorAll<HTMLButtonElement>('.mode[data-m]').forEach((b) => {
+    const m = b.dataset.m as 'classic' | 'arcade' | 'coop';
+    b.onclick = () => on.change(m === 'coop' ? { coop: true } : { mode: m, coop: false });
+  });
   // 인원 모드: 셋 중 하나 (개인전 = 팀전·서바이벌 모두 끔)
   el.querySelectorAll<HTMLButtonElement>('.mopt[data-o]').forEach((b) => {
-    const o = b.dataset.o as 'solo' | 'team' | 'survival' | 'coop';
-    b.onclick = () => on.change({ team: o === 'team', survival: o === 'survival', coop: o === 'coop' });
+    const o = b.dataset.o as 'solo' | 'team' | 'survival';
+    b.onclick = () => on.change({ team: o === 'team', survival: o === 'survival' });
   });
   el.querySelectorAll<HTMLButtonElement>('.mopt[data-lv]').forEach((b) => { b.onclick = () => on.change({ coopLevel: b.dataset.lv as CoopLevel }); });
   el.querySelectorAll<HTMLButtonElement>('.preset[data-p]').forEach((b) => { b.onclick = () => on.preset(b.dataset.p as PresetId); });
