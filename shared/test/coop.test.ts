@@ -54,14 +54,14 @@ test('raidMaxHp: 사람 1 + 봇 3 = hpBase × 2.5', () => {
   assert.equal(raidMaxHp(1, 3), Math.round(C.hpBase * 2.5));
 });
 
-test('orbDamage: 내 색 1, 노랑 0.7, 콤보 30에 +30%, 상한 50%, 큰 피해 ×2, 봇 ×0.5', () => {
+test('orbDamage: 내 색 1, 노랑 0.7, 콤보 30에 +60%, 상한 80%, 큰 피해 ×2, 봇 ×0.5', () => {
   const p = newPlayer('a', 'A', 0);
   assert.equal(orbDamage(p, 0, false), 1);
   assert.equal(orbDamage(p, 'y', false), 0.7);
-  p.combo = 30;
-  assert.ok(Math.abs(orbDamage(p, 0, false) - 1.3) < 1e-9);
-  p.combo = 90;
-  assert.ok(Math.abs(orbDamage(p, 0, false) - 1.5) < 1e-9);
+  for (const [combo, want] of [[30, 1.6], [39, 1.6], [40, 1.8], [100, 1.8]] as const) {
+    p.combo = combo;
+    assert.ok(Math.abs(orbDamage(p, 0, false) - want) < 1e-9, 'combo ' + combo);
+  }
   p.combo = 0;
   assert.equal(orbDamage(p, 0, true), 2);
   const bot = newPlayer('b', 'B', 1, true);
