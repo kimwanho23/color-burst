@@ -38,6 +38,8 @@ export interface CoopPlayerResult {
   hits: Partial<Record<CoopHitBy, number>>;
   /** 판이 끝났을 때 남은 체력 (탈락·봇은 0) */
   hpLeft: number;
+  /** 아이템별 획득 수 (봇은 줍지 않아 늘 비어 있다) */
+  items: Partial<Record<CoopItemId, number>>;
 }
 /** 협력전 결과 */
 export interface CoopResult {

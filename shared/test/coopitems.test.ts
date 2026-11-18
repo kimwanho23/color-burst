@@ -339,3 +339,24 @@ test('도감 탄막 설명: 고유 패턴 간격은 RULES.coop.skillEveryMs', as
   const { bossTabHTML } = await import('../../client/src/codex.ts');
   assert.ok(bossTabHTML().includes(`${C.skillEveryMs / 1000}초마다 고유 패턴`));
 });
+
+test('판 기록: 사람마다 아이템별 획득 수 (결과와 gameRecord coopResult.items)', async () => {
+  const { gameRecord } = await import('../../server/src/gameLog.ts');
+  const { room, r, me } = coopRoom(1, 1);
+  const bot = room.players.find((p) => p.bot)!;
+  const run = r.coop as unknown as Run & { catchItem(p: PlayerState, c: Circle, now: number): CoopItemId | null };
+  const now = r.startAt + 5000;
+  const rand = run.rand;
+  const got: (CoopItemId | null)[] = [];
+  // 가중치가 모두 1이라 0.05 → 첫째(탄 지우개), 0.15 → 둘째(방어막)
+  for (const x of [0.05, 0.15, 0.05]) { run.rand = () => x; got.push(run.catchItem(me, orbOf('item', now), now)); }
+  run.rand = rand;
+  assert.deepEqual(got, ['clear', 'guard', 'clear']);
+  assert.equal(run.catchItem(bot, orbOf('item', now), now), null, '봇은 줍지 않음');
+  const res = run.result(now + 1000, r.startAt, false) as unknown as { players: Record<string, { items: Partial<Record<CoopItemId, number>> }> };
+  assert.deepEqual(res.players[me.id]!.items, { clear: 2, guard: 1 });
+  assert.deepEqual(res.players[bot.id]!.items, {});
+  const rec = gameRecord({ rules: room.rules, ranking: room.players, roundMs: C.timeSec * 1000, solo: false, coop: res } as never) as { coopResult: { items: Record<string, unknown> } };
+  assert.deepEqual(rec.coopResult.items[me.id], { clear: 2, guard: 1 });
+  room.destroy();
+});

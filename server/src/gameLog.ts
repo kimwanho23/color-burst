@@ -29,7 +29,7 @@ export function gameRecord(g: GameInfo) {
     team: rules.team,
     survival: rules.survival,
     coop: !!rules.coop,
-    ...(g.coop ? { coopResult: { level: rules.coopLevel, result: g.coop.win ? 'win' : 'lose', phase: g.coop.phase, bossHpPct: g.coop.bossHpPct, timeMs: g.coop.timeMs, breaks: g.coop.breaks, phaseMs: g.coop.phaseMs.map((ms) => Math.round(ms)), hits: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, r.hits])), hpLeft: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, Math.round(r.hpLeft)])), damage: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, Math.round(r.dmg * 10) / 10])) } } : {}),
+    ...(g.coop ? { coopResult: { level: rules.coopLevel, result: g.coop.win ? 'win' : 'lose', phase: g.coop.phase, bossHpPct: g.coop.bossHpPct, timeMs: g.coop.timeMs, breaks: g.coop.breaks, phaseMs: g.coop.phaseMs.map((ms) => Math.round(ms)), hits: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, r.hits])), items: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, r.items])), hpLeft: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, Math.round(r.hpLeft)])), damage: Object.fromEntries(Object.entries(g.coop.players).map(([id, r]) => [id, Math.round(r.dmg * 10) / 10])) } } : {}),
     solo: g.solo,
     /** 아케이드는 라운드 하나 길이 × rounds */
     roundSec: Math.round(g.roundMs / 1000),

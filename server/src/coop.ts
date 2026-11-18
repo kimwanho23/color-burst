@@ -91,7 +91,7 @@ export class CoopRun {
   private alive() { return this.humans().filter((p) => !p.outAt); }
   private stat(id: string) {
     let s = this.stats.get(id);
-    if (!s) { s = { dmg: 0, burstDmg: 0, crystals: 0, threats: 0, hits: {}, hpLeft: 0 }; this.stats.set(id, s); }
+    if (!s) { s = { dmg: 0, burstDmg: 0, crystals: 0, threats: 0, hits: {}, hpLeft: 0, items: {} }; this.stats.set(id, s); }
     return s;
   }
 
@@ -397,10 +397,12 @@ export class CoopRun {
     return { dmg: dealt, gained, killed };
   }
 
-  /** 아이템 원을 잡음: 종류를 굴려 효과를 건다 (봇은 줍지 않는다) */
+  /** 아이템 원을 잡음: 종류를 굴려 효과를 건다, 아이템별 획득 수를 센다 (봇은 줍지 않는다) */
   catchItem(p: PlayerState, c: Circle, now: number): CoopItemId | null {
     if (!this.boss || p.outAt || p.bot) return null;
     const item = rollCoopItem(this.level, this.rand);
+    const got = this.stat(p.id).items;
+    got[item] = (got[item] ?? 0) + 1;
     this.applyItem(p, item, now, circlePos(c, now));
     return item;
   }
@@ -734,7 +736,7 @@ export class CoopRun {
     const ratio = hs.length ? hs.filter((p) => !p.outAt).length / hs.length : 0;
     const timeMs = Math.max(0, Math.min(C.timeSec * 1000, now - startAt));
     const players: Record<string, CoopPlayerResult> = {};
-    for (const p of this.host.players()) players[p.id] = { ...this.stat(p.id), hits: { ...this.stat(p.id).hits }, hpLeft: p.bot || p.outAt ? 0 : Math.max(0, p.hp) };
+    for (const p of this.host.players()) players[p.id] = { ...this.stat(p.id), hits: { ...this.stat(p.id).hits }, items: { ...this.stat(p.id).items }, hpLeft: p.bot || p.outAt ? 0 : Math.max(0, p.hp) };
     return {
       win, stars: coopStars(win, ratio, C.timeSec * 1000 - timeMs), timeMs,
       bossHpPct: this.boss ? Math.round(((this.boss.hp ?? 0) / (this.boss.maxHp || 1)) * 100) : 0,
