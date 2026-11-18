@@ -103,7 +103,7 @@ export class CoopRun {
     }
     this.weak = null; this.missiles = []; this.boostUntil = 0;
     const ps = this.host.players();
-    const hp = raidMaxHp(ps.filter((p) => !p.bot).length, ps.filter((p) => p.bot).length);
+    const hp = raidMaxHp(ps.filter((p) => !p.bot).length, ps.filter((p) => p.bot).length, this.level);
     this.boss = makeRaid(this.host.nextId(), now, hp);
     this.host.addCircle(this.boss);
     for (const p of ps) this.nextOrb.set(p.id, now + this.rand() * this.orbGap());
@@ -528,7 +528,7 @@ export class CoopRun {
     this.burstUntil = now + burstMs;
     this.afterBurst = true;
     // 큰 피해 구간 시작: 살아 있는 사람 회복 (엑스퍼트는 없음). 공격력 강화는 단계가 오르면 사라진다
-    if (this.level !== 'expert') for (const p of this.alive()) p.hp = Math.min(C.hpMax, p.hp + C.heal.burstStart);
+    if (this.level !== 'expert') for (const p of this.alive()) p.hp = Math.min(C.hpMax, p.hp + C.heal.burstStart[this.level]);
     for (const p of this.host.players()) if (p.coopFx) p.coopFx.power = 0;
     this.host.emitPlayers();
     this.host.clearLasers();

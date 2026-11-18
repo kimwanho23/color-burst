@@ -56,7 +56,7 @@ export const RULES = {
     /** 체력이 이 비율 이하면 낮음 표시 */
     hpLowRatio: 0.3,
     /** 큰 피해 구간 시작에 살아 있는 사람 모두 회복하는 체력 (엑스퍼트는 회복 없음) */
-    heal: { burstStart: 25 },
+    heal: { burstStart: { easy: 40, normal: 20, hard: 10, expert: 0 } },
     /** 공격 종류별 맞은 뒤 무적(ms)·기절(ms). 기절 중에는 무적이 함께 걸려 있다 */
     hurtFx: {
       bullet: { immuneMs: 600, stunMs: 0 }, wall: { immuneMs: 600, stunMs: 0 }, threat: { immuneMs: 1_000, stunMs: 0 },
@@ -138,24 +138,28 @@ export const RULES = {
      */
     levels: {
       easy: {
+        hpMult: 0.8,
         hurt: { bullet: 5, wall: 5, threat: 15, beam: 20, laser: 20, slam: 20, seal: 10, safe: 30, rage: 30 } as Record<CoopHitBy, number>,
         laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
         threatCount: 2, threatSpeed: 160,
         crystalHits: [6, 9], crystalSec: 15, safeCount: 2, orbMult: 1.1, bulletEveryMs: 1_600, bulletSpeed: 220,
       },
       normal: {
+        hpMult: 1,
         hurt: { bullet: 10, wall: 10, threat: 20, beam: 25, laser: 30, slam: 30, seal: 20, safe: 40, rage: 50 } as Record<CoopHitBy, number>,
         laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
         threatCount: 3, threatSpeed: 200,
         crystalHits: [8, 12], crystalSec: 12, safeCount: 2, orbMult: 1, bulletEveryMs: 1_200, bulletSpeed: 260,
       },
       hard: {
+        hpMult: 1.2,
         hurt: { bullet: 15, wall: 15, threat: 25, beam: 30, laser: 40, slam: 40, seal: 30, safe: 50, rage: 70 } as Record<CoopHitBy, number>,
         laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
         threatCount: 4, threatSpeed: 250,
         crystalHits: [10, 15], crystalSec: 10, safeCount: 1, orbMult: 0.9, bulletEveryMs: 950, bulletSpeed: 300,
       },
       expert: {
+        hpMult: 1.4,
         hurt: { bullet: 20, wall: 20, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity } as Record<CoopHitBy, number>,
         laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
         threatCount: 5, threatSpeed: 300,

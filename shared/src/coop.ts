@@ -11,8 +11,8 @@ const C = RULES.coop;
 export type CoopPhase = 1 | 2 | 3;
 
 /** 레이드 보스 최대 체력: 봇은 botWeight명분 */
-export function raidMaxHp(humans: number, bots: number): number {
-  return Math.round(C.hpBase * (humans + bots * C.botWeight));
+export function raidMaxHp(humans: number, bots: number, level: CoopLevel = 'normal'): number {
+  return Math.round(C.hpBase * (humans + bots * C.botWeight) * C.levels[level].hpMult);
 }
 
 export function makeRaid(id: number, now: number, hp: number): Circle {

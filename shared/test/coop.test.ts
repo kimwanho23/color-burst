@@ -11,6 +11,15 @@ import { gameRecord } from '../../server/src/gameLog.ts';
 import { Bot } from '../../server/src/bot.ts';
 
 mock.method(console, 'log', () => {});
+test('보스 체력: 난이도 배율과 사람·봇 인원 반영', () => {
+  for (const [level, hp] of [['easy', 180], ['normal', 225], ['hard', 270], ['expert', 315]] as const) {
+    assert.equal(raidMaxHp(1, 0, level), hp);
+    assert.equal(raidMaxHp(1, 3, level), Math.round(hp * 2.5));
+    const { room, r } = coopRoom(1, 0, level);
+    assert.equal(r.coop.state().maxHp, hp);
+    room.destroy();
+  }
+});
 const sent: { ev: string; d: unknown }[] = [];
 const fakeIo = () => ({ to: () => ({ emit(ev: string, d?: unknown) { sent.push({ ev, d }); } }), sockets: { sockets: new Map() } }) as never;
 const C = RULES.coop;
@@ -624,7 +633,7 @@ test('피격: 체력 0이면 탈락, 모두 탈락이면 패배', () => {
   room.destroy();
 });
 
-test('회복: 큰 피해 구간 시작에 +25(최대 100), 엑스퍼트는 회복 없음', () => {
+test('회복: 큰 피해 구간 시작에 노말 +20(최대 100), 엑스퍼트는 회복 없음', () => {
   const { room, r, me, ids } = coopRoom(2, 0);
   const other = room.players.find((p) => p.id === ids[1])!;
   me.hp = 50; other.hp = 90;
@@ -633,7 +642,7 @@ test('회복: 큰 피해 구간 시작에 +25(최대 100), 엑스퍼트는 회�
   breakMine(r, me, now);
   breakMine(r, other, now);
   assert.equal(r.coop.inBurst(now + 1), true);
-  assert.deepEqual([me.hp, other.hp], [50 + C.heal.burstStart, C.hpMax]);
+  assert.deepEqual([me.hp, other.hp], [50 + C.heal.burstStart.normal, C.hpMax]);
   room.destroy();
   const ex = coopRoom(1, 0, 'expert');
   ex.me.hp = 50;
@@ -652,11 +661,11 @@ test('회복은 바로 players로 알리고, coop:hit에 피해량이 실림', (
   breakMine(r, me, now);
   const healed = sent.find((x) => x.ev === 'players');
   assert.ok(healed, '회복 뒤 players 전송');
-  assert.equal((healed!.d as PlayerState[]).find((p) => p.id === me.id)!.hp, 50 + C.heal.burstStart);
+  assert.equal((healed!.d as PlayerState[]).find((p) => p.id === me.id)!.hp, 50 + C.heal.burstStart.normal);
   sent.length = 0;
   r.coop.damage(me, 'laser', now + 5000);
   const hit = sent.find((x) => x.ev === 'coop:hit')!.d as { dmg: number; hp: number };
-  assert.deepEqual([hit.dmg, hit.hp], [N.laser, 50 + C.heal.burstStart - N.laser]);
+  assert.deepEqual([hit.dmg, hit.hp], [N.laser, 50 + C.heal.burstStart.normal - N.laser]);
   room.destroy();
 });
 
