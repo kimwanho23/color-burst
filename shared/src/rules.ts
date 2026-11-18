@@ -115,7 +115,8 @@ export const RULES = {
     beam: { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22, stillMs: 150 },
     /** 내려오는 벽: 경고 시간(그동안 제자리 미리보기, 맞지 않음), [2단계, 3단계] 틈 수, 속도(필드/초) */
     wall: { warnMs: 2_000, gaps: [2, 1], speed: [140, 180] },
-    threatR: 30, threatPoints: 3,
+    /** 추적 원은 발사 위치·방향과 관계없이 최소 threatMinTravelMs 동안 대응할 수 있게 속도를 제한한다 */
+    threatR: 30, threatPoints: 3, threatMinTravelMs: 3_000, threatWarnMs: 2_000,
     /**
      * 보스전 아이템(? 원): 보스가 원 하나를 뿜을 때 chance(%, 난이도별)로 아이템 원. 큰 피해 구간이 끝나고(단계가 오르고) boostMs 동안 × boostMult.
      * weight 종류 가중치(엑스퍼트는 회복 둘 제외). guardMs 방어막(한 번 막음), heal·healAll 회복, fireMs·fireMult 화력 강화,

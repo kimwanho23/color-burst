@@ -20,6 +20,16 @@ test('보스 체력: 난이도 배율과 사람·봇 인원 반영', () => {
     room.destroy();
   }
 });
+test('추적 원: 보스가 가장자리에 있어도 모든 발사 방향에 최소 대응 시간 보장', () => {
+  for (const x of [RULES.coop.bossR + 20, FIELD.w / 2, FIELD.w - RULES.coop.bossR - 20]) {
+    for (let i = 0; i < 36; i++) {
+      const c = makeThreat(i, 0, { x, y: RULES.coop.bossY }, i * Math.PI / 18, 300, 'a');
+      assert.ok(!isOut(c, RULES.coop.threatMinTravelMs - 1));
+      assert.ok(c.speed > 0 && c.speed <= 300);
+      assert.ok(isOut(c, 20_000));
+    }
+  }
+});
 const sent: { ev: string; d: unknown }[] = [];
 const fakeIo = () => ({ to: () => ({ emit(ev: string, d?: unknown) { sent.push({ ev, d }); } }), sockets: { sockets: new Map() } }) as never;
 const C = RULES.coop;
@@ -1503,6 +1513,12 @@ test('단계가 오르면 세짐: 3단계 추적 원은 1단계보다 많고, �
     r.coop.phase = phase;
     sent.length = 0;
     (r.coop as unknown as SkillRun).useSkill('threat', r.startAt + 5000);
+    assert.equal(sent.filter((s) => s.ev === 'circle:spawn' && (s.d as Circle).kind === 'threat').length, 0, '경고 중에는 발사하지 않는다');
+    assert.equal(r.coop.state().threatAt, r.startAt + 5000 + C.threatWarnMs);
+    r.coop.tick(r.startAt + 5000 + C.threatWarnMs - 1);
+    assert.equal([...r.circles.values()].filter((c) => c.kind === 'threat').length, 0);
+    r.coop.tick(r.startAt + 5000 + C.threatWarnMs);
+    assert.equal(r.coop.state().threatAt, 0);
     counts.push(sent.filter((s) => s.ev === 'circle:spawn' && (s.d as Circle).kind === 'threat').length);
     room.destroy();
   }

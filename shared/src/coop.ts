@@ -60,7 +60,11 @@ export function applyRaidDamage(c: Circle, dmg: number, phase?: CoopPhase): { de
 
 /** 공격 원: from에서 angle 방향으로 날아간다 */
 export function makeThreat(id: number, now: number, from: Point, angle: number, speed: number, target: string): Circle {
-  return { id, kind: 'threat', angle, speed, r: C.threatR, born: now, from: { x: from.x, y: from.y }, target, noGuard: true };
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  const exitX = dx === 0 ? Infinity : ((dx > 0 ? FIELD.w + C.threatR : -C.threatR) - from.x) / dx;
+  const exitY = dy === 0 ? Infinity : ((dy > 0 ? FIELD.h + C.threatR : -C.threatR) - from.y) / dy;
+  const maxSpeed = Math.min(exitX, exitY) / (C.threatMinTravelMs / 1000);
+  return { id, kind: 'threat', angle, speed: Math.min(speed, maxSpeed), r: C.threatR, born: now, from: { x: from.x, y: from.y }, target, noGuard: true };
 }
 
 export function threatSpeed(level: CoopLevel): number {

@@ -630,6 +630,8 @@ socket.on('game:resuming', ({ at }) => {
 });
 // 협력전
 socket.on('coop:state', (s) => {
+  const boss = circles.get(s.bossId);
+  if (boss) { boss.hp = s.hp; boss.maxHp = s.maxHp; }
   // 보호막이 올라오면 레이저·추적 원을 지운다 (서버도 지움)
   if (s.shield && !coopState?.shield) {
     setLasers([]);
@@ -641,6 +643,10 @@ socket.on('coop:state', (s) => {
   // 큰 피해 구간이 끝나 다음 단계가 시작됨
   if (coopState?.burstUntil && !s.burstUntil && !s.shield && s.phase > 1) renderer.banner(`${s.phase}단계`, '#ff8a95');
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
+  if (s.threatAt && !coopState?.threatAt) {
+    renderer.banner('보스가 큰 원을 발사합니다! 클릭해서 제거하세요!', '#64efff');
+    sfx.patternWarn();
+  }
   coopState = s; coopSlams = s.slams; coopSafe = s.safe; coopSeal = s.seal; coopBeam = s.beam; renderCoop();
   // 탄막 목록은 실려 올 때만 바꾼다 (평소 상태에는 없다)
   if (s.volleys) setVolleys(s.volleys);
@@ -1372,7 +1378,7 @@ function updateHud(now: number) {
   $('meterFill').style.width = `${Math.max(0, fill)}%`;
   // 협력전: 개인 피버가 없으니 게이지 줄을 숨기고, 보스 체력 바의 남은 초를 갱신한다
   document.body.classList.toggle('coop-on', playing && !!rules.coop);
-  if (coopState && playing && (coopState.shield || coopState.burstUntil > now) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250); renderCoopHud($('stage'), coopState, now); }
+  if (coopState && playing && (coopState.shield || coopState.threatAt || coopState.burstUntil > now) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250); renderCoopHud($('stage'), coopState, now); }
   const after = !!m && !fever && now < m.afterUntil;
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }

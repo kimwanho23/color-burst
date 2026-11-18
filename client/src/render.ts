@@ -406,8 +406,8 @@ export class Renderer {
         ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
         ctx.font = `${Math.round(28 * 2.2 * (0.6 + 0.4 * grow))}px 'Black Han Sans', sans-serif`; ctx.textAlign = 'center';
         ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(8, 9, 22, .85)'; ctx.lineJoin = 'round';
-        ctx.strokeText(f.txt, FIELD.w / 2, BANNER_Y);
-        ctx.fillStyle = f.col; ctx.fillText(f.txt, FIELD.w / 2, BANNER_Y);
+        ctx.strokeText(f.txt, FIELD.w / 2, BANNER_Y, FIELD.w - 80);
+        ctx.fillStyle = f.col; ctx.fillText(f.txt, FIELD.w / 2, BANNER_Y, FIELD.w - 80);
       }
       ctx.globalAlpha = 1;
     }
@@ -801,13 +801,13 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** 협력전 공격 원: 어두운 가시 원 + 표적 색 테두리 (내가 표적이면 굵게) */
+  /** 협력전 큰 원: 밝은 청록 몸통·흰 외곽선·고정된 클릭 표식, 안쪽 고리는 표적 색 */
   private drawThreat(c: Circle, x: number, y: number, r: number, frameNow: number, s: DrawState) {
     const ctx = this.ctx;
     const col = c.target ? s.colorOf?.get(c.target) : undefined;
     const mine = !!c.target && c.target === s.meId;
     ctx.save(); ctx.translate(x, y); ctx.rotate(frameNow / 300 + c.id);
-    ctx.fillStyle = '#2b1838';
+    ctx.fillStyle = '#64efff';
     ctx.beginPath();
     const n = 8;
     for (let i = 0; i < n * 2; i++) {
@@ -815,9 +815,17 @@ export class Renderer {
       if (i) ctx.lineTo(Math.cos(a) * k, Math.sin(a) * k); else ctx.moveTo(k, 0);
     }
     ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = mine ? 5 : 3; ctx.stroke();
+    ctx.restore();
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = '#082c40';
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = mine ? 6 : 3;
-    ctx.strokeStyle = col !== undefined ? COLORS[col].hex : '#c9b8d8';
+    ctx.strokeStyle = col !== undefined ? COLORS[col].hex : '#fff';
     ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(r * 0.52)}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('클릭', 0, 0);
     ctx.restore();
   }
 

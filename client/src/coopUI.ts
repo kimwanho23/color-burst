@@ -21,6 +21,7 @@ export function renderCoopHud(stage: HTMLElement, s: CoopState | null, now = Dat
   const left = (t: number) => Math.max(0, Math.ceil((t - now) / 1000));
   const status = s.rageAt ? '<em class="ch-rage">분노!</em>'
     : s.shield ? `<em class="ch-shield">${icon(UI.lock, 14)}보호막 · 수정 깨기 ${left(s.shield.until)}초</em>`
+    : s.threatAt && s.threatAt > now ? `<em class="ch-rage">보스가 큰 원을 발사합니다! 클릭해서 제거하세요! (${left(s.threatAt)}초)</em>`
     : s.burstUntil > now ? `<em class="ch-burst">보스가 무너졌다! ${left(s.burstUntil)}초</em>` : '';
   el.classList.toggle('shielded', !!s.shield);
   el.classList.toggle('raging', !!s.rageAt);

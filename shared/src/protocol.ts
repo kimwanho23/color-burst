@@ -17,6 +17,8 @@ export interface CoopState {
   burstUntil: number;
   /** 분노 공격 시각 (0이면 없음) */
   rageAt: number;
+  /** 큰 원 발사 예정 시각 (0 또는 생략이면 경고 없음) */
+  threatAt?: number;
   /** 대기 중인 내려찍기, 안전지대 (다시 접속·재개해도 화면이 이어서 그리도록) */
   slams: Slam[];
   safe: SafeZones | null;
