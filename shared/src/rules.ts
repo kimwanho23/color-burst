@@ -1167,7 +1167,9 @@ export function circlePos(c: Circle, t: number) {
   }
   if (c.from) {
     const d = traveled(c, t);
-    return { x: c.from.x + Math.cos(c.angle) * d, y: c.from.y + Math.sin(c.angle) * d };
+    const x = c.from.x + Math.cos(c.angle) * d, y = c.from.y + Math.sin(c.angle) * d;
+    // 클릭하는 큰 구체는 좌우 벽에서 반사하고, 위아래로는 그대로 진행한다.
+    return { x: c.kind === 'threat' ? fold(x, c.r, FIELD.w - c.r) : x, y };
   }
   // 역발사: 같은 방향의 화면 가장자리에서 출발해 중앙으로
   const d = c.rev ? edgeDist(c) - traveled(c, t) : traveled(c, t);

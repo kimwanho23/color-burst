@@ -345,7 +345,7 @@ export class Renderer {
       fade(c);
       if (c.kind === 'gold' && !this.warp) this.drawGoldTrail(c, s.now);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
-      else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, now, s);
+      else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, s);
       else if (c.kind === 'crystal') crystals.push({ c, x: p.x, y: p.y, r });
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
@@ -849,31 +849,25 @@ export class Renderer {
     }
   }
 
-  /** 협력전 큰 원: 밝은 청록 몸통·흰 외곽선·고정된 클릭 표식, 안쪽 고리는 표적 색 */
-  private drawThreat(c: Circle, x: number, y: number, r: number, frameNow: number, s: DrawState) {
+  /** 협력전 큰 원: 빛나는 청록 구체와 표적 색 고리 */
+  private drawThreat(c: Circle, x: number, y: number, r: number, s: DrawState) {
     const ctx = this.ctx;
     const col = c.target ? s.colorOf?.get(c.target) : undefined;
     const mine = !!c.target && c.target === s.meId;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(frameNow / 300 + c.id);
-    ctx.fillStyle = '#64efff';
-    ctx.beginPath();
-    const n = 8;
-    for (let i = 0; i < n * 2; i++) {
-      const a = (i / (n * 2)) * Math.PI * 2, k = i % 2 ? r * 0.72 : r * 1.12;
-      if (i) ctx.lineTo(Math.cos(a) * k, Math.sin(a) * k); else ctx.moveTo(k, 0);
-    }
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = mine ? 5 : 3; ctx.stroke();
-    ctx.restore();
     ctx.save(); ctx.translate(x, y);
-    ctx.fillStyle = '#082c40';
-    ctx.beginPath(); ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = mine ? 6 : 3;
+    const halo = ctx.createRadialGradient(0, 0, r * 0.7, 0, 0, r * 1.5);
+    halo.addColorStop(0, 'rgba(100, 239, 255, .5)');
+    halo.addColorStop(1, 'rgba(100, 239, 255, 0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.5, 0, Math.PI * 2); ctx.fill();
+    const body = ctx.createRadialGradient(-r * 0.3, -r * 0.35, 0, 0, 0, r);
+    body.addColorStop(0, '#fff'); body.addColorStop(0.45, '#c6fbff'); body.addColorStop(1, '#28c9e6');
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.lineWidth = mine ? 4 : 2;
     ctx.strokeStyle = col !== undefined ? COLORS[col].hex : '#fff';
     ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(r * 0.52)}px sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('클릭', 0, 0);
     ctx.restore();
   }
 

@@ -27,7 +27,7 @@ test('추적 원: 보스가 가장자리에 있어도 모든 발사 방향에 �
       const c = makeThreat(i, 0, { x, y: RULES.coop.bossY }, i * Math.PI / 18, 300, 'a');
       assert.ok(!isOut(c, RULES.coop.threatMinTravelMs - 1));
       assert.ok(c.speed > 0 && c.speed <= 300);
-      assert.ok(isOut(c, 20_000));
+      assert.equal(isOut(c, 20_000), Math.abs(Math.sin(c.angle)) > 1e-6);
     }
   }
 });
@@ -282,6 +282,34 @@ test('협력전 원은 판 가운데를 지나도 잡힌다', () => {
   assert.equal(isGuarded(c, 0), false);
   assert.ok(isHit(c, 0, FIELD.w / 2, FIELD.h / 2));
   assert.equal(RULES.coop.orb.gapMs, 450);
+});
+
+test('큰 구체: 좌우 벽에서 반사, 여러 번 튕겨도 화면 안이며 반사 위치에서 클릭 가능', () => {
+  const from = { x: FIELD.w / 2, y: 500 }, r = C.threatR;
+  for (const angle of [0, Math.PI]) {
+    const c = makeThreat(1, 0, from, angle, 300, 'a');
+    const wallMs = (FIELD.w / 2 - r) / c.speed * 1000;
+    const before = circlePos(c, wallMs - 100), after = circlePos(c, wallMs + 100);
+    assert.ok(Math.abs(before.x - after.x) < 1e-8);
+    assert.ok(isHit(c, wallMs + 100, after.x, after.y));
+    for (const t of [wallMs, wallMs + 100, 10_000, 30_000]) {
+      const p = circlePos(c, t);
+      assert.ok(p.x >= r && p.x <= FIELD.w - r);
+      assert.ok(!isOut(c, t));
+    }
+  }
+});
+
+test('큰 구체: 좌우 반사 뒤에도 아래로 이탈, 일반 공격 원은 벽에서 반사하지 않음', () => {
+  const from = { x: FIELD.w - 100, y: C.bossY };
+  const threat = makeThreat(1, 0, from, Math.PI / 6, 300, 'a');
+  assert.equal(threat.speed, 300);
+  const p = circlePos(threat, 1000);
+  assert.ok(p.x < from.x, '오른쪽 벽에서 튕겨 왼쪽으로 진행');
+  assert.ok(!isOut(threat, 1000));
+  assert.ok(isOut(threat, 10_000), '아래로 나가면 놓친 구체로 처리');
+  const orb = makeOrb(2, 0, from, 0, 0, 300);
+  assert.ok(isOut(orb, 1000));
 });
 
 // ---------- 방 ----------
