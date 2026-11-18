@@ -1542,6 +1542,14 @@ export class Room {
     }
   }
 
+  /** 협력전: 화면이 알린 탄 맞음 (진행 중·멈추지 않았을 때만, 확인과 피해는 CoopRun.reportHurt) */
+  coopHurt(id: string, d: { volleyId: number; shot: number }) {
+    const now = Date.now();
+    if (!this.coop || this.phase !== 'play' || this.pausedAt || now < this.startAt) return;
+    const p = this.players.find((x) => x.id === id);
+    if (p) this.coop.reportHurt(p, d.volleyId, d.shot, now);
+  }
+
   /** 협력전: 내 수정 누르기 */
   private hitCrystal(p: PlayerState, c: Circle, now: number) {
     if (!this.coop) return;

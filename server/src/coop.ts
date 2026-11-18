@@ -1,14 +1,16 @@
 /**
  * 협력전 한 판: 보스가 원을 뿜고, 잡은 원이 피해가 된다. 체력 구간마다 보호막·수정, 깨면 큰 피해 구간, 못 깨면 분노.
- * 보스 패턴(레이저·추적 원·내려찍기·안전지대)과 맵 패턴 일정, 사람마다 기여 기록.
- * 방(room.ts)은 CoopHost를 넘기고 tick·원 잡기·수정 클릭·원 이탈·피격·일시정지 시각 밀기·판 끝에서만 부른다.
+ * 보스 패턴(레이저·추적 원·내려찍기·안전지대)과 맵 패턴 일정, 탄막 일정, 사람마다 기여 기록.
+ * 탄막은 무늬 단위(Volley)로 한 번 보내고, 화면이 시각으로 위치를 계산해 제 커서가 맞았는지 알려 온다(reportHurt).
+ * 방(room.ts)은 CoopHost를 넘기고 tick·원 잡기·수정 클릭·원 이탈·피격·탄 맞음 보고·일시정지 시각 밀기·판 끝에서만 부른다.
  * 계산은 shared/src/coop.ts, 수치는 RULES.coop.
  */
 import {
-  RULES, addSrc, applyRaidDamage, attackGap, circlePos, coopStars, crystalHits, inSafe, makeCrystal, makeOrb, makePattern,
-  makeRaid, makeThreat, orbDamage, placeCrystals, raidMaxHp, rollSafe, rollVolley, threatSpeed,
+  COOP_BOSSES, RULES, addSrc, applyRaidDamage, attackGap, circlePos, coopStars, crystalHits, inSafe, makeCrystal, makeOrb, makePattern,
+  makeRaid, makeThreat, makeVolley, orbDamage, placeCrystals, raidMaxHp, rollSafe, rollVolley, shotGone, shotPos, threatSpeed, volleyDone,
   type Circle, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopPlayerResult, type CoopResult, type CoopState,
   type LaserLine, type MapPattern, type PatternId, type PlayerState, type Point, type SafeZones, type ServerToClient, type Slam,
+  type BulletShape, type Volley,
 } from '@color-burst/shared';
 
 const C = RULES.coop;
@@ -59,6 +61,13 @@ export class CoopRun {
   private afterBurst = false;
   /** 진 이유 (결과에 실림) */
   private reason: CoopResult['reason'];
+  /** 아직 끝나지 않은 탄막, 탄막마다 이미 받은 맞음 보고 (`${사람}:${탄}`) */
+  private volleys: Volley[] = [];
+  private hurtSeen = new Map<number, Set<string>>();
+  /** 다음 탄막 발사 시각, 조준 무늬 표적 차례, 마지막 tick 시각 (상태의 끝난 탄막 거르기) */
+  private nextBullet = 0;
+  private aimTurn = 0;
+  private clock = 0;
 
   constructor(private host: CoopHost, readonly level: CoopLevel, private rand: () => number = Math.random) {}
 
@@ -78,6 +87,10 @@ export class CoopRun {
     this.boss = makeRaid(this.host.nextId(), now, hp);
     this.host.addCircle(this.boss);
     for (const p of ps) this.nextOrb.set(p.id, now + this.rand() * this.orbGap());
+    this.volleys = []; this.hurtSeen.clear();
+    // 다른 공격처럼 시작 조용한 시간 뒤부터
+    this.nextBullet = now + RULES.laser.startQuietMs;
+    this.clock = now;
     this.schedule(now);
     this.host.emit('coop:state', this.state());
   }
@@ -106,11 +119,13 @@ export class CoopRun {
       this.afterBurst = false;
       this.burstUntil = 0;
       this.schedule(now);
+      this.nextBullet = now + this.bulletGap();
       this.host.emit('coop:state', this.state());
     }
     this.tickRage(now);
     this.tickSlams(now);
     this.tickSafe(now);
+    this.tickBullets(now);
     if (this.shield) { this.tickBotCrystals(now); if (this.shield && now >= this.shield.until && !this.rageAt) this.startRage(now); return; }
     this.spawnOrbs(now);
     if (this.inBurst(now)) return;
@@ -137,6 +152,75 @@ export class CoopRun {
       if (ids?.length) this.host.setPattern(makePattern(ids[Math.floor(this.rand() * ids.length)]!, now + RULES.patterns.warnMs, this.rand));
       this.next.map = now + attackGap('map', this.level, this.phase, this.rand);
     }
+  }
+
+  /** 탄막 간격: 평소 bulletEveryMs ÷ 단계 배율(양), 보호막 중 ÷ shieldMult */
+  private bulletGap() {
+    const B = C.bullets, every = C.levels[this.level].bulletEveryMs;
+    return this.shield ? every / B.shieldMult : every / B.phaseMult[this.phase - 1]!;
+  }
+
+  /** 탄막 일정: 끝난 탄막을 치우고, 큰 피해 구간이 아니면 간격마다 무늬를 고른다 (평소엔 overlap 확률로 하나 더) */
+  private tickBullets(now: number) {
+    this.clock = now;
+    // 지연 보정 동안은 남겨 둔다 (막 나간 탄의 보고도 받을 수 있게)
+    const lag = now - RULES.lagWindowMs;
+    if (this.volleys.some((v) => volleyDone(v, lag))) {
+      this.volleys = this.volleys.filter((v) => {
+        if (!volleyDone(v, lag)) return true;
+        this.hurtSeen.delete(v.id);
+        return false;
+      });
+    }
+    if (!this.boss || this.inBurst(now) || now < this.nextBullet) return;
+    const gap = this.bulletGap();
+    // 오래 밀려 있었으면(보호막 직후 등) 지금부터 다시 센다
+    const at = this.nextBullet < now - gap ? now : this.nextBullet;
+    const boss = COOP_BOSSES.core;
+    const pool = this.shield ? boss.shieldBullets[this.shield.no] : boss.bullets[this.phase];
+    const pick = () => pool[Math.floor(this.rand() * pool.length)]!;
+    this.fireVolley(pick(), at);
+    if (!this.shield && this.rand() < C.bullets.overlap[this.phase - 1]!) this.fireVolley(pick(), at);
+    this.nextBullet = at + gap;
+    if (this.nextBullet <= now) this.nextBullet = now + gap;
+  }
+
+  private fireVolley(shape: BulletShape, at: number) {
+    if (!this.boss) return;
+    let aim: Point | undefined;
+    if (shape === 'aimed') {
+      // 커서가 있는 살아 있는 사람을 돌아가며 노린다 (아무도 없으면 바로 아래)
+      const targets = this.alive().map((p) => this.host.cursorOf(p.id)).filter((q): q is Point => !!q);
+      if (targets.length) aim = targets[this.aimTurn++ % targets.length];
+    }
+    const v = makeVolley(shape, this.host.nextId(), at, circlePos(this.boss, at),
+      { speed: C.levels[this.level].bulletSpeed, phase: this.phase, ...(aim ? { aim } : {}) }, this.rand);
+    this.volleys.push(v);
+    this.host.emit('coop:volley', v);
+  }
+
+  /** 지금까지 쏜 탄막을 모두 지운다 (보스가 무너짐) */
+  private clearVolleys(now: number) {
+    this.volleys = [];
+    this.hurtSeen.clear();
+    this.host.emit('coop:clear', { before: now });
+  }
+
+  /**
+   * 화면이 알린 탄 맞음. 탄막이 남아 있고, 그 탄이 쏘아졌고 (지연 보정 lagWindowMs 안에) 판 안에 있었고,
+   * 같은 사람이 같은 탄을 처음 알렸고, 살아 있고 연결된 사람일 때만 깎는다 (무적은 damage가 거른다)
+   */
+  reportHurt(p: PlayerState, volleyId: number, shot: number, now: number): boolean {
+    if (p.bot || p.outAt || !p.connected) return false;
+    const v = this.volleys.find((x) => x.id === volleyId);
+    if (!v || !Number.isInteger(shot) || shot < 0 || shot >= v.shots.length) return false;
+    if (!shotPos(v, shot, now) || shotGone(v, shot, now - RULES.lagWindowMs)) return false;
+    let seen = this.hurtSeen.get(v.id);
+    if (!seen) { seen = new Set(); this.hurtSeen.set(v.id, seen); }
+    const key = `${p.id}:${shot}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return this.damage(p, v.wall ? 'wall' : 'bullet', now);
   }
 
   /** 보스가 원을 뿜는다: 사람·봇 한 명당 간격마다 그 색 원(가끔 노란 원). 탈락한 사람 색은 없음 */
@@ -255,6 +339,7 @@ export class CoopRun {
     }
     this.host.setPattern(null);
     this.host.clearLasers();
+    this.clearVolleys(now);
     this.host.emit('coop:state', this.state());
   }
 
@@ -403,6 +488,8 @@ export class CoopRun {
     if (this.rageAt) this.rageAt += delta;
     for (const s of this.slams) s.at += delta;
     if (this.safe) this.safe.at += delta;
+    for (const v of this.volleys) v.at += delta;
+    if (this.nextBullet) this.nextBullet += delta;
     if (this.slams.length) this.host.emit('coop:slam', this.slams);
     if (this.safe) this.host.emit('coop:safe', this.safe);
     this.host.emit('coop:state', this.state());
@@ -413,6 +500,7 @@ export class CoopRun {
       level: this.level, phase: this.phase, bossId: this.boss?.id ?? -1, hp: this.boss?.hp ?? 0, maxHp: this.boss?.maxHp ?? 0,
       shield: this.shield ? { until: this.shield.until, no: this.shield.no } : null, burstUntil: this.burstUntil, rageAt: this.rageAt,
       slams: this.slams.map((s) => ({ ...s })), safe: this.safe,
+      volleys: this.volleys.filter((v) => !volleyDone(v, this.clock)),
     };
   }
 
@@ -431,6 +519,8 @@ export class CoopRun {
   }
 
   dispose() {
+    this.volleys = [];
+    this.hurtSeen.clear();
     this.slams = [];
     this.safe = null;
   }

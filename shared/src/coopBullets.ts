@@ -5,7 +5,8 @@ import type { CoopPhase } from './coop.ts';
 export type BulletShape = 'spiral' | 'ring' | 'aimed' | 'scatter' | 'wall';
 /** 출발점, 각도, 속도(필드/초), 발사 지연 ms */
 export interface Shot { x: number; y: number; a: number; v: number; d: number }
-export interface Volley { id: number; at: number; r: number; shots: Shot[] }
+/** wall: 벽 무늬 (맞으면 피해 종류가 'wall') */
+export interface Volley { id: number; at: number; r: number; shots: Shot[]; wall?: true }
 
 const key = (volleyId: number, shot: number) => `${volleyId}:${shot}`;
 
@@ -51,7 +52,7 @@ export function makeVolley(
       add(x, y, Math.PI / 2);
     }
   }
-  return { id, at, r: B.r, shots };
+  return { id, at, r: B.r, shots, ...(shape === 'wall' ? { wall: true as const } : {}) };
 }
 
 /** 직선 운동. 발사 전이면 null */

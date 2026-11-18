@@ -5,6 +5,7 @@
 import type { Circle, ClaimResult, ColorIndex, PlayerState, PresetId, RoomRules, Title } from './rules.ts';
 import type { TutorialStep, CoopLevel } from './rules.ts';
 import type { CoopPhase } from './coop.ts';
+import type { Volley } from './coopBullets.ts';
 
 /** 협력전 진행 상태 */
 export interface CoopState {
@@ -18,6 +19,8 @@ export interface CoopState {
   /** 대기 중인 내려찍기, 안전지대 (다시 접속·재개해도 화면이 이어서 그리도록) */
   slams: Slam[];
   safe: SafeZones | null;
+  /** 아직 끝나지 않은 탄막 (다시 접속·재개하면 화면이 이 목록으로 통째로 바꾼다) */
+  volleys: Volley[];
 }
 /** 협력전 결과: 사람(봇 포함)마다 기여 */
 export interface CoopPlayerResult { dmg: number; burstDmg: number; crystals: number; threats: number }
@@ -253,6 +256,10 @@ export interface ServerToClient {
   'coop:crystal': (d: { id: number; hp: number; maxHp: number }) => void;
   /** 협력전: 잡은 원이 보스에게 피해 (연출) */
   'coop:orb': (d: { by: string; x: number; y: number; dmg: number }) => void;
+  /** 협력전: 탄막 한 번 (탄 하나씩이 아니라 무늬 단위, 위치는 화면이 시각으로 계산) */
+  'coop:volley': (v: Volley) => void;
+  /** 협력전: before 시각 이전에 쏜 탄막 모두 지움 (큰 피해 구간 시작, 보스가 무너짐) */
+  'coop:clear': (d: { before: number }) => void;
   /** 협력전: 공격 원을 터뜨림 */
   'threat:popped': (d: { circleId: number; by: string; gained: number }) => void;
 }
@@ -300,6 +307,8 @@ export interface ClientToServer {
   'cursor:move': (d: { x: number; y: number }) => void;
   /** circleId가 null이면 빈 공간 클릭. x, y는 필드 좌표 */
   'game:click': (d: { circleId: number | null; x: number; y: number }) => void;
+  /** 협력전: 내 커서가 탄에 닿음 (화면 판정, 서버가 확인하고 깎는다) */
+  'coop:hurt': (d: { volleyId: number; shot: number }) => void;
   /** 협력전: 투표할 카드 (다시 고르면 표가 옮겨 간다) */
   /** 서버 시각 맞추기 */
   'time:ping': (ack: (serverNow: number) => void) => void;

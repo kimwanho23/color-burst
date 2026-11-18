@@ -3,8 +3,8 @@
  * 나중에 Phaser/PixiJS로 바꾸려면 이 파일만 교체하면 된다.
  */
 import {
-  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, vortexAlive, vortexWarned,
-  type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones } from '@color-burst/shared';
+  COLORS, FIELD, RULES, YELLOW, auraAt, barSegment, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
+  type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones } from '@color-burst/shared';
 
 /** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
 function seeded(seed: number) {
@@ -108,6 +108,8 @@ export interface DrawState {
   /** 협력전: 내려찍기 경고, 안전지대 */
   slams?: readonly Slam[];
   safe?: SafeZones | null;
+  /** 협력전: 탄막 (원보다 위, 수정보다 아래) */
+  volleys?: readonly Volley[];
 }
 
 export class Renderer {
@@ -308,6 +310,8 @@ export class Renderer {
       if (a) this.drawAura(a, !!s.myAura, now);
     }
     for (const c of list) if (c.kind === 'boss') { fade(c); this.drawBoss(c, s.now, now); }
+    // 수정은 탄막 위에 그린다
+    const crystals: { c: Circle; x: number; y: number; r: number }[] = [];
     for (const c of list) {
       if (c.kind === 'boss') continue;
       let p = circlePos(c, s.now), r = c.r;
@@ -324,9 +328,12 @@ export class Renderer {
       if (c.kind === 'gold' && !this.warp) this.drawGoldTrail(c, s.now);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
       else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, now, s);
-      else if (c.kind === 'crystal') this.drawCrystal(c, p.x, p.y, r, s);
+      else if (c.kind === 'crystal') crystals.push({ c, x: p.x, y: p.y, r });
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
     }
+    ctx.globalAlpha = base;
+    if (s.volleys?.length) this.drawBullets(s.volleys, s.now, now);
+    for (const k of crystals) { fade(k.c); this.drawCrystal(k.c, k.x, k.y, k.r, s); }
     ctx.globalAlpha = base;
     ctx.filter = 'none'; ctx.globalAlpha = 1;
     // 안개는 원 위에 덮는다
@@ -770,6 +777,32 @@ export class Renderer {
       const z = safeZoneAt(sz, i, t);
       ctx.strokeStyle = 'rgba(120, 255, 170, .9)'; ctx.lineWidth = 5;
       ctx.beginPath(); ctx.arc(z.x, z.y, z.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - f)); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 협력전 탄: 어두운 빨강 몸통 + 밝은 테두리 + 도는 가시 4개 */
+  private drawBullets(vs: readonly Volley[], t: number, frameNow: number) {
+    const ctx = this.ctx, spin = frameNow / 260;
+    ctx.save();
+    ctx.lineJoin = 'round';
+    for (const v of vs) {
+      const r = v.r;
+      for (let i = 0; i < v.shots.length; i++) {
+        const p = shotPos(v, i, t);
+        if (!p || shotGone(v, i, t)) continue;
+        ctx.fillStyle = '#ff8a95';
+        ctx.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const a = spin + i + (k * Math.PI) / 2, w = 0.42;
+          ctx.moveTo(p.x + Math.cos(a - w) * r * 0.8, p.y + Math.sin(a - w) * r * 0.8);
+          ctx.lineTo(p.x + Math.cos(a) * r * 1.55, p.y + Math.sin(a) * r * 1.55);
+          ctx.lineTo(p.x + Math.cos(a + w) * r * 0.8, p.y + Math.sin(a + w) * r * 0.8);
+        }
+        ctx.fill();
+        ctx.fillStyle = '#6e0a18'; ctx.strokeStyle = '#ffd0d5'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
     }
     ctx.restore();
   }

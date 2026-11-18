@@ -141,6 +141,10 @@ io.on('connection', (socket) => {
     if (!s || !d || typeof d.x !== 'number' || typeof d.y !== 'number') return;
     s.room.click(s.id, { circleId: typeof d.circleId === 'number' ? d.circleId : null, x: d.x, y: d.y });
   });
+  socket.on('coop:hurt', (d) => {
+    const s = here();
+    if (s && d && Number.isInteger(d.volleyId) && Number.isInteger(d.shot)) s.room.coopHurt(s.id, { volleyId: d.volleyId, shot: d.shot });
+  });
   socket.on('disconnect', () => {
     const s = here();
     if (!s) return;
