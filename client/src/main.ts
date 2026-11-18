@@ -1140,7 +1140,8 @@ socket.on('game:over', (d) => {
     : pos === 1 ? '1등!' : `${pos}등`;
   const r = renderResult(d, myId(), effects, startAt);
   $('rank').innerHTML = (d.coop ? coopResultHtml(d.coop) : '') + r.rank;
-  coopState = null; renderCoop();
+  // 협력전 패턴·탄막도 지운다 (결과 화면 뒤에 남지 않게)
+  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; coopMissiles = []; setVolleys([]); renderCoop();
   $('titleList').innerHTML = r.titles;
   $('graphBox').innerHTML = r.graph;
   $('srcBox').innerHTML = r.sources;

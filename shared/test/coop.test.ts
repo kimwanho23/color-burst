@@ -1378,3 +1378,34 @@ test('shift: 봉인·빔·다음 고유 패턴 시각이 함께 밀림', () => {
   assert.equal(calls.length, 1);
   room.destroy();
 });
+
+// ---------- 최종 리뷰 수정 ----------
+/** 판이 끝날 때까지 tick (끝난 그 tick의 나머지도 돈다). game:over 뒤에 나간 이벤트 이름 */
+function tickToOver(r: CRoom, room: Room, from: number, to: number) {
+  const run = r.coop;
+  for (let t = from; t <= to && room.phase === 'play'; t += 50) run.tick(t);
+  assert.equal(room.phase, 'lobby', '판이 끝남');
+  const i = sent.findIndex((s) => s.ev === 'game:over');
+  return sent.slice(i + 1).map((s) => s.ev).filter((ev) => ev.startsWith('coop:') || ev.startsWith('laser:') || ev === 'circle:spawn');
+}
+
+test('판이 끝난 뒤: 엑스퍼트 수정 실패로 진 tick의 나머지가 보호막·분노·공격을 보내지 않음', () => {
+  const { room, r, me } = coopRoom(1, 0, 'expert');
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  sent.length = 0;
+  assert.deepEqual(tickToOver(r, room, now, now + 60_000), []);
+  assert.equal(overOf()?.coop?.reason, 'crystal');
+  room.destroy();
+});
+
+test('판이 끝난 뒤: 분노로 모두 탈락한 tick의 나머지가 수정·보호막을 보내지 않음', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  me.hp = 1;
+  sent.length = 0;
+  assert.deepEqual(tickToOver(r, room, now, now + 60_000), []);
+  assert.equal(overOf()?.coop?.reason, 'wipe');
+  room.destroy();
+});

@@ -137,10 +137,15 @@ export class CoopRun {
     if (this.tickMissiles(now)) return; // 미사일로 보스가 쓰러져 판이 끝남
     if (!this.boss) return;
     if (this.weak && now >= this.weak.until) { this.weak = null; this.host.emit('coop:state', this.state()); }
+    // 아래 패턴은 모두 탈락시켜 판을 끝낼 수 있다 (끝나면 dispose가 boss를 지우니 이 tick의 나머지는 아무것도 보내지 않는다)
     this.tickSlams(now);
+    if (!this.boss) return;
     this.tickSafe(now);
+    if (!this.boss) return;
     this.tickSeal(now);
+    if (!this.boss) return;
     this.tickBeam(now);
+    if (!this.boss) return;
     this.tickBullets(now);
     if (this.shield) { this.tickBotCrystals(now); if (this.shield && now >= this.shield.until && !this.rageAt) this.startRage(now); return; }
     this.spawnOrbs(now);
@@ -573,6 +578,7 @@ export class CoopRun {
       for (const p of this.alive()) {
         const q = this.host.cursorOf(p.id);
         if (q && Math.hypot(q.x - s.x, q.y - s.y) <= s.r) this.damage(p, 'slam', now);
+        if (!this.boss) return;
       }
     }
   }
@@ -584,6 +590,7 @@ export class CoopRun {
     for (const p of this.alive()) {
       const q = this.host.cursorOf(p.id);
       if (q && !inSafe(q, s, now)) this.damage(p, 'safe', now);
+      if (!this.boss) return;
     }
     this.host.emit('coop:safe', null);
   }
@@ -719,9 +726,16 @@ export class CoopRun {
     };
   }
 
-  /** 판이 끝남: 아이템 효과도 끝 */
+  /** 판이 끝남: 아이템 효과도 끝. 보스·보호막·패턴을 모두 지워 끝난 tick의 나머지가 아무것도 보내지 않게 한다 */
   dispose() {
     for (const p of this.host.players()) delete p.coopFx;
+    this.boss = null;
+    this.shield = null;
+    this.rageAt = 0;
+    this.burstUntil = 0;
+    this.afterBurst = false;
+    this.nextSkill = 0;
+    this.botNext.clear();
     this.weak = null;
     this.missiles = [];
     this.volleys = [];
