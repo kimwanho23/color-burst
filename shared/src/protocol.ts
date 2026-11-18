@@ -35,6 +35,7 @@ export interface CoopResult {
   win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase;
   maxHp: number; players: Record<string, CoopPlayerResult>;
   /** 보호막마다 수정을 다 깨는 데 걸린 ms (처음 나온 때부터)와 그동안 분노 횟수 */
+  /** 보호막마다: ms 수정을 다 깬 시간, rages 분노 횟수, burstMs 그 뒤 큰 피해 구간 길이 */
   breaks: { ms: number; rages: number; burstMs: number }[];
   /** 진 이유: 수정 구간 실패(엑스퍼트 분노) / 모두 탈락 / 시간 끝 */
   reason?: 'crystal' | 'wipe' | 'time';

@@ -447,8 +447,12 @@ export class Renderer {
     const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
     g.addColorStop(0, c0); g.addColorStop(0.55, c1); g.addColorStop(1, c2);
     ctx.fillStyle = g;
+    // 보호막 중: 붉은 빛 (효과 줄이기면 없음). 테두리까지만 번지고 바로 끈다
+    const glow = !!s?.coopShield && !reduceMotion;
+    if (glow) { ctx.shadowColor = 'rgba(255, 45, 61, .9)'; ctx.shadowBlur = 36; }
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = s?.coop && s.coopPhase ? 7 : 4; ctx.strokeStyle = st.enraged ? '#ff4d4d' : s?.coop && s.coopPhase ? COOP_BOSSES.core.rims[s.coopPhase - 1] : '#fff'; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
     this.bossEmblem(type, r, st.enraged);
     // 체력 숫자
     ctx.fillStyle = 'rgba(30,20,10,.85)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

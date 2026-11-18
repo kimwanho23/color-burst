@@ -125,7 +125,7 @@ test('수정 자리: 보스 아래 부채꼴에 놓이지 않음', () => {
   assert.ok(n >= 200, String(n));
   // 부채꼴 한가운데로만 나오는 난수는 건너뛰고 다른 곳을 찾는다
   assert.equal(inCrystalDanger({ x: FIELD.w / 2, y: C.bossY + 400 }), true);
-  assert.equal(inCrystalDanger({ x: FIELD.w / 2, y: C.bossY + 700 }), false);
+  assert.equal(inCrystalDanger({ x: FIELD.w / 2, y: C.bossY + 1100 }), false);
   assert.equal(inCrystalDanger({ x: FIELD.w / 2, y: C.bossY - 100 }), false);
 });
 
@@ -137,9 +137,22 @@ test('수정 구간: 잡을 원은 안 나오고 탄막은 나온다', () => {
   sent.length = 0;
   for (let t = now; t <= now + 5000; t += 50) r.coop.tick(t);
   const orbs = [...r.circles.values()].filter((c) => c.kind !== 'crystal' && c.kind !== 'boss').length;
-  assert.ok(orbs <= before, '새 원 없음');
+  assert.equal(orbs, before, '새 원 없음');
   assert.ok(volleysSent().length > 0, '탄막은 나옴');
   room.destroy();
+});
+
+test('수정 자리: 부채꼴 안 후보(보스 바로 아래)는 거르고 다른 곳에 놓는다', () => {
+  // 앞 후보 세 개는 각도 π/2 (아래 가운데), 이후는 고르게 흩어진 값
+  const first = [0.25, 0.5, 0.25, 0.9, 0.25, 0.1];
+  let i = 0, a = 12345;
+  const rest = () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const rand = () => (i < first.length ? first[i++]! : rest());
+  const bottom = { x: FIELD.w / 2, y: FIELD.h / 2 + 0.85 * FIELD.h / 2 };
+  assert.equal(inCrystalDanger(bottom), true, '아래 가운데는 위험');
+  const ps = placeCrystals(4, rand);
+  assert.equal(ps.length, 4);
+  for (const p of ps) assert.equal(inCrystalDanger(p), false, JSON.stringify(p));
 });
 
 test('breaks에 burstMs가 남는다', () => {

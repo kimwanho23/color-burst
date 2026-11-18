@@ -82,7 +82,7 @@ export const RULES = {
       wallGap: 20, gapW: 120, wallDy: 190,
     },
     /** 수정: 반지름, 서로 떨어진 거리, 피할 부채꼴(보스 아래로 ±dangerDeg도, 거리 dangerR 안) */
-    crystal: { r: 46, minGap: 140, dangerDeg: 35, dangerR: 600 },
+    crystal: { r: 46, minGap: 140, dangerDeg: 35, dangerR: 1000 },
     /** 수정을 다 못 깼을 때 분노 공격 경고 */
     rageWarnMs: 2_000,
     /** 내려찍기: 경고 시간, 반지름 */
