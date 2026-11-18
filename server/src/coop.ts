@@ -14,6 +14,7 @@ import {
   type BulletShape, type CoopItemId, type Volley,
 } from '@color-burst/shared';
 import { FIELD, homingHits, homingRule, steerHoming, type Homing } from '@color-burst/shared';
+import { barrierCovers, fillCounter, newCounter, type CoopCounter } from '@color-burst/shared';
 import { coopAttackRules, specialId, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
 
 const C = RULES.coop;
@@ -91,6 +92,8 @@ export class CoopRun {
   private weak: { until: number; dx: number; dy: number } | null = null;
   private missiles: { by: string; at: number; dmg: number }[] = [];
   private boostUntil = 0;
+  /** 폭딜 반격 분노 게이지 (판 중에만) */
+  private counter: CoopCounter | null = null;
 
   constructor(private host: CoopHost, readonly level: CoopLevel, private rand: () => number = Math.random) {}
 
@@ -111,6 +114,7 @@ export class CoopRun {
       if (p.bot) delete p.coopFx; else p.coopFx = { ...newCoopFx(), barrierLeft: C.barrier.uses[this.level] };
     }
     this.weak = null; this.missiles = []; this.boostUntil = 0;
+    this.counter = newCounter(now);
     const ps = this.host.players();
     const hp = raidMaxHp(ps.filter((p) => !p.bot).length, ps.filter((p) => p.bot).length, this.level);
     this.boss = makeRaid(this.host.nextId(), now, hp);
@@ -199,6 +203,7 @@ export class CoopRun {
     }
     this.tickRage(now);
     if (!this.boss) return;
+    this.tickCounter(now);
     if (this.tickMissiles(now)) return; // 미사일로 보스가 쓰러져 판이 끝남
     if (this.tickSpecials(now)) return;
     if (!this.boss) return;
@@ -519,11 +524,14 @@ export class CoopRun {
     const fx = p.coopFx;
     let mult = coopDamageMult(fx, now);
     if (fx && fx.chain > 0) { fx.chain--; mult *= I.chainMult; }
-    return this.hurtBoss(p, orbDamage(p, c.kind, this.inBurst(now), mult), now, circlePos(c, now));
+    return this.hurtBoss(p, orbDamage(p, c.kind, this.inBurst(now), mult), now, circlePos(c, now), true);
   }
 
-  /** 보스에게 dmg: 경계에서 멈춤, 기록·점수, at이 있으면 coop:orb 연출. 경계에 닿으면 보호막, 0에 닿으면 killed */
-  private hurtBoss(p: PlayerState, dmg: number, now: number, at: Point | null): { dmg: number; gained: number; killed: boolean } {
+  /**
+   * 보스에게 dmg: 경계에서 멈춤, 기록·점수, at이 있으면 coop:orb 연출. 경계에 닿으면 보호막, 0에 닿으면 killed.
+   * combo: 콤보 배율을 받는 피해(원·약점)면 분노 게이지에 넣는다 (큰 피해 구간·보호막 단계 제외)
+   */
+  private hurtBoss(p: PlayerState, dmg: number, now: number, at: Point | null, combo = false): { dmg: number; gained: number; killed: boolean } {
     const boss = this.boss;
     if (!boss) return { dmg: 0, gained: 0, killed: false };
     const { dealt, crossed } = applyRaidDamage(boss, dmg, this.phase);
@@ -536,6 +544,10 @@ export class CoopRun {
     const killed = crossed && (boss.hp ?? 0) <= 0;
     if (killed) p.stats.bossKills++;
     else if (crossed) this.beginShield(now);
+    else if (combo && dealt > 0 && this.counter && !this.inBurst(now) && !this.shield) {
+      fillCounter(this.counter, (dealt / (boss.maxHp || 1)) * 100, now, this.level);
+      this.host.emit('coop:state', this.state());
+    }
     else this.host.emit('coop:state', this.state());
     return { dmg: dealt, gained, killed };
   }
@@ -610,7 +622,7 @@ export class CoopRun {
     }
     if (!inside) return none;
     const dmg = orbDamage(p, p.color, this.inBurst(now), I.weakDmg * coopDamageMult(p.coopFx, now));
-    return this.hurtBoss(p, dmg, now, { x: pt.x, y: pt.y });
+    return this.hurtBoss(p, dmg, now, { x: pt.x, y: pt.y }, true);
   }
 
   /** 보호막: 보스 무적, 원·패턴 멈춤, 살아 있고 연결된 사람·봇마다 자기 색 수정 */
@@ -621,6 +633,8 @@ export class CoopRun {
     this.burstUntil = 0;
     // 날아가던 미사일은 보호막에 막힌다 (수정을 빨리 깨도 남은 발은 들어가지 않음)
     this.missiles = [];
+    // 반격 예고 중이면 취소 (재사용 대기 없이 게이지만 0으로)
+    if (this.counter && now < this.counter.fireAt) this.counter = newCounter(now);
     // 고유 패턴은 보호막·큰 피해 구간 동안 쉬고, 큰 피해 구간이 끝나면 다시 센다
     this.nextSkill = 0;
     this.host.clearLasers();
@@ -702,6 +716,22 @@ export class CoopRun {
   private startRage(now: number) {
     this.rageAt = now + C.rageWarnMs;
     this.host.emit('coop:state', this.state());
+  }
+
+  /** 폭딜 반격 판정: 발동 시각 + lagMs (늦게 도착한 보호막 요청도 인정). 탈락하지 않은 모두(봇 포함)의 콤보를 0으로, 보호막이면 지킴 */
+  private tickCounter(now: number) {
+    const g = this.counter;
+    if (!g || !g.fireAt || now < g.fireAt + C.barrier.lagMs) return;
+    const lost: string[] = [], saved: string[] = [];
+    for (const p of this.host.players()) {
+      if (p.outAt) continue;
+      if (barrierCovers(p.coopFx, g.fireAt)) { saved.push(p.id); this.stat(p.id).counterSaved++; }
+      else if (p.combo > 0) { p.combo = 0; lost.push(p.id); this.stat(p.id).counterLost++; }
+    }
+    this.counter = { value: 0, at: now, fireAt: 0, coolUntil: g.fireAt + C.counter.cooldownMs[this.level] };
+    this.host.emit('coop:counter', { lost, saved });
+    this.host.emit('coop:state', this.state());
+    if (lost.length) this.host.emitPlayers();
   }
 
   private tickRage(now: number) {
@@ -843,6 +873,11 @@ export class CoopRun {
   /** 일시정지가 끝나 시각을 민다 (delta ms) */
   shift(delta: number) {
     for (const a of this.specials) a.at += delta;
+    if (this.counter) {
+      this.counter.at += delta;
+      if (this.counter.fireAt) this.counter.fireAt += delta;
+      if (this.counter.coolUntil) this.counter.coolUntil += delta;
+    }
     if (this.threatAt) this.threatAt += delta;
     if (this.nextSkill) this.nextSkill += delta;
     for (const [id, t] of this.nextOrb) this.nextOrb.set(id, t + delta);
@@ -900,7 +935,7 @@ export class CoopRun {
       seal: this.seal ? { ...this.seal, lanes: [...this.seal.lanes] } : null, beam: this.beam ? { ...this.beam } : null,
       homing: this.homing ? { ...this.homing, targets: [...this.homing.targets], shots: this.homing.shots.map((s) => ({ ...s })) } : null,
       weak: this.weak ? { ...this.weak } : null,
-      counter: null,
+      counter: this.counter ? { ...this.counter } : null,
       ...(withVolleys ? { volleys: this.volleys.filter((v) => !volleyDone(v, this.clock)) } : {}),
     };
   }
@@ -941,5 +976,6 @@ export class CoopRun {
     this.seal = null;
     this.beam = null;
     this.homing = null;
+    this.counter = null;
   }
 }
