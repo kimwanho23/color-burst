@@ -1109,7 +1109,9 @@ let cursorMode: CursorMode | null = null;
 // 마우스 감도: 1.0이 아니면 게임 중 마우스를 잠그고(포인터 잠금) 이동량 × 감도로 움직인다.
 // 잠그지 않으면 게임 커서가 진짜 마우스 위치를 따라가서 감도를 줄 수 없다. 1.0이면 잠그지 않는다 (예전과 같음)
 const cv = $<HTMLCanvasElement>('cv');
-const aimLive = () => playing && !picking() && !roundOver && !pausedView && !me()?.outAt;
+/** 튜토리얼 설명 카드처럼 판 위에 눌러야 할 버튼이 떠 있는 장면 (마우스가 잠겨 있으면 버튼을 못 누른다) */
+const overlayUp = () => !!room?.tutorial && currentBeat()?.kind === 'card';
+const aimLive = () => playing && !picking() && !roundOver && !pausedView && !me()?.outAt && !overlayUp();
 const wantLock = () => settings.sens !== 1;
 const locked = () => document.pointerLockElement === cv;
 /** 잠긴 동안의 가상 마우스 위치 (필드 좌표, 판 안) */
