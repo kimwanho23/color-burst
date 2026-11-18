@@ -12,7 +12,7 @@ import { BOSS_HITSTOP_MS, BOSS_SHAKE, COOP_DEFEAT, FEVER_BURST, Renderer, shapeS
 import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
-import { coopResultHtml, counterFlashAt, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
+import { coopResultHtml, counterFlashAt, counterHudLive, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
 import { renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
 import { barrierGuarding, barrierReady, chordPress, pointerAction } from './pointer.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId } from '@color-burst/shared';
@@ -132,7 +132,7 @@ function setVolleys(vs: Volley[]) {
   for (const k of coopSkip) if (!ids.has(Number(k.split(':')[0]))) coopSkip.delete(k);
 }
 function renderCoop() {
-  renderCoopHud($('stage'), playing ? coopState : null, serverNow());
+  renderCoopHud($('stage'), playing ? coopState : null, viewNow());
   renderSpecialHud($('stage'), playing && rules.coop ? me() : undefined, !!coopState?.shield, !!coopState?.specials?.some((a) => a.by === myId()));
   renderBarrier();
 }
@@ -686,7 +686,8 @@ socket.on('coop:state', (s) => {
     sfx.fever();
   }
   // 폭딜 반격 예고가 새로 시작됨
-  const flash = counterFlashAt(counterFireAt, s.counter, serverNow());
+  // 멈춤 중이거나 재개 직후 1초 안이면 밀린 예고일 뿐이라 경고음 없이 시각만 맞춘다
+  const flash = counterFlashAt(counterFireAt, s.counter, serverNow(), !!pausedView || (resumeAt > 0 && serverNow() < resumeAt + 1000));
   counterFireAt = flash.fireAt;
   if (flash.warn) sfx.patternWarn();
   if (s.threatAt && !coopState?.threatAt) {
@@ -965,7 +966,7 @@ const scoreTier = (o: { jackpot?: number; fever?: boolean; special?: boolean; ki
 socket.on('boss:hit', ({ circleId, by, hp, gained, jackpot, blocked, enraged, feverStarted, comboBonus }) => {
   const c = circles.get(circleId);
   if (c) c.hp = hp;
-  if (coopState && circleId === coopState.bossId) { coopState = { ...coopState, hp }; renderCoopHud($('stage'), coopState, serverNow()); }
+  if (coopState && circleId === coopState.bossId) { coopState = { ...coopState, hp }; renderCoopHud($('stage'), coopState, viewNow()); }
   if (by === myId() && c && (blocked || enraged)) {
     const p = circlePos(c, serverNow());
     // 방어형 보호막에 막힘 / 붉은 공격형을 때려 감점
@@ -1486,7 +1487,7 @@ function updateHud(now: number) {
   $('meterFill').style.width = `${Math.max(0, fill)}%`;
   // 협력전: 개인 피버가 없으니 게이지 줄을 숨기고, 보스 체력 바의 남은 초를 갱신한다
   document.body.classList.toggle('coop-on', playing && !!rules.coop);
-  if (coopState && playing && (coopState.shield || coopState.threatAt || coopState.burstUntil > now || (coopState.counter && (coopState.counter.value > 0 || coopState.counter.fireAt || coopState.counter.coolUntil > now))) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250); renderCoopHud($('stage'), coopState, now); }
+  if (coopState && playing && (coopState.shield || coopState.threatAt || coopState.burstUntil > now || counterHudLive(coopState.counter, coopState.level, now)) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250); renderCoopHud($('stage'), coopState, now); }
   const after = !!m && !fever && now < m.afterUntil;
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }

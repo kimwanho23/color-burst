@@ -74,6 +74,11 @@ export function counterFlashAt(prev: number, g: CoopCounter | null | undefined, 
   return { fireAt: prev > now ? 0 : prev, warn: false };
 }
 
+/** 분노 게이지를 계속 다시 그려야 하는지: 남은 값이 있거나 예고·재사용 대기 중 */
+export function counterHudLive(g: CoopCounter | null | undefined, level: CoopLevel, now: number): boolean {
+  return !!g && (g.fireAt > 0 || now < g.coolUntil || counterValue(g, now, level) > 0);
+}
+
 /** 보스 체력 바 아래 분노 게이지: 차오를수록 진해지고, 예고 중이면 가득, 재사용 대기 중이면 흐리게 남은 초 */
 function counterGauge(g: CoopCounter, level: CoopLevel, now: number) {
   const cap = RULES.coop.counter.cap[level];

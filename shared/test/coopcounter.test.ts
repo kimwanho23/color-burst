@@ -251,3 +251,15 @@ test('서버: 재접속 상태(state)에 counter가 실림', () => {
   assert.notEqual(st.counter, run.counter, '복사본');
   room.destroy();
 });
+
+test('서버: 콤보 0인 사람은 보호막을 켜도 saved에 없음 (지킬 콤보가 없음)', () => {
+  const { room, r, me, run } = coopRoom();
+  const at = fire(run, me, r.startAt + 5000);
+  me.combo = 0;
+  assert.equal(run.activateBarrier(me, at - 500), true);
+  sent.length = 0;
+  run.tickCounter(at + B.lagMs);
+  assert.deepEqual(counterEv(), [{ lost: [], saved: [] }]);
+  assert.equal(run.result(at + 200, r.startAt, false).players[me.id]!.counterSaved, 0);
+  room.destroy();
+});

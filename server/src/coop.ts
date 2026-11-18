@@ -724,9 +724,9 @@ export class CoopRun {
     if (!g || !g.fireAt || now < g.fireAt + C.barrier.lagMs) return;
     const lost: string[] = [], saved: string[] = [];
     for (const p of this.host.players()) {
-      if (p.outAt) continue;
+      if (p.outAt || p.combo <= 0) continue;
       if (barrierCovers(p.coopFx, g.fireAt)) { saved.push(p.id); this.stat(p.id).counterSaved++; }
-      else if (p.combo > 0) { p.combo = 0; lost.push(p.id); this.stat(p.id).counterLost++; }
+      else { p.combo = 0; lost.push(p.id); this.stat(p.id).counterLost++; }
     }
     this.counter = { value: 0, at: now, fireAt: 0, coolUntil: g.fireAt + C.counter.cooldownMs[this.level] };
     this.host.emit('coop:counter', { lost, saved });

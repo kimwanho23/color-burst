@@ -43,11 +43,29 @@ test('coopBreaksText: 보호막마다 걸린 초, 분노 횟수', () => {
 
 test('counterFlashAt: 예고 시작은 경고, 취소되면 번쩍임 지움, 발동 뒤 판정으로 0이 와도 번쩍임 유지, 재개·재접속은 새 시각으로', async () => {
   const { counterFlashAt } = await import('../../client/src/coopUI.ts');
-  const g = (fireAt: number) => ({ value: 0, at: 0, fireAt, coolUntil: 0 });
+  const g = (fireAt: number) => ({ value: 0, at: fireAt > 0 ? fireAt - 2000 : 0, fireAt, coolUntil: 0 });
   assert.deepEqual(counterFlashAt(0, g(5000), 3000), { fireAt: 5000, warn: true }, '새 예고');
   assert.deepEqual(counterFlashAt(5000, g(5000), 3500), { fireAt: 5000, warn: false }, '같은 예고');
   assert.deepEqual(counterFlashAt(5000, g(0), 4000), { fireAt: 0, warn: false }, '발동 전 취소 → 번쩍임 없음');
   assert.deepEqual(counterFlashAt(5000, g(0), 5150), { fireAt: 5000, warn: false }, '판정 뒤 0 → 번쩍임 유지');
   assert.deepEqual(counterFlashAt(5000, null, 4000), { fireAt: 0, warn: false }, '판 끝');
   assert.deepEqual(counterFlashAt(5000, g(8000), 6000, true), { fireAt: 8000, warn: false }, '재개·재접속: 시각만 맞추고 경고음 없음');
+});
+
+test('counterFlashAt: 재개 직후 밀린 예고가 coop:state로 먼저 와도 경고음을 다시 내지 않음', async () => {
+  const { counterFlashAt } = await import('../../client/src/coopUI.ts');
+  // 예고는 1000에 시작, 1500에 일시정지 10초 → 서버가 at·fireAt을 10초 밀어 보냄. 재개 직후라 synced
+  assert.deepEqual(counterFlashAt(3000, { value: 2.5, at: 11_000, fireAt: 13_000, coolUntil: 0 }, 11_500, true), { fireAt: 13_000, warn: false });
+  // 재개와 상관없는 새 예고는 경고
+  assert.deepEqual(counterFlashAt(3000, { value: 2.5, at: 30_000, fireAt: 32_000, coolUntil: 0 }, 30_050), { fireAt: 32_000, warn: true });
+});
+
+test('counterHudLive: 게이지가 다 빠지면 갱신 멈춤, 예고·대기 중이면 갱신', async () => {
+  const { counterHudLive } = await import('../../client/src/coopUI.ts');
+  const g = { value: 1.3, at: 0, fireAt: 0, coolUntil: 0 };
+  assert.equal(counterHudLive(g, 'normal', 500), true);
+  assert.equal(counterHudLive(g, 'normal', 1000), false, '1.3%/초로 1초 뒤 0');
+  assert.equal(counterHudLive({ ...g, value: 0, fireAt: 5000 }, 'normal', 1000), true);
+  assert.equal(counterHudLive({ ...g, value: 0, coolUntil: 5000 }, 'normal', 1000), true);
+  assert.equal(counterHudLive(null, 'normal', 1000), false);
 });
