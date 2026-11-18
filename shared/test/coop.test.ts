@@ -9,6 +9,7 @@ import {
 import { Room } from '../../server/src/room.ts';
 import { gameRecord } from '../../server/src/gameLog.ts';
 import { Bot } from '../../server/src/bot.ts';
+import { COOP_SPECIAL_IDS, specialRule } from '../src/coopSpecial.ts';
 
 mock.method(console, 'log', () => {});
 test('보스 체력: 난이도 배율과 사람·봇 인원 반영', () => {
@@ -286,6 +287,7 @@ test('협력전 원은 판 가운데를 지나도 잡힌다', () => {
 // ---------- 방 ----------
 
 type CoopRunT = {
+  activateSpecial(p: PlayerState, now: number): boolean;
   damage(p: PlayerState, by: CoopHitBy, now: number): boolean; threatEscaped(c: Circle, now: number): void;
   catchOrb(p: PlayerState, c: Circle, now: number): { dmg: number; killed: boolean }; hitCrystal(p: PlayerState, c: Circle, now: number): boolean;
   tick(now: number): void; shift(delta: number): void; recheck(): void; phase: number; boss: Circle;
@@ -341,6 +343,101 @@ const sealsSent = () => sent.filter((s) => s.ev === 'coop:seal').map((s) => s.d 
 const beamsSent = () => sent.filter((s) => s.ev === 'coop:beam').map((s) => s.d as Beam | null);
 /** 저절로 나오는 고유 패턴을 막는다 (직접 부른 패턴만 보려고) */
 const noSkills = (r: CRoom) => { (r.coop as unknown as { nextSkill: number }).nextSkill = Infinity; };
+
+test('스페셜 어택: 대기실 선택·준비 해제, 게임 중 변경 금지', () => {
+  const room = new Room(fakeIo(), 'SPCL', () => {});
+  const a = (room.join('s1', 'k1', 'A') as { id: string }).id;
+  const b = (room.join('s2', 'k2', 'B') as { id: string }).id;
+  room.setRules(a, { rules: { coop: true } });
+  room.setReady(b, true);
+  room.setSpecial(b, 'meteor');
+  const p = room.players.find((x) => x.id === b)!;
+  assert.equal(p.coopSpecial, 'meteor');
+  assert.equal(p.ready, false);
+  room.setReady(b, true);
+  assert.equal(room.start(a), null);
+  room.setSpecial(b, 'blades');
+  assert.equal(p.coopSpecial, 'meteor');
+  assert.equal(p.coopCharge, 0);
+  room.destroy();
+});
+
+test('스페셜 어택: 종류별 충전량·피해, 연타 중복 방지와 공격 후 게이지', () => {
+  for (const kind of COOP_SPECIAL_IDS) {
+    const { room, r, me } = coopRoom(1, 0);
+    noSkills(r);
+    const now = r.startAt + 5000, spec = specialRule(kind);
+    me.coopSpecial = kind;
+    r.cursors.set(me.id, { x: 550, y: 700, at: now });
+    me.coopCharge = spec.charge - 1;
+    assert.equal(r.coop.activateSpecial(me, now), false);
+    r.coop.catchOrb(me, orbOf(me.color, now), now);
+    assert.equal(me.coopCharge, spec.charge);
+    const hp = r.coop.boss.hp!, immune = me.immuneUntil;
+    assert.equal(r.coop.activateSpecial(me, now), true);
+    assert.equal(r.coop.activateSpecial(me, now), false);
+    assert.equal(me.coopCharge, 0);
+    assert.equal(me.immuneUntil, immune);
+    assert.equal(r.coop.state().specials?.[0]?.kind, kind);
+    r.coop.tick(now + spec.durationMs);
+    assert.ok(Math.abs(r.coop.boss.hp! - (hp - spec.damage)) < 1e-8, kind);
+    assert.equal(r.coop.state().specials?.length, 0);
+    room.destroy();
+  }
+});
+
+test('스페셜 어택: 보호막·기절·탈락·일시정지 중 발동 차단, 재개 시 공격 시각 보정', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  noSkills(r);
+  const now = r.startAt + 5000;
+  me.coopCharge = specialRule('laser').charge;
+  r.cursors.set(me.id, { x: 550, y: 700, at: now });
+  me.stunUntil = now + 1000;
+  assert.equal(r.coop.activateSpecial(me, now), false);
+  me.stunUntil = 0;
+  me.outAt = now;
+  assert.equal(r.coop.activateSpecial(me, now), false);
+  me.outAt = 0;
+  r.startAt = Date.now() - 10_000;
+  r.pausedAt = Date.now();
+  room.coopSpecial(me.id);
+  assert.equal(me.coopCharge, specialRule('laser').charge);
+  assert.equal(r.coop.state().specials?.length, 0);
+  r.pausedAt = 0;
+  assert.equal(r.coop.activateSpecial(me, now), true);
+  r.coop.shift(3000);
+  assert.equal(r.coop.state().specials?.[0]?.at, now + 3000);
+  const hp = r.coop.boss.hp;
+  r.coop.tick(now + 3000);
+  assert.equal(r.coop.boss.hp, hp);
+  toShield(r, me, now + 3050);
+  me.coopCharge = specialRule('laser').charge;
+  assert.equal(r.coop.activateSpecial(me, now + 3050), false);
+  assert.equal(me.coopCharge, specialRule('laser').charge);
+  room.destroy();
+});
+
+test('스페셜 어택: 큰 원 충전 상한, 동시 발동, 보스 처치 후 공격 종료', () => {
+  const { room, r, me, ids } = coopRoom(2, 0);
+  noSkills(r);
+  const other = room.players.find((p) => p.id === ids[1])!;
+  const now = r.startAt + 5000;
+  for (const p of [me, other]) {
+    for (let i = 0; i < 20; i++) (r.coop as unknown as { popThreat(p: PlayerState, c: Circle, t: number): number }).popThreat(p, makeThreat(i, now, { x: 550, y: 200 }, 1, 100, p.id), now);
+    assert.equal(p.coopCharge, specialRule('laser').charge);
+    r.cursors.set(p.id, { x: 550, y: 700, at: now });
+    assert.equal(r.coop.activateSpecial(p, now), true);
+  }
+  assert.equal(r.coop.state().specials?.length, 2);
+  r.coop.phase = 3;
+  r.coop.boss.hp = 1;
+  const run = r.coop;
+  r.coop.tick(now + 200);
+  assert.equal(overOf()?.coop?.win, true);
+  assert.equal(run.state().specials?.length, 0);
+  assert.equal(me.coopCharge, undefined);
+  room.destroy();
+});
 
 test('coop 시작: 레이드 보스 1마리, 사람 체력 100·봇 0, 판 180초', () => {
   const { room, r, me } = coopRoom();

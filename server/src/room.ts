@@ -15,6 +15,7 @@ import {
 import { Bot } from './bot.ts';
 import { logGame } from './gameLog.ts';
 import { CoopRun, type CoopHost } from './coop.ts';
+import { COOP_SPECIAL_IDS, type CoopSpecialId } from '@color-burst/shared';
 
 type IO = Server<ClientToServer, ServerToClient>;
 
@@ -571,6 +572,22 @@ export class Room {
     if (!p || p.bot || id === this.hostId || this.phase !== 'lobby') return;
     p.ready = !!on;
     this.broadcastState();
+  }
+
+  setSpecial(id: string, kind: CoopSpecialId) {
+    if (this.phase !== 'lobby' || !this.rules.coop || !COOP_SPECIAL_IDS.includes(kind)) return;
+    const p = this.players.find((x) => x.id === id && !x.bot && x.connected);
+    if (!p) return;
+    p.coopSpecial = kind;
+    p.ready = false;
+    this.broadcastState();
+  }
+
+  coopSpecial(id: string) {
+    const now = Date.now();
+    if (!this.coop || this.phase !== 'play' || this.pausedAt || now < this.startAt) return;
+    const p = this.players.find((x) => x.id === id);
+    if (p) this.coop.activateSpecial(p, now);
   }
 
   /** 방장을 뺀 사람 중 아직 준비하지 않은 수 (봇 제외) */

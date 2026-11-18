@@ -13,6 +13,8 @@ import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
+import { renderSpecialHud, specialPickerHtml } from './coopUI.ts';
+import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId } from '@color-burst/shared';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, abilityIcon, coopItemIcon, icon, itemIcon } from './icons.ts';
 import { buffChips, flashCombo, renderComboBar, showPatternBanner, popOnChip, pushFeed, renderBuffBar, showRandomEvent, showItemPop, showCoopItemPop } from './effectsUI.ts';
@@ -127,6 +129,7 @@ function setVolleys(vs: Volley[]) {
 }
 function renderCoop() {
   renderCoopHud($('stage'), playing ? coopState : null, serverNow());
+  renderSpecialHud($('stage'), playing && rules.coop ? me() : undefined, !!coopState?.shield, !!coopState?.specials?.some((a) => a.by === myId()));
 }
 /** 일시정지 중이면 멈춘 순간의 서버 시각. 화면은 이 시각에 멈춰 있다 */
 let pausedView = 0;
@@ -389,6 +392,9 @@ function renderLobby() {
   // 준비: 방장 뺀 사람이 모두 준비해야 시작할 수 있다
   const waiting = room.solo ? 0 : room.players.filter((p) => !p.bot && p.id !== room!.hostId && !p.ready).length;
   const meP = room.players.find((p) => p.id === myId());
+  const picker = $('specialPicker');
+  picker.hidden = !room.rules.coop;
+  if (room.rules.coop) picker.innerHTML = specialPickerHtml(meP);
   $<HTMLButtonElement>('startBtn').hidden = !host;
   $<HTMLButtonElement>('startBtn').disabled = waiting > 0;
   const rb = $<HTMLButtonElement>('readyBtn');
@@ -407,6 +413,11 @@ function renderRulesBox() {
   });
 }
 const closeRulesModal = () => { $('rulesModal').hidden = true; };
+$('specialPicker').addEventListener('click', (e) => {
+  const id = (e.target as HTMLElement).closest<HTMLElement>('[data-special]')?.dataset.special;
+  const kind = COOP_SPECIAL_IDS.find((x) => x === id);
+  if (kind) socket.emit('lobby:special', kind);
+});
 $('rulesBtn').onclick = () => { renderRulesBox(); $('rulesModal').hidden = false; };
 $('rulesClose').innerHTML = icon(UI.close, 18);
 $('rulesClose').onclick = closeRulesModal;
@@ -436,7 +447,8 @@ function renderSlots(host: boolean) {
     const tag = s.isHost ? '<em class="mtag host">방장</em>' : room!.solo ? '' : p.ready ? '<em class="mtag ok">준비</em>' : '<em class="mtag">대기</em>';
     const click = s.me ? 'data-color="1"' : host ? `data-menu="${p.id}"` : '';
     const open = (s.me && slotPanel?.kind === 'color') || (slotPanel?.kind === 'member' && slotPanel.id === p.id);
-    return `<button type="button" class="slot human${s.me ? ' me' : ''}${p.connected ? '' : ' off'}${open ? ' open' : ''}" ${click} ${click ? '' : 'disabled'}>${shapeSVG(p.color, 34)}<b>${esc(p.name)}${s.me ? ' (나)' : ''}</b>${tag}</button>`;
+    const special = room!.rules.coop ? `<small>${COOP_SPECIALS[specialId(p.coopSpecial)].name}</small>` : '';
+    return `<button type="button" class="slot human${s.me ? ' me' : ''}${p.connected ? '' : ' off'}${open ? ' open' : ''}" ${click} ${click ? '' : 'disabled'}>${shapeSVG(p.color, 34)}<b>${esc(p.name)}${s.me ? ' (나)' : ''}</b>${tag}${special}</button>`;
   };
   if (team) {
     const group = (t: 0 | 1) => {
@@ -643,6 +655,11 @@ socket.on('coop:state', (s) => {
   // 큰 피해 구간이 끝나 다음 단계가 시작됨
   if (coopState?.burstUntil && !s.burstUntil && !s.shield && s.phase > 1) renderer.banner(`${s.phase}단계`, '#ff8a95');
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
+  const mySpecial = s.specials?.find((a) => a.by === myId());
+  if (mySpecial && !coopState?.specials?.some((a) => a.by === myId())) {
+    renderer.banner(`${COOP_SPECIALS[mySpecial.kind].name}!`, COOP_SPECIALS[mySpecial.kind].color);
+    sfx.fever();
+  }
   if (s.threatAt && !coopState?.threatAt) {
     renderer.banner('보스가 큰 원을 발사합니다! 클릭해서 제거하세요!', '#64efff');
     sfx.patternWarn();
@@ -835,6 +852,11 @@ document.addEventListener('keydown', (e) => {
   }
   // 꾹 눌러 반복되는 키는 무시하고, 도감·확인 창·게임 방법이 열려 있으면 P로 멈추거나 풀지 않는다
   if (e.repeat || document.querySelector('.codex, .confirm, .guide-screen')) return;
+  if (e.code === 'Space' && playing && rules.coop && !isTyping(e)) {
+    e.preventDefault();
+    if (!pausedView && serverNow() >= startAt) socket.emit('coop:special');
+    return;
+  }
   if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && !isTyping(e)) togglePause();
 });
 // 혼자 하기: 다른 탭으로 가면 자동으로 멈춤
@@ -1366,6 +1388,7 @@ function renderMyHp(hit = false) {
   const el = $('myhp');
   const m = playing && rules.coop ? me() : undefined;
   el.innerHTML = myHpHtml(m);
+  renderSpecialHud($('stage'), m, !!coopState?.shield, !!coopState?.specials?.some((a) => a.by === myId()));
   el.classList.toggle('low', !!m && m.hp <= RULES.coop.hpMax * RULES.coop.hpLowRatio);
   if (hit) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 }
@@ -1495,6 +1518,7 @@ function frame() {
     beam: rules.coop && coopBeam ? { b: coopBeam, from: coopBossPos(now) } : undefined,
     volleys: rules.coop ? coopVolleys : undefined,
     coopWeak: rules.coop ? coopState?.weak : undefined,
+    specials: rules.coop ? { attacks: coopState?.specials ?? [], to: coopBossPos(now) } : undefined,
     missiles: rules.coop && coopMissiles.length ? { list: coopMissiles, to: coopBossPos(now), flyMs: RULES.coop.items.missileFlyMs } : undefined,
     meId: myId(),
     pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),

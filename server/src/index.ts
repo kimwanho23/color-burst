@@ -109,6 +109,8 @@ io.on('connection', (socket) => {
   socket.on('lobby:botLevel', (d) => { const s = here(); if (s && typeof d?.id === 'string') s.room.setBotLevel(s.id, d.id, d.level); });
   socket.on('lobby:team', (t) => { const s = here(); if (s && (t === 0 || t === 1)) s.room.setTeam(s.id, t); });
   socket.on('lobby:ready', (on) => { const s = here(); if (s) s.room.setReady(s.id, on === true); });
+  socket.on('lobby:special', (kind) => { const s = here(); if (s) s.room.setSpecial(s.id, kind); });
+  socket.on('coop:special', () => { const s = here(); if (s) s.room.coopSpecial(s.id); });
   socket.on('lobby:host', (to) => { const s = here(); if (s && typeof to === 'string') s.room.giveHost(s.id, to); });
   socket.on('lobby:kick', (to) => {
     const s = here();

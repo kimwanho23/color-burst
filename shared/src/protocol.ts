@@ -7,6 +7,7 @@ import type { TutorialStep, CoopLevel } from './rules.ts';
 import type { CoopPhase } from './coop.ts';
 import type { Volley } from './coopBullets.ts';
 import type { CoopItemId } from './coopItems.ts';
+import type { CoopSpecialAttack, CoopSpecialId } from './coopSpecial.ts';
 
 /** 협력전 진행 상태 */
 export interface CoopState {
@@ -19,6 +20,7 @@ export interface CoopState {
   rageAt: number;
   /** 큰 원 발사 예정 시각 (0 또는 생략이면 경고 없음) */
   threatAt?: number;
+  specials?: CoopSpecialAttack[];
   /** 대기 중인 내려찍기, 안전지대 (다시 접속·재개해도 화면이 이어서 그리도록) */
   slams: Slam[];
   safe: SafeZones | null;
@@ -305,6 +307,7 @@ export interface ClientToServer {
   /** 튜토리얼: 설명 카드 넘기기 */
   'tutorial:next': () => void;
   'lobby:color': (color: ColorIndex) => void;
+  'lobby:special': (id: CoopSpecialId) => void;
   /** 방장: 빈 칸에 봇 추가 (팀전이면 그 팀) */
   'lobby:addBot': (d: { team?: 0 | 1 }) => void;
   /** 방장: 봇 빼기 */
@@ -337,6 +340,7 @@ export interface ClientToServer {
   'game:click': (d: { circleId: number | null; x: number; y: number }) => void;
   /** 협력전: 내 커서가 탄에 닿음 (화면 판정, 서버가 확인하고 깎는다) */
   'coop:hurt': (d: { volleyId: number; shot: number }) => void;
+  'coop:special': () => void;
   /** 협력전: 투표할 카드 (다시 고르면 표가 옮겨 간다) */
   /** 서버 시각 맞추기 */
   'time:ping': (ack: (serverNow: number) => void) => void;

@@ -13,6 +13,7 @@ import {
   type LaserLine, type PlayerState, type Point, type SafeZones, type Seal, type ServerToClient, type Slam,
   type BulletShape, type CoopItemId, type Volley,
 } from '@color-burst/shared';
+import { specialId, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
 
 const C = RULES.coop;
 const I = RULES.coop.items;
@@ -44,6 +45,7 @@ export interface CoopHost {
 }
 
 export class CoopRun {
+  private specials: (CoopSpecialAttack & { hit: number })[] = [];
   phase: CoopPhase = 1;
   boss: Circle | null = null;
   /** 다음 고유 패턴 시각 (보호막·큰 피해 구간 동안은 0, 끝나면 그 시각 + skillEveryMs), 직전 고유 패턴 */
@@ -98,7 +100,9 @@ export class CoopRun {
 
   /** 판 시작: 체력, 레이드 보스, 첫 원·공격 시각 */
   start(now: number) {
+    this.specials = [];
     for (const p of this.host.players()) {
+      p.coopCharge = 0;
       p.hp = p.bot ? 0 : C.hpMax; p.immuneUntil = 0; this.stat(p.id);
       if (p.bot) delete p.coopFx; else p.coopFx = newCoopFx();
     }
@@ -125,6 +129,48 @@ export class CoopRun {
 
   private orbGap() { return C.orb.gapMs * C.levels[this.level].orbMult; }
 
+  private chargeSpecial(p: PlayerState, amount: number) {
+    if (p.bot || p.outAt) return;
+    p.coopCharge = Math.min(specialRule(p.coopSpecial).charge, (p.coopCharge ?? 0) + amount);
+  }
+
+  /** 모든 발동 조건과 게이지 소모는 서버에서 확인한다. */
+  activateSpecial(p: PlayerState, now: number): boolean {
+    const spec = specialRule(p.coopSpecial);
+    if (!this.boss || this.shield || p.bot || p.outAt || !p.connected || p.hp <= 0 || now < p.stunUntil) return false;
+    if ((p.coopCharge ?? 0) < spec.charge || this.specials.some((a) => a.by === p.id)) return false;
+    const from = this.host.cursorOf(p.id);
+    if (!from) return false;
+    p.coopCharge = 0;
+    this.specials.push({ by: p.id, kind: specialId(p.coopSpecial), from: { x: from.x, y: from.y }, at: now, hit: 0 });
+    this.host.emitPlayers();
+    this.host.emit('coop:state', this.state());
+    return true;
+  }
+
+  private tickSpecials(now: number): boolean {
+    let finished = false;
+    for (const attack of [...this.specials]) {
+      const p = this.host.players().find((x) => x.id === attack.by);
+      const spec = specialRule(attack.kind);
+      if (!p || p.outAt || !p.connected) { attack.hit = spec.hits; finished = true; continue; }
+      const due = Math.min(spec.hits, Math.floor((now - attack.at) / (spec.durationMs / spec.hits)));
+      while (attack.hit < due && this.boss && !this.shield) {
+        attack.hit++;
+        const dmg = spec.damage / spec.hits * (this.inBurst(now) ? C.burst.mult : 1);
+        const result = this.hurtBoss(p, dmg, now, circlePos(this.boss, now));
+        if (result.killed) { this.host.bossKilled(p, now); return true; }
+      }
+      if (attack.hit >= spec.hits || this.shield) finished = true;
+    }
+    if (finished) {
+      this.specials = this.specials.filter((a) => !this.shield && a.hit < specialRule(a.kind).hits);
+      this.host.emitPlayers();
+      this.host.emit('coop:state', this.state());
+    }
+    return false;
+  }
+
   tick(now: number) {
     if (!this.boss) return;
     // 큰 피해 구간이 끝남: 다음 단계. 고유 패턴은 지금부터 다시 skillEveryMs를 센다
@@ -139,6 +185,7 @@ export class CoopRun {
     this.tickRage(now);
     if (!this.boss) return;
     if (this.tickMissiles(now)) return; // 미사일로 보스가 쓰러져 판이 끝남
+    if (this.tickSpecials(now)) return;
     if (!this.boss) return;
     if (this.weak && now >= this.weak.until) { this.weak = null; this.host.emit('coop:state', this.state()); }
     // 아래 패턴은 모두 탈락시켜 판을 끝낼 수 있다 (끝나면 dispose가 boss를 지우니 이 tick의 나머지는 아무것도 보내지 않는다)
@@ -158,7 +205,6 @@ export class CoopRun {
       this.spawnThreats(now);
       this.host.emit('coop:state', this.state());
     }
-
     if (this.inBurst(now) || !this.nextSkill || now < this.nextSkill) return;
     const k = pickSkill(COOP_BOSSES.core.skills[this.phase], this.lastSkill, this.rand);
     this.lastSkill = k;
@@ -381,6 +427,7 @@ export class CoopRun {
 
   /** 잡은 원(내 색·노랑) → 보스 피해. 보호막이면 0. killed면 호출 쪽이 판을 끝낸다 */
   catchOrb(p: PlayerState, c: Circle, now: number): { dmg: number; gained: number; killed: boolean } {
+    if (this.boss && !this.shield && !p.outAt) this.chargeSpecial(p, C.special.gain.orb);
     const boss = this.boss;
     if (!boss || this.shield || p.outAt) return { dmg: 0, gained: 0, killed: false };
     // 아이템 배율: 공격력·화력 강화, 연쇄 폭발 (남은 수를 하나 쓴다)
@@ -508,6 +555,8 @@ export class CoopRun {
   /** 수정 누르기: 주인만, 보호막 중에만. 깨면 true */
   hitCrystal(p: PlayerState, c: Circle, now: number): boolean {
     if (!this.shield || c.kind !== 'crystal' || c.target !== p.id || p.outAt) return false;
+    this.chargeSpecial(p, C.special.gain.crystal);
+    if (!p.bot) this.host.emitPlayers();
     c.hp = Math.max(0, (c.hp ?? 1) - 1);
     this.host.emit('coop:crystal', { id: c.id, hp: c.hp, maxHp: c.maxHp ?? c.hp });
     if (c.hp > 0) return false;
@@ -651,6 +700,7 @@ export class CoopRun {
 
   /** 추적 원 터뜨림: 점수 threatPoints (점수 출처 threat) */
   popThreat(p: PlayerState, _c: Circle, _now: number): number {
+    this.chargeSpecial(p, C.special.gain.threat);
     const g = C.threatPoints;
     p.score += g;
     addSrc(p, 'threat', g);
@@ -701,6 +751,7 @@ export class CoopRun {
 
   /** 일시정지가 끝나 시각을 민다 (delta ms) */
   shift(delta: number) {
+    for (const a of this.specials) a.at += delta;
     if (this.threatAt) this.threatAt += delta;
     if (this.nextSkill) this.nextSkill += delta;
     for (const [id, t] of this.nextOrb) this.nextOrb.set(id, t + delta);
@@ -740,6 +791,7 @@ export class CoopRun {
     return {
       level: this.level, phase: this.phase, bossId: this.boss?.id ?? -1, hp: this.boss?.hp ?? 0, maxHp: this.boss?.maxHp ?? 0,
       threatAt: this.threatAt,
+      specials: this.specials.map(({ hit: _hit, ...a }) => ({ ...a, from: { ...a.from } })),
       shield: this.shield ? { until: this.shield.until, no: this.shield.no } : null, burstUntil: this.burstUntil, rageAt: this.rageAt,
       slams: this.slams.map((s) => ({ ...s })), safe: this.safe,
       seal: this.seal ? { ...this.seal, lanes: [...this.seal.lanes] } : null, beam: this.beam ? { ...this.beam } : null,
@@ -764,6 +816,8 @@ export class CoopRun {
 
   /** 판이 끝남: 아이템 효과도 끝. 보스·보호막·패턴을 모두 지워 끝난 tick의 나머지가 아무것도 보내지 않게 한다 */
   dispose() {
+    this.specials = [];
+    for (const p of this.host.players()) delete p.coopCharge;
     this.threatAt = 0;
     for (const p of this.host.players()) delete p.coopFx;
     this.boss = null;

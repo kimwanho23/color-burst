@@ -1,5 +1,6 @@
 import type { CoopHitBy } from './protocol.ts';
 import type { CoopFx, CoopItemId } from './coopItems.ts';
+import type { CoopSpecialId } from './coopSpecial.ts';
 import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, evolvedCap, evolvedOf, synergiesOf, combosOf, hasLegend, legendOf, bossDamage, comboPeriod, jackpotMult, modsOf, type AutoId, type Mods, type Pick, type RoundEffect, type StackId } from './arcade.ts';
 
 /**
@@ -57,6 +58,15 @@ export const RULES = {
     hpLowRatio: 0.3,
     /** 큰 피해 구간 시작에 살아 있는 사람 모두 회복하는 체력 (엑스퍼트는 회복 없음) */
     heal: { burstStart: { easy: 40, normal: 20, hard: 10, expert: 0 } },
+    /** 게이지는 획득한 원·수정 타격·큰 원 제거로 충전. damage는 전체 공격의 기본 피해 합계 */
+    special: {
+      gain: { orb: 1, crystal: 1, threat: 4 },
+      attacks: {
+        laser: { charge: 30, damage: 18, hits: 12, durationMs: 2_400 },
+        meteor: { charge: 50, damage: 34, hits: 5, durationMs: 2_000 },
+        blades: { charge: 75, damage: 55, hits: 20, durationMs: 4_000 },
+      },
+    },
     /** 공격 종류별 맞은 뒤 무적(ms)·기절(ms). 기절 중에는 무적이 함께 걸려 있다 */
     hurtFx: {
       bullet: { immuneMs: 600, stunMs: 0 }, wall: { immuneMs: 600, stunMs: 0 }, threat: { immuneMs: 1_000, stunMs: 0 },
@@ -762,6 +772,9 @@ export interface PlayerState {
   immuneUntil: number;
   /** 협력전: 아이템 효과 (판 시작에 새로, 판이 끝나면 지움) */
   coopFx?: CoopFx;
+  /** 대기실에서 선택한 공격 (이전 데이터는 레이저), 현재 판 게이지 */
+  coopSpecial?: CoopSpecialId;
+  coopCharge?: number;
   /** 스택형 증강: 지금 쌓인 칸 (게임 끝까지) */
   stacks: Partial<Record<StackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */

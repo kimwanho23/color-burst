@@ -2,6 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { newPlayer, type CoopResult } from '../src/index.ts';
 import { coopBreaksText, coopResultRows } from '../../client/src/coopUI.ts';
+import { specialPickerHtml } from '../../client/src/coopUI.ts';
+
+test('스페셜 어택 선택: 기본 레이저, 공격별 충전량·위력과 선택 표시', () => {
+  const p = newPlayer('a', 'A', 0);
+  assert.match(specialPickerHtml(p), /data-special="laser" aria-pressed="true"/);
+  p.coopSpecial = 'meteor';
+  const html = specialPickerHtml(p);
+  assert.match(html, /data-special="meteor" aria-pressed="true"/);
+  assert.match(html, /충전 30 · 기본 총피해 18/);
+  assert.match(html, /충전 50 · 기본 총피해 34/);
+  assert.match(html, /충전 75 · 기본 총피해 55/);
+});
 
 const res = (players: CoopResult['players'], breaks: CoopResult['breaks'] = []): CoopResult =>
   ({ win: true, stars: 2, timeMs: 100_000, bossHpPct: 0, phase: 3, maxHp: 400, players, breaks });

@@ -6,6 +6,8 @@ import {
   COLORS, COOP_BOSSES, FIELD, RULES, YELLOW, auraAt, barSegment, beamAngles, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
   type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam } from '@color-burst/shared';
 
+import { COOP_SPECIALS, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
+
 /** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
 function seeded(seed: number) {
   let a = seed >>> 0;
@@ -74,6 +76,7 @@ let reduceMotion = prefersReduced;
 export function setReduceFx(on: boolean) { reduceMotion = prefersReduced || on; }
 
 export interface DrawState {
+  specials?: { attacks: readonly CoopSpecialAttack[]; to: { x: number; y: number } };
   /** 협력전이면 가운데 보호 구역 점선을 안 그린다 */
   coop?: boolean;
   /** 협력전 보호막이 올라와 있음 (판 테두리가 붉게 맥동, 보스가 떨림) */
@@ -348,6 +351,7 @@ export class Renderer {
     }
     ctx.globalAlpha = base;
     if (s.missiles?.list.length) this.drawMissiles(s.missiles, s.now);
+    if (s.specials) this.drawSpecials(s.specials.attacks, s.specials.to, s.now);
     if (s.volleys?.length) this.drawBullets(s.volleys, s.now, now);
     for (const k of crystals) { fade(k.c); this.drawCrystal(k.c, k.x, k.y, k.r, s); }
     ctx.globalAlpha = base;
@@ -799,6 +803,50 @@ export class Renderer {
     ctx.globalAlpha = 0.85; ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.setLineDash([10, 8]);
     ctx.beginPath(); ctx.arc(z.x, z.y, z.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
     ctx.restore();
+  }
+
+  /** 자동 공격은 탄막 아래에 그려 위험 탄을 가리지 않는다. */
+  private drawSpecials(attacks: readonly CoopSpecialAttack[], to: { x: number; y: number }, now: number) {
+    const ctx = this.ctx;
+    for (const a of attacks) {
+      const spec = specialRule(a.kind), elapsed = now - a.at;
+      if (elapsed < 0 || elapsed >= spec.durationMs) continue;
+      const progress = elapsed / spec.durationMs;
+      ctx.save();
+      ctx.globalAlpha *= Math.min(1, elapsed / 100, (spec.durationMs - elapsed) / 150);
+      ctx.strokeStyle = COOP_SPECIALS[a.kind].color;
+      ctx.fillStyle = COOP_SPECIALS[a.kind].color;
+      ctx.lineCap = 'round';
+      if (a.kind === 'laser') {
+        ctx.globalAlpha *= 0.7;
+        ctx.lineWidth = reduceMotion ? 20 : 24 + Math.sin(elapsed / 70) * 4;
+        ctx.beginPath(); ctx.moveTo(a.from.x, a.from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.stroke();
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(a.from.x, a.from.y, 22, 0, Math.PI * 2); ctx.stroke();
+      } else if (a.kind === 'meteor') {
+        for (let i = 0; i < spec.hits; i++) {
+          const flight = progress * spec.hits - i;
+          if (flight < 0 || flight >= 1) continue;
+          const side = (i % 2 ? -1 : 1) * (100 + i * 40);
+          const x = to.x + side * (1 - flight), y = to.y - 320 * (1 - flight);
+          ctx.lineWidth = 14;
+          ctx.beginPath(); ctx.moveTo(x + side * 0.25, y - 80); ctx.lineTo(x, y); ctx.stroke();
+          ctx.fillStyle = '#fff3cf'; ctx.beginPath(); ctx.arc(x, y, 19, 0, Math.PI * 2); ctx.fill();
+          ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(to.x, to.y, 65 * (1 - flight) + 15, 0, Math.PI * 2); ctx.stroke();
+        }
+      } else {
+        for (let i = 0; i < 4; i++) {
+          const angle = progress * Math.PI * (reduceMotion ? 2 : 10) + i * Math.PI / 2;
+          ctx.lineWidth = 9;
+          ctx.beginPath(); ctx.arc(to.x, to.y, 110, angle, angle + 0.6); ctx.stroke();
+          ctx.save(); ctx.translate(to.x + Math.cos(angle) * 110, to.y + Math.sin(angle) * 110); ctx.rotate(angle);
+          ctx.beginPath(); ctx.moveTo(-9, -25); ctx.lineTo(12, 0); ctx.lineTo(-9, 25); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
   }
 
   /** 협력전 큰 원: 밝은 청록 몸통·흰 외곽선·고정된 클릭 표식, 안쪽 고리는 표적 색 */

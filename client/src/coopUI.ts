@@ -1,6 +1,27 @@
 /** 협력전 화면: 보스 체력 바(위쪽), 결과 요약 */
 import { RULES, type CoopResult, type CoopState, type PlayerState } from '@color-burst/shared';
 import { UI, icon } from './icons.ts';
+import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId, specialRule } from '@color-burst/shared';
+
+export function specialPickerHtml(p: PlayerState | undefined): string {
+  const chosen = specialId(p?.coopSpecial);
+  return `<b>스페셜 어택</b><p>원 획득 +${RULES.coop.special.gain.orb} · 수정 타격 +${RULES.coop.special.gain.crystal} · 큰 원 제거 +${RULES.coop.special.gain.threat}<br>SPACE로 자동 공격 · 딜 타임 피해 ${RULES.coop.burst.mult}배</p><div class="special-choices">${COOP_SPECIAL_IDS.map((id) => {
+    const a = COOP_SPECIALS[id], r = specialRule(id);
+    return `<button type="button" class="special-choice${id === chosen ? ' selected' : ''}" data-special="${id}" aria-pressed="${id === chosen}" style="--special-color:${a.color}"><strong>${a.name}</strong><span>${a.desc}</span><small>충전 ${r.charge} · 기본 총피해 ${r.damage} · ${r.durationMs / 1000}초</small></button>`;
+  }).join('')}</div>`;
+}
+
+export function renderSpecialHud(stage: HTMLElement, p: PlayerState | undefined, shield: boolean, active: boolean) {
+  const el = ensure(stage, 'coopSpecialHud', 'special-hud');
+  el.hidden = !p || p.bot;
+  if (!p || p.bot) return;
+  const id = specialId(p.coopSpecial), r = specialRule(id), a = COOP_SPECIALS[id];
+  const charge = p.coopCharge ?? 0, ready = charge >= r.charge && !p.outAt;
+  el.style.setProperty('--special-color', a.color);
+  el.classList.toggle('ready', ready && !shield && !active);
+  const hint = p.outAt ? '관전 중' : active ? '공격 중' : shield ? '수정 파훼 후 사용 가능' : ready ? 'SPACE · 발동' : '원 획득 · 수정 타격 · 큰 원 제거로 충전';
+  el.innerHTML = `<div><b>${a.name}</b><span>${Math.floor(charge)} / ${r.charge}</span></div><div class="special-meter"><i style="width:${Math.min(100, charge / r.charge * 100)}%"></i></div><small>${hint}</small>`;
+}
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const LEVEL_NAME = { easy: '이지', normal: '노말', hard: '하드', expert: '엑스퍼트' } as const;
