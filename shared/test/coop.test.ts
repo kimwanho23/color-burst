@@ -202,7 +202,7 @@ type CoopRunT = {
   damage(p: PlayerState, by: CoopHitBy, now: number): boolean; threatEscaped(c: Circle, now: number): void;
   catchOrb(p: PlayerState, c: Circle, now: number): { dmg: number; killed: boolean }; hitCrystal(p: PlayerState, c: Circle, now: number): boolean;
   tick(now: number): void; shift(delta: number): void; recheck(): void; phase: number; boss: Circle;
-  state(): CoopState; result(now: number, startAt: number, win: boolean): CoopResult; isShielded(): boolean; inBurst(now: number): boolean;
+  state(withVolleys?: boolean): CoopState; result(now: number, startAt: number, win: boolean): CoopResult; isShielded(): boolean; inBurst(now: number): boolean;
   reportHurt(p: PlayerState, volleyId: number, shot: number, now: number): boolean;
 };
 type CRoom = {
@@ -840,13 +840,13 @@ test('탄막: 보호막 중에도 shieldBullets로 발사, 큰 피해 구간에�
   for (const g of gapsOf(ts)) assert.ok(near(g, 1200 / C.bullets.shieldMult), String(g));
   assert.equal(vs.length, ts.length, '보호막 중에는 하나씩');
   for (const v of vs) assert.ok([C.bullets.spiralCount, C.bullets.ringCount].includes(v.shots.length), '첫 보호막은 spiral·ring');
-  assert.ok(r.coop.state().volleys.length > 0);
+  assert.ok(r.coop.state(true).volleys!.length > 0);
   sent.length = 0;
   const tb = now + 6010;
   breakMine(r, me, tb);
   assert.equal(r.coop.inBurst(tb), true);
   assert.deepEqual(sent.find((s) => s.ev === 'coop:clear')?.d, { before: tb });
-  assert.deepEqual(r.coop.state().volleys, []);
+  assert.deepEqual(r.coop.state(true).volleys, []);
   sent.length = 0;
   for (let t = tb; t < tb + C.burst.ms; t += 50) r.coop.tick(t);
   assert.equal(volleysSent().length, 0, '큰 피해 구간에는 쏘지 않음');
@@ -865,7 +865,7 @@ test('탄막: 조준 무늬는 살아 있는 사람 커서를 노림', () => {
   assert.ok(aimed.length > 0);
   for (const v of aimed) {
     const mid = v.shots[(C.bullets.aimedCount - 1) / 2]!;
-    assert.ok(Math.abs(mid.a - Math.atan2(1000 - mid.y, 100 - mid.x)) < 1e-9, String(mid.a));
+    assert.ok(Math.abs(mid.a - Math.atan2(1000 - mid.y, 100 - mid.x)) <= 0.005, String(mid.a));
   }
   room.destroy();
 });
@@ -942,7 +942,7 @@ test('shift: 일시정지 뒤 탄막 at과 다음 발사가 delta만큼 밀리�
   r.coop.shift(5000);
   const st = sent.find((s) => s.ev === 'coop:state')?.d as CoopState;
   assert.equal(st.volleys.find((x) => x.id === v.id)?.at, at0 + 5000);
-  assert.equal(r.coop.state().volleys.find((x) => x.id === v.id)?.at, at0 + 5000);
+  assert.equal(r.coop.state(true).volleys!.find((x) => x.id === v.id)?.at, at0 + 5000);
   sent.length = 0;
   for (let k = t + 5000 + 50; k <= t + 5000 + 1300; k += 10) r.coop.tick(k);
   const next = fireTimes(volleysSent());
@@ -955,7 +955,7 @@ test('탄막: 끝난 탄막은 상태에서 빠짐', () => {
   const { room, r } = coopRoom(1, 0);
   const { v } = firstVolley(r, r.startAt);
   let td = v.at;
-  while (r.coop.state().volleys.some((x) => x.id === v.id) && td < v.at + 30_000) { td += 100; r.coop.tick(td); }
+  while (r.coop.state(true).volleys!.some((x) => x.id === v.id) && td < v.at + 30_000) { td += 100; r.coop.tick(td); }
   assert.ok(td < v.at + 30_000, '끝난 탄막이 빠짐');
   room.destroy();
 });
@@ -971,5 +971,41 @@ test('방 coopHurt: 진행 중이면 깎고, 일시정지·시작 전이면 무�
   r.pausedAt = 0;
   room.coopHurt(me.id, { volleyId: v.id, shot: 0 });
   assert.equal(me.hp, C.hpMax - N.bullet);
+  room.destroy();
+});
+
+test('전송량: 원을 잡을 때의 coop:state에는 탄막 목록이 없고, 시작·shift·보스 무너짐·재접속에는 있다', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const startState = sent.find((s) => s.ev === 'coop:state')?.d as CoopState | undefined;
+  firstVolley(r, r.startAt);
+  sent.length = 0;
+  r.coop.catchOrb(me, orbOf(me.color, r.startAt + 3100), r.startAt + 3100);
+  const caught = sent.filter((s) => s.ev === 'coop:state').map((s) => s.d as CoopState);
+  assert.ok(caught.length > 0);
+  for (const st of caught) assert.equal('volleys' in st, false, '원 잡기 상태에는 없음');
+  assert.equal(r.coop.state().volleys, undefined);
+  sent.length = 0;
+  r.coop.shift(1000);
+  assert.ok((sent.find((s) => s.ev === 'coop:state')?.d as CoopState).volleys!.length > 0, 'shift에는 있음');
+  const pay = (room as unknown as { playPayload(): { coop: CoopState } }).playPayload();
+  assert.ok(pay.coop.volleys!.length > 0, '재접속·game:sync 상태에는 있음');
+  assert.deepEqual(startState?.volleys, [], '시작 상태에는 빈 목록');
+  room.destroy();
+});
+
+test('탄을 눌러도 헛클릭이 아니다 (빈 곳은 그대로 헛클릭)', () => {
+  const { room, r, me } = coopRoom(1, 0);
+  const { v } = firstVolley(r, r.startAt);
+  r.startAt = Date.now() - 10_000; // 시작 카운트다운 건너뜀
+  v.at = Date.now() - 200 - v.shots[0]!.d; // 서버 탄막 객체: 지금 판 안에 있게
+  const q = shotPos(v, 0, Date.now())!;
+  me.combo = 5;
+  r.clickLog.clear();
+  room.click(me.id, { circleId: null, x: q.x, y: q.y });
+  assert.deepEqual([me.combo, me.stats.misses], [5, 0], '탄 위 클릭은 헛클릭 아님');
+  r.clickLog.clear();
+  room.click(me.id, { circleId: null, x: 5, y: FIELD.h - 5 });
+  assert.equal(me.stats.misses, 1, '빈 곳은 헛클릭');
+  assert.equal(me.combo, 0);
   room.destroy();
 });

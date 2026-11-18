@@ -10,6 +10,8 @@ test('링: 발 수와 아래쪽 퍼짐', () => {
   assert.equal(v.shots.length, RULES.coop.bullets.ringCount);
   assert.equal(v.r, RULES.coop.bullets.r);
   for (const s of v.shots) { assert.ok(s.a > 0 && s.a < Math.PI); assert.equal(s.x, FROM.x); assert.equal(s.y, FROM.y); }
+  // 전송량: 탄 값은 소수 둘째 자리까지
+  for (const s of v.shots) for (const n of [s.x, s.y, s.a, s.v]) assert.equal(Math.round(n * 100) / 100, n);
   const v3 = makeVolley('ring', 2, 0, FROM, { speed: 260, phase: 3 }, () => 0.5);
   assert.equal(v3.shots.length, RULES.coop.bullets.ringCount * 2);
   for (const s of v3.shots) assert.ok(s.a > 0 && s.a < Math.PI);
@@ -21,11 +23,11 @@ test('조준 부채꼴: 가운데 탄이 aim을 향함', () => {
   const v = makeVolley('aimed', 1, 0, FROM, { speed: 260, phase: 2, aim }, () => 0.5);
   assert.equal(v.shots.length, RULES.coop.bullets.aimedCount);
   const mid = v.shots[Math.floor(v.shots.length / 2)];
-  assert.ok(Math.abs(mid.a - Math.atan2(aim.y - FROM.y, aim.x - FROM.x)) < 1e-9);
+  assert.ok(Math.abs(mid.a - Math.atan2(aim.y - FROM.y, aim.x - FROM.x)) <= 0.005);
   const spread = Math.max(...v.shots.map((s) => s.a)) - Math.min(...v.shots.map((s) => s.a));
-  assert.ok(Math.abs(spread - 2 * RULES.coop.bullets.aimedSpread) < 1e-9);
+  assert.ok(Math.abs(spread - 2 * RULES.coop.bullets.aimedSpread) <= 0.01);
   const d = makeVolley('aimed', 2, 0, FROM, { speed: 260, phase: 1 }, () => 0.5);
-  assert.ok(Math.abs(d.shots[2].a - Math.PI / 2) < 1e-9);
+  assert.ok(Math.abs(d.shots[2].a - Math.PI / 2) <= 0.005);
 });
 
 test('나선·흩뿌리기: 발 수, 아래쪽', () => {
@@ -68,7 +70,7 @@ for (const r of [0, 0.5, 0.999]) {
       const ys = new Set(v.shots.map((s) => s.y));
       assert.equal(ys.size, 1);
       assert.ok([...ys][0] > FROM.y);
-      for (const s of v.shots) { assert.ok(Math.abs(s.a - Math.PI / 2) < 1e-9); assert.equal(s.d, 0); }
+      for (const s of v.shots) { assert.ok(Math.abs(s.a - Math.PI / 2) <= 0.005); assert.equal(s.d, 0); }
       const xs = v.shots.map((s) => s.x).sort((a, b) => a - b);
       const edges = [0, ...xs, FIELD.w];
       let holes = 0;

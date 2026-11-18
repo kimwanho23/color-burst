@@ -19,8 +19,11 @@ export interface CoopState {
   /** 대기 중인 내려찍기, 안전지대 (다시 접속·재개해도 화면이 이어서 그리도록) */
   slams: Slam[];
   safe: SafeZones | null;
-  /** 아직 끝나지 않은 탄막 (다시 접속·재개하면 화면이 이 목록으로 통째로 바꾼다) */
-  volleys: Volley[];
+  /**
+   * 아직 끝나지 않은 탄막. 시작·재개(shift)·보스 무너짐·재접속 때만 실린다 (있으면 화면이 통째로 바꾸고, 없으면 그대로 둔다).
+   * 평소에는 coop:volley로 하나씩 간다
+   */
+  volleys?: Volley[];
 }
 /** 협력전 결과: 사람(봇 포함)마다 기여 */
 export interface CoopPlayerResult { dmg: number; burstDmg: number; crystals: number; threats: number }

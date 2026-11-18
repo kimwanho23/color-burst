@@ -10,6 +10,9 @@ export interface Volley { id: number; at: number; r: number; shots: Shot[]; wall
 
 const key = (volleyId: number, shot: number) => `${volleyId}:${shot}`;
 
+/** 전송량을 줄이려고 탄 값은 소수 둘째 자리까지 (서버·화면이 같은 값을 쓰므로 판정은 어긋나지 않는다) */
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 /** 아래쪽 반원 (0, π) 안의 각도. f는 0~1 */
 const lower = (f: number) => Math.PI * (0.08 + 0.84 * f);
 
@@ -24,7 +27,7 @@ export function makeVolley(
   const B = RULES.coop.bullets;
   const v = o.speed;
   const shots: Shot[] = [];
-  const add = (x: number, y: number, a: number, d = 0, speed = v) => shots.push({ x, y, a, v: speed, d });
+  const add = (x: number, y: number, a: number, d = 0, speed = v) => shots.push({ x: r2(x), y: r2(y), a: r2(a), v: r2(speed), d });
   if (shape === 'ring') {
     const n = B.ringCount;
     if (o.phase === 3) {

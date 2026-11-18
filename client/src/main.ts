@@ -112,6 +112,7 @@ let coopSafe: SafeZones | null = null;
 /** 협력전 탄막 (서버는 무늬 단위로 보내고 위치는 시각으로 계산), 이미 알린 탄 (`${탄막}:${탄}`) */
 let coopVolleys: Volley[] = [];
 const coopSkip = new Set<string>();
+const NO_SKIP: ReadonlySet<string> = new Set();
 /** 내가 탄에 맞아 연출을 먼저 낸 시각 (서버의 coop:hit에서 같은 연출을 또 내지 않게) */
 let coopHurtShownAt = 0;
 function setVolleys(vs: Volley[]) {
@@ -631,7 +632,9 @@ socket.on('coop:state', (s) => {
   // 큰 피해 구간 시작: 서버가 맵 패턴을 지우므로 화면도 지운다 (커서 물리가 어긋나지 않게)
   if (s.burstUntil > (coopState?.burstUntil ?? 0) && !s.shield && !coopState?.burstUntil) { renderer.banner('보스가 무너졌다!', '#ffd43b'); sfx.fever(); mapPattern = null; popped = new Set(); }
   if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
-  coopState = s; coopSlams = s.slams; coopSafe = s.safe; setVolleys(s.volleys ?? []); renderCoop();
+  coopState = s; coopSlams = s.slams; coopSafe = s.safe; renderCoop();
+  // 탄막 목록은 실려 올 때만 바꾼다 (평소 상태에는 없다)
+  if (s.volleys) setVolleys(s.volleys);
 });
 socket.on('coop:volley', (v) => { coopVolleys.push(v); });
 // 보스가 무너짐: 그 전에 쏜 탄막은 모두 사라진다
@@ -1211,7 +1214,9 @@ $('cv').addEventListener('pointerdown', (e) => {
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
     // 보스가 막 터진 직후의 빈 곳 클릭은 서버도 페널티를 주지 않으므로 가볍게만 표시
     const grace = now - bossKilledAt < RULES.boss.killGraceMs;
-    if (!saved) {
+    // 협력전 탄은 누를 수 없고, 눌러도 헛클릭이 아니다 (서버도 같은 판정)
+    const onBullet = !!rules.coop && !!hitShot({ x, y }, coopVolleys, now, NO_SKIP);
+    if (!saved && !onBullet) {
       if (rules.missPenalty && !grace) { renderer.miss(x, y); sfx.miss(); } else renderer.miss(x, y, true);
     }
     socket.emit('game:click', { circleId: null, x, y });

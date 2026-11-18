@@ -864,7 +864,8 @@ export class Room {
       // 이동형 보스 오오라를 눌렀으면 아무 일 없음 (헛클릭도 아님, 닿아 있는 동안의 벌은 updateAura)
       // 튜토리얼: 감점·피버 감소 없이 콤보만 끊는다
       if (this.tutorial) { p.combo = 0; this.emitPlayers(); return; }
-      if (!this.auraUnder(d, now) && now - this.bossKilledAt >= RULES.boss.killGraceMs) {
+      // 협력전 탄은 누를 수 없고, 눌러도 헛클릭이 아니다
+      if (!this.auraUnder(d, now) && now - this.bossKilledAt >= RULES.boss.killGraceMs && !this.coop?.onShot(d, now)) {
         resolveMiss(p, now, this.G, this.players);
         this.emitPlayers();
       }
@@ -1082,7 +1083,7 @@ export class Room {
       rules: this.rules, pausedBy: this.pausedBy, pausedAt: this.pausedAt, nextCutAt: this.nextCutAt, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
       pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
       pattern: this.pattern, popped: [...this.popped],
-      coop: this.coop?.state() ?? null,
+      coop: this.coop?.state(true) ?? null,
     };
   }
 

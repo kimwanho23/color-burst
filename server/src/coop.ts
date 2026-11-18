@@ -7,13 +7,14 @@
  */
 import {
   COOP_BOSSES, RULES, addSrc, applyRaidDamage, attackGap, circlePos, coopStars, crystalHits, inSafe, makeCrystal, makeOrb, makePattern,
-  makeRaid, makeThreat, makeVolley, orbDamage, placeCrystals, raidMaxHp, rollSafe, rollVolley, shotGone, shotPos, threatSpeed, volleyDone,
+  makeRaid, makeThreat, makeVolley, orbDamage, placeCrystals, raidMaxHp, rollSafe, rollVolley, hitShot, shotGone, shotPos, threatSpeed, volleyDone,
   type Circle, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopPlayerResult, type CoopResult, type CoopState,
   type LaserLine, type MapPattern, type PatternId, type PlayerState, type Point, type SafeZones, type ServerToClient, type Slam,
   type BulletShape, type Volley,
 } from '@color-burst/shared';
 
 const C = RULES.coop;
+const NO_SKIP: ReadonlySet<string> = new Set();
 
 export interface CoopHost {
   players(): PlayerState[];
@@ -92,7 +93,7 @@ export class CoopRun {
     this.nextBullet = now + RULES.laser.startQuietMs;
     this.clock = now;
     this.schedule(now);
-    this.host.emit('coop:state', this.state());
+    this.host.emit('coop:state', this.state(true));
   }
 
   isShielded() { return !!this.shield; }
@@ -204,6 +205,13 @@ export class CoopRun {
     this.volleys = [];
     this.hurtSeen.clear();
     this.host.emit('coop:clear', { before: now });
+  }
+
+  /** 이 자리에 탄이 있는가 (지연 보정 lagWindowMs 동안 한 번이라도). 탄을 누른 클릭은 헛클릭이 아니다 */
+  onShot(pt: Point, now: number): boolean {
+    if (!this.volleys.length) return false;
+    for (let dt = 0; dt <= RULES.lagWindowMs; dt += 25) if (hitShot(pt, this.volleys, now - dt, NO_SKIP)) return true;
+    return false;
   }
 
   /**
@@ -340,7 +348,7 @@ export class CoopRun {
     this.host.setPattern(null);
     this.host.clearLasers();
     this.clearVolleys(now);
-    this.host.emit('coop:state', this.state());
+    this.host.emit('coop:state', this.state(true));
   }
 
   /** 봇 수정: 제한 시간의 55% 안에 깨지도록 고르게 두드린다 (봇 반응 속도와 상관없이 판이 막히지 않게) */
@@ -492,15 +500,19 @@ export class CoopRun {
     if (this.nextBullet) this.nextBullet += delta;
     if (this.slams.length) this.host.emit('coop:slam', this.slams);
     if (this.safe) this.host.emit('coop:safe', this.safe);
-    this.host.emit('coop:state', this.state());
+    this.host.emit('coop:state', this.state(true));
   }
 
-  state(): CoopState {
+  /**
+   * withVolleys: 탄막 목록을 함께 (시작·재개·보스 무너짐·재접속만. 평소 상태는 원을 잡을 때마다 가므로 빼서 전송량을 줄인다,
+   * 탄막은 coop:volley로 하나씩 간다)
+   */
+  state(withVolleys = false): CoopState {
     return {
       level: this.level, phase: this.phase, bossId: this.boss?.id ?? -1, hp: this.boss?.hp ?? 0, maxHp: this.boss?.maxHp ?? 0,
       shield: this.shield ? { until: this.shield.until, no: this.shield.no } : null, burstUntil: this.burstUntil, rageAt: this.rageAt,
       slams: this.slams.map((s) => ({ ...s })), safe: this.safe,
-      volleys: this.volleys.filter((v) => !volleyDone(v, this.clock)),
+      ...(withVolleys ? { volleys: this.volleys.filter((v) => !volleyDone(v, this.clock)) } : {}),
     };
   }
 
