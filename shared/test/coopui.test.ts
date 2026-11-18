@@ -11,7 +11,7 @@ test('coopResultRows: 대미지 큰 순, 반올림, 최대 체력 대비 %, 1등
   const rows = coopResultRows(res({
     a: { dmg: 80, burstDmg: 20, crystals: 2, threats: 1 },
     b: { dmg: 120.4, burstDmg: 40.6, crystals: 1, threats: 3 },
-    c: { dmg: 0, burstDmg: 0, crystals: 0, threats: 0 },
+    c: { dmg: 0, burstDmg: 0, crystals: 0, threats: 0, hits: {}, hpLeft: 0 },
   }), [a, b, c]);
   assert.deepEqual(rows.map((r) => r.id), ['b', 'a', 'c']);
   assert.deepEqual([rows[0]!.dmg, rows[0]!.pct, rows[0]!.burstDmg, rows[0]!.top], [120, 30, 41, true]);
@@ -21,7 +21,7 @@ test('coopResultRows: 대미지 큰 순, 반올림, 최대 체력 대비 %, 1등
 
 test('coopResultRows: 아무도 대미지가 없으면 최다 대미지 표시 없음', () => {
   const a = newPlayer('a', 'A', 0);
-  const rows = coopResultRows(res({ a: { dmg: 0, burstDmg: 0, crystals: 0, threats: 0 } }), [a]);
+  const rows = coopResultRows(res({ a: { dmg: 0, burstDmg: 0, crystals: 0, threats: 0, hits: {}, hpLeft: 0 } }), [a]);
   assert.equal(rows[0]!.top, false);
 });
 

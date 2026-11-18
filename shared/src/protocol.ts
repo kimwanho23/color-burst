@@ -32,7 +32,13 @@ export interface CoopState {
   volleys?: Volley[];
 }
 /** 협력전 결과: 사람(봇 포함)마다 기여 */
-export interface CoopPlayerResult { dmg: number; burstDmg: number; crystals: number; threats: number }
+export interface CoopPlayerResult {
+  dmg: number; burstDmg: number; crystals: number; threats: number;
+  /** 맞은 횟수 (공격 종류별, 방어막이 막은 것은 빼고) */
+  hits: Partial<Record<CoopHitBy, number>>;
+  /** 판이 끝났을 때 남은 체력 (탈락·봇은 0) */
+  hpLeft: number;
+}
 /** 협력전 결과 */
 export interface CoopResult {
   win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase;
@@ -40,6 +46,8 @@ export interface CoopResult {
   /** 보호막마다 수정을 다 깨는 데 걸린 ms (처음 나온 때부터)와 그동안 분노 횟수 */
   /** 보호막마다: ms 수정을 다 깬 시간, rages 분노 횟수, burstMs 그 뒤 큰 피해 구간 길이 */
   breaks: { ms: number; rages: number; burstMs: number }[];
+  /** 각 단계가 끝난 때 (판 시작부터 ms): 1단계 끝, 2단계 끝 */
+  phaseMs: number[];
   /** 진 이유: 수정 구간 실패(엑스퍼트 분노) / 모두 탈락 / 시간 끝 */
   reason?: 'crystal' | 'wipe' | 'time';
 }

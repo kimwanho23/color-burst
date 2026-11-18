@@ -64,6 +64,8 @@ export class CoopRun {
   private beam: Beam | null = null;
   private beamHit = new Set<string>();
   private stats = new Map<string, CoopPlayerResult>();
+  /** 단계가 끝난 절대 시각 (결과에서 판 시작 기준으로 바꿈) */
+  private phaseAts: number[] = [];
   private breaks: { ms: number; rages: number; burstMs: number }[] = [];
   /** 큰 피해 구간이 끝나면 고유 패턴·탄막 일정을 다시 잡는다 */
   private afterBurst = false;
@@ -87,7 +89,7 @@ export class CoopRun {
   private alive() { return this.humans().filter((p) => !p.outAt); }
   private stat(id: string) {
     let s = this.stats.get(id);
-    if (!s) { s = { dmg: 0, burstDmg: 0, crystals: 0, threats: 0 }; this.stats.set(id, s); }
+    if (!s) { s = { dmg: 0, burstDmg: 0, crystals: 0, threats: 0, hits: {}, hpLeft: 0 }; this.stats.set(id, s); }
     return s;
   }
 
@@ -494,6 +496,7 @@ export class CoopRun {
     if (!this.shield) return;
     const burstMs = burstMsFor(this.shield.until - now);
     this.breaks.push({ ms: now - this.shield.from, rages: this.shield.rages, burstMs });
+    this.phaseAts.push(now);
     this.shield = null;
     this.rageAt = 0;
     // 큰 피해는 다음 단계 몫이다 (그 단계의 아래 경계까지만 깎인다). 패턴은 큰 피해 구간이 끝난 뒤 다음 단계 것으로
@@ -630,6 +633,8 @@ export class CoopRun {
       return true;
     }
     const before = p.hp;
+    const st = this.stat(p.id);
+    st.hits[by] = (st.hits[by] ?? 0) + 1;
     p.hp = Math.max(0, p.hp - C.levels[this.level].hurt[by]);
     p.immuneUntil = now + fx.immuneMs;
     this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, dmg: before - p.hp, immuneUntil: p.immuneUntil, ...(circleId !== undefined ? { circleId } : {}) });
@@ -705,11 +710,11 @@ export class CoopRun {
     const ratio = hs.length ? hs.filter((p) => !p.outAt).length / hs.length : 0;
     const timeMs = Math.max(0, Math.min(C.timeSec * 1000, now - startAt));
     const players: Record<string, CoopPlayerResult> = {};
-    for (const p of this.host.players()) players[p.id] = { ...this.stat(p.id) };
+    for (const p of this.host.players()) players[p.id] = { ...this.stat(p.id), hits: { ...this.stat(p.id).hits }, hpLeft: p.bot || p.outAt ? 0 : Math.max(0, p.hp) };
     return {
       win, stars: coopStars(win, ratio, C.timeSec * 1000 - timeMs), timeMs,
       bossHpPct: this.boss ? Math.round(((this.boss.hp ?? 0) / (this.boss.maxHp || 1)) * 100) : 0,
-      phase: this.phase, maxHp: this.boss?.maxHp ?? 0, players, breaks: [...this.breaks],
+      phase: this.phase, maxHp: this.boss?.maxHp ?? 0, players, breaks: [...this.breaks], phaseMs: this.phaseAts.map((t) => Math.max(0, t - startAt)),
       ...(!win && (reason ?? this.reason) ? { reason: reason ?? this.reason } : {}),
     };
   }

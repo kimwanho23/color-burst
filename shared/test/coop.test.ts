@@ -779,6 +779,32 @@ test('gameRecord: 협력전이면 사람마다 대미지와 보호막 기록', (
   room.destroy();
 });
 
+test('판 기록: coopResult에 phaseMs, 사람마다 hits·hpLeft', () => {
+  const { room, r, me } = coopRoom(1, 3);
+  const bot = room.players.find((p) => p.bot)!;
+  const t0 = r.startAt + 20_000;
+  assert.equal(r.coop.damage(me, 'bullet', t0), true);
+  assert.equal(r.coop.damage(me, 'bullet', t0 + 5000), true);
+  assert.equal(r.coop.damage(me, 'beam', t0 + 10_000), true);
+  // 막힌 공격은 맞은 것으로 세지 않는다
+  me.coopFx!.guardUntil = t0 + 99_999;
+  r.coop.damage(me, 'slam', t0 + 20_000);
+  const brk = r.coop as unknown as { breakShield(n: number): void; shield: unknown };
+  brk.shield = { from: r.startAt + 30_000, until: r.startAt + 60_000, no: 1, rages: 0 };
+  brk.breakShield(r.startAt + 40_000);
+  const res = r.coop.result(r.startAt + 50_000, r.startAt, false);
+  assert.deepEqual(res.phaseMs, [40_000]);
+  assert.deepEqual(res.players[me.id]!.hits, { bullet: 2, beam: 1 });
+  assert.equal(res.players[me.id]!.hpLeft, me.hp);
+  assert.ok(res.players[me.id]!.hpLeft < C.hpMax);
+  assert.equal(res.players[bot.id]!.hpLeft, 0);
+  const rec = gameRecord({ rules: room.rules, ranking: room.players, roundMs: C.timeSec * 1000, solo: false, coop: res } as never) as { coopResult: { phaseMs: number[]; hits: Record<string, unknown>; hpLeft: Record<string, number> } };
+  assert.deepEqual(rec.coopResult.phaseMs, [40_000]);
+  assert.deepEqual(rec.coopResult.hits[me.id], { bullet: 2, beam: 1 });
+  assert.equal(rec.coopResult.hpLeft[me.id], me.hp);
+  room.destroy();
+});
+
 // ---------- 최종 검토 수정 ----------
 test('coop 검토: 봇 수정은 제한 시간의 60% 안에 깨짐 (난이도·두 번째 보호막 모두)', () => {
   for (const level of ['easy', 'normal', 'hard'] as const) {
