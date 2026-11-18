@@ -692,6 +692,9 @@ export class CoopRun {
     if (this.nextSkill) this.nextSkill += delta;
     for (const [id, t] of this.nextOrb) this.nextOrb.set(id, t + delta);
     if (this.shield) { this.shield.until += delta; this.shield.from += delta; }
+    // 봇 수정 두드리는 시각 (안 밀면 재개하자마자 한 tick에 한 번씩 두드려 곧 깨진다), 끝난 단계 시각 (판 시작 시각도 함께 밀린다)
+    for (const [id, t] of this.botNext) this.botNext.set(id, t + delta);
+    this.phaseAts = this.phaseAts.map((t) => t + delta);
     if (this.burstUntil) this.burstUntil += delta;
     if (this.rageAt) this.rageAt += delta;
     for (const s of this.slams) s.at += delta;

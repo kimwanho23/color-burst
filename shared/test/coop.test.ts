@@ -1516,3 +1516,31 @@ test('단계가 오르면 세짐: 3단계 추적 원은 1단계보다 많고, �
   assert.equal(lines[0], 1);
   assert.ok(lines[1]! > 1, String(lines[1]));
 });
+
+test('일시정지 뒤: 봇 수정 두드리는 시각도 밀려 재개하자마자 깨지지 않음', () => {
+  const { room, r, me } = coopRoom(1, 1);
+  const bot = room.players.find((p) => p.bot)!;
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  for (let t = now; t <= now + 200; t += 50) r.coop.tick(t);
+  const c = crystals(r).find((x) => x.target === bot.id)!;
+  const before = c.hp!;
+  const delta = 20_000;
+  r.startAt += delta;
+  r.coop.shift(delta);
+  for (let t = now + 200 + delta; t <= now + 400 + delta; t += 50) r.coop.tick(t);
+  assert.ok(c.hp! >= before - 1, `${before} → ${c.hp}`);
+  room.destroy();
+});
+
+test('일시정지 뒤: 끝난 단계 시각도 밀려 phaseMs가 멈춘 시간을 빼고 셈', () => {
+  const { room, r } = coopRoom(1, 0);
+  const brk = r.coop as unknown as { breakShield(n: number): void; shield: unknown };
+  brk.shield = { from: r.startAt + 30_000, until: r.startAt + 60_000, no: 0, rages: 0 };
+  brk.breakShield(r.startAt + 40_000);
+  // 방은 판 시작 시각과 CoopRun 시각을 함께 민다
+  r.startAt += 5000;
+  r.coop.shift(5000);
+  assert.deepEqual(r.coop.result(r.startAt + 50_000, r.startAt, false).phaseMs, [40_000]);
+  room.destroy();
+});
