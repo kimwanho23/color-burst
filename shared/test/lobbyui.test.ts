@@ -47,7 +47,7 @@ test('rulesSummary: 기본·협력전·아케이드·커스텀', () => {
   assert.equal(rulesSummary(DEFAULT_RULES).title, '개인전 · 클래식 · 기본');
   assert.ok(rulesSummary(DEFAULT_RULES).detail.startsWith('60초 · 피버 ×3 7초'), rulesSummary(DEFAULT_RULES).detail);
   assert.ok(rulesSummary(DEFAULT_RULES).detail.includes('보스'));
-  assert.ok(rulesSummary({ ...DEFAULT_RULES, coop: true }).title.startsWith('협력전 · 노말'));
+  assert.equal(rulesSummary({ ...DEFAULT_RULES, coop: true }).title, '협력전 · 노말');
   assert.ok(rulesSummary({ ...DEFAULT_RULES, mode: 'arcade' }).detail.startsWith(`${ARCADE.rounds}라운드`));
   assert.ok(rulesSummary({ ...DEFAULT_RULES, feverSec: 9 }).title.endsWith('커스텀'));
   assert.ok(!rulesSummary({ ...DEFAULT_RULES, boss: false }).detail.includes('보스'));
@@ -73,7 +73,7 @@ test('협력전 엑스퍼트: 칩·요약은 난이도와 시간만', () => {
   assert.ok(texts.includes('협력전 · 엑스퍼트'), texts.join('/'));
   assert.ok(texts.includes(`${RULES.coop.timeSec}초`));
   for (const w of ['레이저', '맵 패턴', '보스']) assert.ok(!texts.some((x) => x.includes(w)), w);
-  assert.ok(rulesSummary(r).title.startsWith('협력전 · 엑스퍼트'), rulesSummary(r).title);
+  assert.equal(rulesSummary(r).title, '협력전 · 엑스퍼트');
 });
 
 test('rulesChips: 시간·피버·속도·견제·요소 켜짐/꺼짐을 빠짐없이', () => {

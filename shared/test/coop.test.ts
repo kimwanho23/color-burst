@@ -173,7 +173,7 @@ test('엑스퍼트 난이도: 규칙 정리를 통과하고 하드보다 한 칸
 
 test('난이도 표: 세 난이도 모두 있고 하드일수록 공격이 잦고 수정이 단단하다', () => {
   const L = C.levels;
-  for (const k of ['easy', 'normal', 'hard'] as const) assert.ok(L[k]);
+  for (const k of ['easy', 'normal', 'hard', 'expert'] as const) assert.ok(L[k]);
   assert.ok(L.easy.laserEvery[0] > L.normal.laserEvery[0] && L.normal.laserEvery[0] > L.hard.laserEvery[0]);
   assert.ok(L.easy.slamEvery > L.hard.slamEvery && L.easy.crystalSec > L.hard.crystalSec);
 });

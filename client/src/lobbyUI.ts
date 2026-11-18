@@ -34,7 +34,8 @@ const COOP_NAME: Record<CoopLevel, string> = { easy: '이지', normal: '노말',
 export function rulesSummary(r: RoomRules): { title: string; detail: string } {
   const who = r.coop ? `협력전 · ${COOP_NAME[r.coopLevel]}` : r.team ? '팀전 2:2' : r.survival ? '서바이벌' : '개인전';
   const preset = matchPreset(r);
-  const title = `${who} · ${r.mode === 'arcade' ? '아케이드' : '클래식'} · ${preset ? PRESETS[preset].name : '커스텀'}`;
+  // 협력전은 클래식·아케이드·프리셋 구분이 없다
+  const title = r.coop ? who : `${who} · ${r.mode === 'arcade' ? '아케이드' : '클래식'} · ${preset ? PRESETS[preset].name : '커스텀'}`;
   // 판 길이: 아케이드는 라운드, 클래식 서바이벌은 인원에 따라 길어지므로 탈락 간격, 협력전은 고정 시간
   const time = r.mode === 'arcade' ? `${ARCADE.rounds}라운드 · 라운드 ${r.arcadeRoundSec}초`
     : r.coop ? `${RULES.coop.timeSec}초`
