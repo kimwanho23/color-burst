@@ -94,12 +94,13 @@ export const volleyHits = (cursor: Point, lines: readonly LaserLine[], half?: nu
 /** 레이저 스턴을 걸 수 있는지: 스턴 중이 아니고, 스턴이 끝난 지 immuneMs가 지났다 (연속 스턴 방지) */
 export const canLaserStun = (p: PlayerState, now: number) => now >= p.stunUntil + RULES.laser.immuneMs && !modsOf(p.picks).fortress;
 
-/** 다음 레이저까지 걸리는 시간(ms). 카오스면 2초마다, 가끔 0.6초 뒤 한 번 더 (겹침) */
+/** 다음 레이저까지 걸리는 시간(ms). 카오스면 2초마다, 가끔 0.6초 뒤 한 번 더 (겹침).
+ *  방 규칙 레이저 빈도: 자주(2)면 간격 절반, 드물게(0.5)면 두 배. 카오스에도 적용 (겹쳐 나오는 0.6초는 그대로) */
 export const nextLaserIn = (rand = Math.random, chaos = false, freq = 1) => {
   const C = RULES.chaos;
-  if (chaos) return rand() < C.laserQuickChance ? C.laserQuickMs : C.laserEveryMs;
-  // 방 규칙 레이저 빈도: 자주(2)면 간격 절반, 드물게(0.5)면 두 배
-  return (RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin)) / (freq > 0 ? freq : 1);
+  const f = freq > 0 ? freq : 1;
+  if (chaos) return rand() < C.laserQuickChance ? C.laserQuickMs : C.laserEveryMs / f;
+  return (RULES.laser.everyMin + rand() * (RULES.laser.everyMax - RULES.laser.everyMin)) / f;
 };
 
 /** 커서 자석: 커서 둘레 radius 안에 중심이 들어온 내 원·노란 원 (무지개·보호 구역·화면 밖·skip 제외), 가까운 순 최대 max개 */
