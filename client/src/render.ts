@@ -4,7 +4,7 @@
  */
 import {
   COLORS, COOP_BOSSES, FIELD, RULES, YELLOW, auraAt, barSegment, beamAngles, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
-  type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam } from '@color-burst/shared';
+  type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam, type Homing, homingAlpha, homingRule } from '@color-burst/shared';
 
 import { COOP_SPECIALS, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
 
@@ -122,6 +122,8 @@ export interface DrawState {
   /** 협력전: 구역 봉인, 회전 빔(보스 중심 from에서) */
   seal?: Seal | null;
   beam?: { b: Beam; from: { x: number; y: number } } | null;
+  /** 협력전 엑스퍼트 유도탄 (예고는 보스 중심 from에서), still이면 외삽하지 않음(일시정지 화면) */
+  homing?: { h: Homing; from: { x: number; y: number }; still: boolean } | null;
   /** 협력전: 탄막 (원보다 위, 수정보다 아래) */
   volleys?: readonly Volley[];
   /** 협력전 약점 노출: 보스 중심 + (dx, dy)의 노란 과녁 (until까지) */
@@ -328,6 +330,7 @@ export class Renderer {
     if (s.safe) this.drawSafe(s.safe, s.now);
     if (s.seal) this.drawSeal(s.seal, s.now, now);
     if (s.beam) this.drawBeam(s.beam.b, s.beam.from, s.now, now);
+    if (s.homing) this.drawHoming(s.homing.h, s.homing.from, s.homing.still, s, now);
     for (const sl of s.slams ?? []) this.drawSlam(sl, s.now, s);
     if (s.pattern) this.drawPattern(s.pattern, s.popped ?? new Set(), s.now, now, s.trapped ?? -1);
     const base = ctx.globalAlpha;
@@ -1029,6 +1032,49 @@ export class Renderer {
   }
 
   /** 회전 빔: 경고 중엔 보스에서 뻗는 얇은 선 + 도는 방향 화살표, 나오면 굵은 빔 */
+  /**
+   * 유도탄: 예고 중에는 보스 둘레에 대상 색 점선 고리, 내가 대상이면 내 커서에 차오르는 고리.
+   * 날 때는 받은 위치에서 진행 방향으로 최대 120ms 외삽해 대상 색 탄 + 붉은 테두리 (효과 줄이기가 아니면 꼬리)
+   */
+  private drawHoming(h: Homing, from: { x: number; y: number }, still: boolean, s: DrawState, frameNow: number) {
+    const ctx = this.ctx, t = s.now, H = RULES.coop.homing;
+    const hex = (id: string) => COLORS[s.colorOf?.get(id) ?? 0].hex;
+    ctx.save();
+    if (t < h.at) {
+      const f = Math.min(1, Math.max(0, (t - h.warnAt) / (h.at - h.warnAt)));
+      const pulse = 0.55 + 0.35 * Math.sin(frameNow / 90);
+      h.targets.forEach((id, i) => {
+        ctx.strokeStyle = hex(id); ctx.globalAlpha = pulse; ctx.lineWidth = 4; ctx.setLineDash([12, 10]);
+        ctx.beginPath(); ctx.arc(from.x, from.y, RULES.coop.bossR + 18 + i * 10, 0, Math.PI * 2); ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      if (s.cursor && s.meId && h.targets.includes(s.meId)) {
+        ctx.globalAlpha = 1; ctx.strokeStyle = '#ff5d73'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(s.cursor.x, s.cursor.y, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * f); ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    const ahead = still ? 0 : Math.min(120, Math.max(0, t - h.t)) / 1000;
+    const { speed } = homingRule(h.phase);
+    for (const sh of h.shots) {
+      const a = homingAlpha(sh, t);
+      if (a <= 0) continue;
+      const x = sh.x + Math.cos(sh.angle) * speed * ahead, y = sh.y + Math.sin(sh.angle) * speed * ahead;
+      ctx.globalAlpha = a;
+      if (!reduceMotion) {
+        ctx.strokeStyle = hex(sh.target); ctx.globalAlpha = a * 0.35; ctx.lineWidth = H.r; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(sh.angle) * H.r * 3, y - Math.sin(sh.angle) * H.r * 3); ctx.stroke();
+        ctx.globalAlpha = a;
+      }
+      ctx.fillStyle = hex(sh.target);
+      ctx.beginPath(); ctx.arc(x, y, H.r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ff2d3d'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, H.r + 2, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawBeam(b: Beam, from: { x: number; y: number }, t: number, frameNow: number) {
     if (t >= b.until) return;
     const ctx = this.ctx, live = t >= b.at, len = Math.hypot(FIELD.w, FIELD.h) + 50;

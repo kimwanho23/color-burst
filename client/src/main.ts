@@ -2,7 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, COOP_ITEMS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Seal, type Beam, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Seal, type Beam, type Homing, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
@@ -114,6 +114,7 @@ let coopSafe: SafeZones | null = null;
 /** 협력전: 구역 봉인, 회전 빔 (경고 중이거나 나와 있는 것) */
 let coopSeal: Seal | null = null;
 let coopBeam: Beam | null = null;
+let coopHoming: Homing | null = null;
 /** 협력전 탄막 (서버는 무늬 단위로 보내고 위치는 시각으로 계산), 이미 알린 탄 (`${탄막}:${탄}`) */
 let coopVolleys: Volley[] = [];
 /** 협력전 미사일 (연출만, 발마다 보스에 닿는 시각·휘는 방향) */
@@ -532,7 +533,7 @@ function resetToHome(err = '') {
   // 게임 중에 나가면 일시정지·증강 선택·라운드 끝 화면이 처음 화면 위에 남지 않게 닫는다
   pausedView = 0; pauseUntil = 0; resumeAt = 0; roundOver = false;
   arcade = null; offer = null;
-  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; coopMissiles = []; setVolleys([]); renderCoop();
+  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; coopHoming = null; coopMissiles = []; setVolleys([]); renderCoop();
   $('pauseOv').hidden = true; $('pickOv').hidden = true; $('roundEnd').hidden = true;
   resetComboNotice();
   closeChipPop();
@@ -617,7 +618,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   popped = new Set(d.popped ?? []);
   coopState = d.coop ?? null;
   // 다시 접속·재개: 서버 상태에서 내려찍기·안전지대를 이어서 그린다
-  coopSlams = coopState?.slams ?? []; coopSafe = coopState?.safe ?? null; coopSeal = coopState?.seal ?? null; coopBeam = coopState?.beam ?? null;
+  coopSlams = coopState?.slams ?? []; coopSafe = coopState?.safe ?? null; coopSeal = coopState?.seal ?? null; coopBeam = coopState?.beam ?? null; coopHoming = coopState?.homing ?? null;
   setVolleys(coopState?.volleys ?? []);
   // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
   frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
@@ -669,7 +670,7 @@ socket.on('coop:state', (s) => {
     renderer.banner('보스가 큰 원을 발사합니다! 클릭해서 제거하세요!', '#64efff');
     sfx.patternWarn();
   }
-  coopState = s; coopSlams = s.slams; coopSafe = s.safe; coopSeal = s.seal; coopBeam = s.beam; renderCoop();
+  coopState = s; coopSlams = s.slams; coopSafe = s.safe; coopSeal = s.seal; coopBeam = s.beam; coopHoming = s.homing ?? null; renderCoop();
   // 탄막 목록은 실려 올 때만 바꾼다 (평소 상태에는 없다)
   if (s.volleys) setVolleys(s.volleys);
 });
@@ -720,7 +721,7 @@ socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked }) => {
     else if (p) pushFeed($('feed'), coopItemIcon('guard', 18), `${p.name}: 방어막으로 막음`, COLORS[p.color].hex);
     return;
   }
-  const what = by === 'crush' ? '압살' : by === 'laser' ? '레이저' : by === 'beam' ? '회전 빔' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'wall' ? '내려오는 벽' : by === 'bullet' ? '탄막' : '추적 원';
+  const what = by === 'homing' ? '유도탄' : by === 'crush' ? '압살' : by === 'laser' ? '레이저' : by === 'beam' ? '회전 빔' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'wall' ? '내려오는 벽' : by === 'bullet' ? '탄막' : '추적 원';
   const lost = dmg;
   if (playerId === myId()) {
     // 탄은 화면이 맞음을 알리면서 연출을 먼저 냈다
@@ -739,6 +740,7 @@ socket.on('coop:crystal', ({ id, hp, maxHp }) => {
 socket.on('coop:safe', (d) => { coopSafe = d; if (d) { renderer.banner('안전지대로!', '#78ffaa'); sfx.patternWarn(); } });
 // 이미 있던 패턴을 다시 보낸 것(재개 shift)이면 현수막은 띄우지 않는다 (봉인·빔은 다음 고유 패턴 전에 끝나 null이 온다)
 socket.on('coop:seal', (d) => { const fresh = !!d && !coopSeal; coopSeal = d; if (fresh) { renderer.banner(d.lethal ? '즉사 압살! 밝은 안전 구역으로!' : '구역 봉인! 빗금 친 줄에서 나가세요', '#ff5d73'); sfx.patternWarn(); } });
+socket.on('coop:homing', (d) => { const fresh = !!d && !coopHoming; coopHoming = d; if (fresh) { renderer.banner('유도탄! 멈추지 말고 움직이세요', '#ff5d73'); sfx.patternWarn(); } });
 socket.on('coop:beam', (d) => { const fresh = !!d && !coopBeam; coopBeam = d; if (fresh) { renderer.banner('회전 빔! 빔을 피해 도세요', '#ff5d73'); sfx.patternWarn(); } });
 // 잡은 원이 보스에게: 빛줄기와 피해 숫자
 socket.on('coop:orb', ({ by, x, y, dmg }) => {
@@ -1182,7 +1184,7 @@ socket.on('game:over', (d) => {
   const r = renderResult(d, myId(), effects, startAt);
   $('rank').innerHTML = (d.coop ? coopResultHtml(d.coop) : '') + r.rank;
   // 협력전 패턴·탄막도 지운다 (결과 화면 뒤에 남지 않게)
-  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; coopMissiles = []; setVolleys([]); renderCoop();
+  coopState = null; coopSlams = []; coopSafe = null; coopSeal = null; coopBeam = null; coopHoming = null; coopMissiles = []; setVolleys([]); renderCoop();
   $('titleList').innerHTML = r.titles;
   $('graphBox').innerHTML = r.graph;
   $('srcBox').innerHTML = r.sources;
@@ -1538,6 +1540,7 @@ function frame() {
     safe: rules.coop ? coopSafe : undefined,
     seal: rules.coop ? coopSeal : undefined,
     beam: rules.coop && coopBeam ? { b: coopBeam, from: coopBossPos(now) } : undefined,
+    homing: rules.coop && coopHoming ? { h: coopHoming, from: coopBossPos(now), still: !!pausedView } : undefined,
     volleys: rules.coop ? coopVolleys : undefined,
     coopWeak: rules.coop ? coopState?.weak : undefined,
     specials: rules.coop ? { attacks: coopState?.specials ?? [], to: coopBossPos(now) } : undefined,
