@@ -130,7 +130,7 @@ export const RULES = {
      */
     beam: { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22, stillMs: 150 },
     /** 내려오는 벽: 경고 시간(그동안 제자리 미리보기, 맞지 않음), [2단계, 3단계] 틈 수, 속도(필드/초) */
-    wall: { warnMs: 2_000, gaps: [2, 1], speed: [140, 180] },
+    wall: { warnMs: 2_000, gaps: [2, 1], speed: [240, 300] },
     /** 추적 원은 발사 위치·방향과 관계없이 최소 threatMinTravelMs 동안 대응할 수 있게 속도를 제한한다 */
     threatR: 30, threatPoints: 3, threatMinTravelMs: 3_000, threatWarnMs: 2_000,
     /**

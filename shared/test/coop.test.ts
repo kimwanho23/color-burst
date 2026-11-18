@@ -1476,7 +1476,7 @@ test('회전 빔: 서버가 커서로 판정, 한 빔에 한 번, 경고 중엔 
 });
 
 test('내려오는 벽: 2단계 틈 2개, 3단계 틈 1개', () => {
-  assert.deepEqual(C.wall, { warnMs: 2_000, gaps: [2, 1], speed: [140, 180] });
+  assert.deepEqual(C.wall, { warnMs: 2_000, gaps: [2, 1], speed: [240, 300] });
   for (const x of [0, 0.5, 0.999]) {
     for (const [phase, gaps] of [[2, 2], [3, 1]] as const) {
       const { room, r } = coopRoom(1, 0);
