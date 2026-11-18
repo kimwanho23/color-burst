@@ -314,3 +314,28 @@ test('방어막: 구역 봉인을 막으면 같은 봉인에 다시 맞지 않�
   assert.equal(me.hp, C.hpMax, '같은 봉인에 다시 맞지 않음');
   room.destroy();
 });
+
+test('아이템 이름은 설계 표와 같고, 설명의 숫자는 RULES.coop.items에서 온다', async () => {
+  const { COOP_ITEMS } = await import('../src/index.ts');
+  assert.deepEqual(COOP_ITEM_IDS.map((id) => COOP_ITEMS[id].name),
+    ['탄 지우개', '방어막', '응급 치료', '함께 치료', '화력 강화', '공격력 강화', '약점 노출', '연쇄 폭발', '콤보 점화', '미사일 세례']);
+  const d = (id: CoopItemId) => COOP_ITEMS[id].desc;
+  assert.ok(d('guard').includes(`${I.guardMs / 1000}초`), d('guard'));
+  assert.ok(d('heal').includes(`+${I.heal}`), d('heal'));
+  assert.ok(d('healAll').includes(`+${I.healAll}`), d('healAll'));
+  assert.ok(d('fire').includes(`${I.fireMs / 1000}초`) && d('fire').includes(`×${I.fireMult}`), d('fire'));
+  assert.ok(d('power').includes(`+${Math.round(I.powerStep * 100)}%`) && d('power').includes(`+${Math.round(I.powerStep * I.powerMax * 100)}%`), d('power'));
+  assert.ok(d('weak').includes(`${I.weakMs / 1000}초`), d('weak'));
+  assert.ok(d('chain').includes(`${I.chainN}개`) && d('chain').includes(`×${I.chainMult}`), d('chain'));
+  assert.ok(d('combo').includes(`${I.comboAdd}`), d('combo'));
+  assert.ok(d('missile').includes(`${I.missiles}발`), d('missile'));
+  // 소스에 숫자를 직접 적지 않는다 (RULES를 바꾸면 설명도 바뀌게)
+  const src = (await import('node:fs')).readFileSync(new URL('../src/coopItems.ts', import.meta.url), 'utf8');
+  const table = src.slice(src.indexOf('export const COOP_ITEMS'), src.indexOf('/** 사람마다'));
+  assert.ok(!/'[^']*\d[^']*'/.test(table), table);
+});
+
+test('도감 탄막 설명: 고유 패턴 간격은 RULES.coop.skillEveryMs', async () => {
+  const { bossTabHTML } = await import('../../client/src/codex.ts');
+  assert.ok(bossTabHTML().includes(`${C.skillEveryMs / 1000}초마다 고유 패턴`));
+});

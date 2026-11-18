@@ -273,7 +273,7 @@ export class CoopRun {
     this.host.emit('coop:clear', { before: now });
   }
 
-  /** 탄막 지우기 아이템: before 이전에 쏜 탄과 경고 중인 벽까지 지운다 (큰 피해 구간은 아님, 화면도 coop:clear로 같게) */
+  /** 탄 지우개 아이템: before 이전에 쏜 탄과 경고 중인 벽까지 지운다 (큰 피해 구간은 아님, 화면도 coop:clear로 같게) */
   private clearShots(before: number) {
     this.volleys = this.volleys.filter((v) => {
       if (v.at > before && !v.wall) return true;
