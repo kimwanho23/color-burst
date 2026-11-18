@@ -617,12 +617,18 @@ export class CoopRun {
     return g;
   }
 
-  /** 체력을 hurt[by]만큼 깎고 무적·기절을 건다. 봇·탈락·무적이면 false */
+  /** 체력을 hurt[by]만큼 깎고 무적·기절을 건다. 봇·탈락·무적이면 false. 방어막이 막으면 피해 없이 무적만 걸고 true */
   damage(p: PlayerState, by: CoopHitBy, now: number, circleId?: number): boolean {
     if (p.bot || p.outAt || now < p.immuneUntil || p.hp <= 0) return false;
-    // 방어막 아이템: 한 번 막고 사라진다
-    if (p.coopFx && now < p.coopFx.guardUntil) { p.coopFx.guardUntil = 0; this.host.emitPlayers(); return false; }
     const fx = C.hurtFx[by];
+    // 방어막 아이템: 한 번 막고 사라진다. 피해 없이 맞은 것처럼 무적을 건다 (기절 없음). 봉인·빔도 그 패턴에 맞은 것으로 친다
+    if (p.coopFx && now < p.coopFx.guardUntil) {
+      p.coopFx.guardUntil = 0;
+      p.immuneUntil = now + fx.immuneMs;
+      this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, dmg: 0, immuneUntil: p.immuneUntil, blocked: true, ...(circleId !== undefined ? { circleId } : {}) });
+      this.host.emitPlayers();
+      return true;
+    }
     const before = p.hp;
     p.hp = Math.max(0, p.hp - C.levels[this.level].hurt[by]);
     p.immuneUntil = now + fx.immuneMs;

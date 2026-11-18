@@ -619,6 +619,8 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
 socket.on('game:start', (d) => { hideTip(); applyPlay(d, true); });
 socket.on('game:sync', (d) => applyPlay(d, false));
 socket.on('game:pause', ({ by, until, at }) => {
+  // 미사일 연출은 멈춘 시간만큼 어긋나므로 버린다 (피해는 서버가 그대로 넣는다)
+  coopMissiles = [];
   if (!by) { pausedView = at || serverNow(); stopMusic(); return; }
   setPaused(by, until, 0, at);
 });
@@ -672,13 +674,22 @@ function checkBulletHit(m: PlayerState | undefined, now: number, live: boolean) 
   const C = RULES.coop, by = v?.wall ? 'wall' as const : 'bullet' as const;
   const dmg = C.levels[coopState?.level ?? rules.coopLevel].hurt[by];
   m.immuneUntil = now + C.hurtFx[by].immuneMs;
+  // 방어막이 있으면 서버가 막는다: 맞은 연출은 서버 응답(막음!)으로만
+  if (m.coopFx && now < m.coopFx.guardUntil) return;
   coopHurtShownAt = performance.now();
   myHurtFx(m.hp - dmg > 0 ? `체력 −${dmg}` : '체력이 다 떨어졌어요');
 }
-socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId }) => {
+socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked }) => {
   const p = players.find((x) => x.id === playerId);
   if (p) { p.hp = hp; renderScores(); renderMyHp(playerId === myId()); }
   if (circleId !== undefined) circles.delete(circleId);
+  // 방어막이 막음: 피해 없음
+  if (blocked) {
+    const q = playerId === myId() ? gameCursor.pos : null;
+    if (q) { renderer.text(q.x, q.y - 40, '막음!', '#5ce1e6', 1); sfx.bossBlock(); }
+    else if (p) pushFeed($('feed'), coopItemIcon('guard', 18), `${p.name}: 방어막으로 막음`, COLORS[p.color].hex);
+    return;
+  }
   const what = by === 'laser' ? '레이저' : by === 'beam' ? '회전 빔' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'bullet' || by === 'wall' ? '탄막' : '추적 원';
   const lost = dmg;
   if (playerId === myId()) {

@@ -167,7 +167,7 @@ function coopBuffs(p: PlayerState, now: number): string[] {
   };
   timed('guard', fx.guardUntil, I.guardMs);
   timed('fire', fx.fireUntil, I.fireMs);
-  if (fx.power > 0) out.push(`<span class="buff coop" style="--f:1" title="${COOP_ITEMS.power.name}">${coopItemIcon('power', 18)}<em>×${Math.round((1 + I.powerStep * fx.power) * 10) / 10}</em></span>`);
+  if (fx.power > 0) out.push(`<span class="buff coop" style="--f:1" title="${COOP_ITEMS.power.name}">${coopItemIcon('power', 18)}<em>×${fx.power}</em></span>`);
   if (fx.chain > 0) out.push(`<span class="buff coop" style="--f:1" title="${COOP_ITEMS.chain.name}">${coopItemIcon('chain', 18)}<em>${fx.chain}</em></span>`);
   return out;
 }

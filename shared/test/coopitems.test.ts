@@ -65,10 +65,17 @@ test('방어막: 3초 안 한 번 막고 사라짐, 3초 뒤엔 못 막음', () 
   const now = r.startAt + 5000;
   r.coop.applyItem(me, 'guard', now, AT);
   assert.equal(fx(me).guardUntil, now + I.guardMs);
-  assert.equal(r.coop.damage(me, 'bullet', now + 1000), false);
+  sent.length = 0;
+  assert.equal(r.coop.damage(me, 'bullet', now + 1000), true, '막은 것도 맞은 것으로 침');
   assert.equal(me.hp, C.hpMax);
   assert.equal(fx(me).guardUntil, 0);
-  assert.equal(r.coop.damage(me, 'bullet', now + 1100), true, '두 번째는 맞음');
+  assert.deepEqual(sent.find((s) => s.ev === 'coop:hit')?.d, { playerId: me.id, by: 'bullet', hp: C.hpMax, dmg: 0, immuneUntil: now + 1000 + C.hurtFx.bullet.immuneMs, blocked: true });
+  assert.equal(me.stunUntil, 0, '기절 없음');
+  // 막은 뒤 무적(immuneMs) 안의 다음 탄은 피해 없음, 그 뒤엔 맞음
+  assert.equal(r.coop.damage(me, 'bullet', now + 1000 + C.hurtFx.bullet.immuneMs - 1), false);
+  assert.equal(me.hp, C.hpMax);
+  assert.equal(r.coop.damage(me, 'bullet', now + 1000 + C.hurtFx.bullet.immuneMs), true, '무적이 끝나면 맞음');
+  assert.equal(me.hp, C.hpMax - C.levels.normal.hurt.bullet);
   me.hp = C.hpMax; me.immuneUntil = 0;
   r.coop.applyItem(me, 'guard', now + 5000, AT);
   assert.equal(r.coop.damage(me, 'bullet', now + 5000 + I.guardMs), true, '3초 뒤엔 못 막음');
@@ -288,5 +295,22 @@ test('미사일로 보스를 쓰러뜨리면 이긴 판으로 끝나고 더 돌�
   assert.equal(over?.coop?.win, true);
   assert.ok(sent.some((s) => s.ev === 'boss:killed'));
   assert.ok(!sent.some((s) => s.ev === 'circle:spawn'), '끝난 뒤 원이 나오지 않음');
+  room.destroy();
+});
+
+test('방어막: 구역 봉인을 막으면 같은 봉인에 다시 맞지 않음', () => {
+  const { room, r, me } = coopRoom();
+  const run = r.coop as unknown as { seal: { lanes: number[]; warnAt: number; at: number; until: number } | null; tickSeal(now: number): void };
+  const cursors = (r as unknown as { cursors: Map<string, { x: number; y: number; at: number }> }).cursors;
+  const now = r.startAt + 5000;
+  r.coop.applyItem(me, 'guard', now, AT);
+  run.seal = { lanes: [0, 1, 2], warnAt: now - 2000, at: now, until: now + C.seal.ms };
+  const tickAt = (t: number) => { cursors.set(me.id, { x: 500, y: 700, at: Date.now() }); run.tickSeal(t); };
+  tickAt(now + 10);
+  assert.equal(me.hp, C.hpMax, '막음');
+  assert.equal(fx(me).guardUntil, 0);
+  // 무적(2초)이 끝난 뒤에도 같은 봉인 안이면 다시 맞지 않음
+  for (let t = now + 100; t < now + C.seal.ms; t += 250) tickAt(t);
+  assert.equal(me.hp, C.hpMax, '같은 봉인에 다시 맞지 않음');
   room.destroy();
 });

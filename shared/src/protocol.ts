@@ -256,7 +256,7 @@ export interface ServerToClient {
   /** 협력전: 단계·체력·카드가 바뀜 */
   'coop:state': (d: CoopState) => void;
   /** 협력전: 누가 무엇에 맞아 생명이 줄었는지 (circleId: 놓친 공격 원) */
-  'coop:hit': (d: { playerId: string; by: CoopHitBy; hp: number; dmg: number; immuneUntil: number; circleId?: number }) => void;
+  'coop:hit': (d: { playerId: string; by: CoopHitBy; hp: number; dmg: number; immuneUntil: number; circleId?: number; blocked?: true }) => void;
   /** 협력전: 내려찍기 경고 (사람마다) */
   'coop:slam': (d: Slam[]) => void;
   /** 협력전: 안전지대 경고 (끝나면 null) */
