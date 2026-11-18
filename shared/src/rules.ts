@@ -62,7 +62,7 @@ export const RULES = {
     /** 큰 피해 구간: 길이, 피해 배율, 그동안 원 간격 */
     burst: { ms: 5_000, mult: 2, orbGapMs: 400 },
     /**
-     * 탄막: 탄 반지름, 단계 배율(속도), 수정 구간 배율(속도), 겹쳐 쏠 확률(단계별), 무늬별 발 수·간격.
+     * 탄막: 탄 반지름, 단계 배율(탄의 양: 서버가 발사 간격을 나눔, 속도 아님), 수정 구간 배율(양), 겹쳐 쏠 확률(단계별), 무늬별 발 수·간격.
      * spiralMs 발 사이 지연, aimedSpread 부채꼴 한쪽 각(라디안), wallGap 벽 탄 간격, gapW 벽 틈 폭, wallDy 보스 중심에서 벽까지 거리
      */
     bullets: {
@@ -91,12 +91,12 @@ export const RULES = {
       easy: {
         laserEvery: [9_000, 12_000], laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
         threatEvery: 6_000, threatCount: 2, threatSpeed: 160, phase3Mult: 0.85,
-        crystalHits: [6, 9], crystalSec: 15, slamEvery: 11_000, safeEvery: 22_000, safeCount: 2, mapEvery: 20_000, orbMult: 1.1, bulletEveryMs: 1600, bulletSpeed: 220,
+        crystalHits: [6, 9], crystalSec: 15, slamEvery: 11_000, safeEvery: 22_000, safeCount: 2, mapEvery: 20_000, orbMult: 1.1, bulletEveryMs: 1_600, bulletSpeed: 220,
       },
       normal: {
         laserEvery: [7_000, 10_000], laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
         threatEvery: 5_000, threatCount: 3, threatSpeed: 200, phase3Mult: 0.75,
-        crystalHits: [8, 12], crystalSec: 12, slamEvery: 9_000, safeEvery: 18_000, safeCount: 2, mapEvery: 16_000, orbMult: 1, bulletEveryMs: 1200, bulletSpeed: 260,
+        crystalHits: [8, 12], crystalSec: 12, slamEvery: 9_000, safeEvery: 18_000, safeCount: 2, mapEvery: 16_000, orbMult: 1, bulletEveryMs: 1_200, bulletSpeed: 260,
       },
       hard: {
         laserEvery: [5_000, 7_500], laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },

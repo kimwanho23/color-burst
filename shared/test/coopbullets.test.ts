@@ -97,3 +97,10 @@ test('보스 정의: 단계마다 skills가 spec 표와 같다', () => {
   assert.deepEqual(Object.values(RULES.coop.levels).map((l) => l.bulletEveryMs), [1600, 1200, 950, 750]);
   assert.deepEqual(Object.values(RULES.coop.levels).map((l) => l.bulletSpeed), [220, 260, 300, 340]);
 });
+
+test('단계 배율은 양이지 속도가 아님: 단계가 달라도 Shot.v 같음', () => {
+  for (const shape of ['ring', 'scatter', 'aimed', 'spiral', 'wall'] as const) {
+    const vs = ([1, 2, 3] as const).map((phase) => makeVolley(shape, 1, 0, FROM, { speed: 340, phase }, () => 0.5).shots.map((s) => s.v));
+    for (const list of vs) for (const v of list) assert.equal(v, vs[0][0]);
+  }
+});

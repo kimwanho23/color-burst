@@ -14,14 +14,14 @@ const lower = (f: number) => Math.PI * (0.08 + 0.84 * f);
 
 /**
  * 탄막 한 번. from은 발사 순간 보스 위치(이후 보스가 움직여도 탄은 직선).
- * o.speed에 단계 배율(phaseMult)을 곱한다. 수정 구간 배율은 호출하는 쪽에서 speed에 곱해 넘긴다.
+ * o.speed는 그대로 쓴다(속도는 난이도만 정함). phaseMult·shieldMult는 탄의 양이라 호출하는 쪽이 발사 간격(bulletEveryMs)을 나눠 적용한다.
  */
 export function makeVolley(
   shape: BulletShape, id: number, at: number, from: Point,
   o: { speed: number; phase: CoopPhase; aim?: Point; gaps?: number }, rand: () => number,
 ): Volley {
   const B = RULES.coop.bullets;
-  const v = o.speed * B.phaseMult[o.phase - 1];
+  const v = o.speed;
   const shots: Shot[] = [];
   const add = (x: number, y: number, a: number, d = 0, speed = v) => shots.push({ x, y, a, v: speed, d });
   if (shape === 'ring') {
