@@ -1,7 +1,7 @@
 import type { CoopPhase } from './coop.ts';
 import type { BulletShape } from './coopBullets.ts';
 
-export type CoopSkill = 'laser' | 'threat' | 'slam' | 'safe' | 'seal' | 'wall' | 'beam';
+export type CoopSkill = 'laser' | 'threat' | 'slam' | 'safe' | 'seal' | 'wall' | 'beam' | 'crush';
 
 export interface CoopBoss {
   id: 'core'; name: string;
@@ -12,6 +12,7 @@ export interface CoopBoss {
   /** [첫 보호막, 두 번째 보호막] 수정 구간에서 쓰는 무늬 */
   shieldBullets: [BulletShape[], BulletShape[]];
   skills: Record<CoopPhase, CoopSkill[]>;
+  expertSkills: Partial<Record<CoopPhase, CoopSkill[]>>;
 }
 
 const PHASE2: CoopSkill[] = ['laser', 'threat', 'slam', 'seal', 'wall', 'beam'];
@@ -28,5 +29,6 @@ export const COOP_BOSSES: { core: CoopBoss } = {
     },
     shieldBullets: [['spiral', 'ring'], ['spiral', 'ring', 'aimed']],
     skills: { 1: ['laser', 'threat'], 2: PHASE2, 3: [...PHASE2, 'safe'] },
+    expertSkills: { 2: [...PHASE2, 'crush'], 3: [...PHASE2, 'safe', 'crush'] },
   },
 };

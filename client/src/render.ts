@@ -908,6 +908,7 @@ export class Renderer {
   /** 구역 봉인: 판을 세로 3등분한 막힐 줄에 붉은 빗금 (경고 중엔 옅게 흐르고, 막히면 진하게) */
   private drawSeal(sl: Seal, t: number, frameNow: number) {
     if (t >= sl.until) return;
+    if (sl.lethal) { this.drawCrush(sl, t); return; }
     const ctx = this.ctx, w = FIELD.w / 3, live = t >= sl.at;
     const f = live ? 1 : Math.min(1, Math.max(0, (t - sl.warnAt) / Math.max(1, sl.at - sl.warnAt)));
     ctx.save();
@@ -928,6 +929,35 @@ export class Renderer {
       ctx.strokeStyle = '#ff5d73'; ctx.lineWidth = 4; ctx.setLineDash(live ? [] : [14, 10]);
       ctx.strokeRect(x0 + 2, 2, w - 4, FIELD.h - 4);
       ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  /** 압살: 안전한 한 줄을 밝히고 나머지 줄은 위아래 턱이 닫힌다. */
+  private drawCrush(sl: Seal, t: number) {
+    const ctx = this.ctx, w = FIELD.w / 3, snapMs = RULES.coop.crush.snapMs;
+    const closed = t >= sl.at;
+    const progress = reduceMotion ? Number(closed) : Math.max(0, Math.min(1, (t - sl.at + snapMs) / snapMs));
+    const depth = 35 + progress * (FIELD.h / 2 - 35);
+    const countdown = Math.max(0, Math.ceil((sl.at - snapMs - t) / 1000));
+    ctx.save();
+    ctx.font = "32px Jua, sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let lane = 0; lane < 3; lane++) {
+      const x = lane * w, danger = sl.lanes.includes(lane);
+      ctx.fillStyle = danger ? 'rgba(255, 45, 61, .18)' : 'rgba(90, 255, 180, .2)';
+      ctx.fillRect(x, 0, w, FIELD.h);
+      ctx.strokeStyle = danger ? '#ff5d73' : '#78ffaa'; ctx.lineWidth = 5;
+      ctx.strokeRect(x + 3, 3, w - 6, FIELD.h - 6);
+      if (danger) {
+        ctx.fillStyle = '#94263c';
+        ctx.fillRect(x + 5, 5, w - 10, depth);
+        ctx.fillRect(x + 5, FIELD.h - depth - 5, w - 10, depth);
+        ctx.strokeStyle = '#ff8a95'; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.moveTo(x + 5, depth); ctx.lineTo(x + w - 5, depth);
+        ctx.moveTo(x + 5, FIELD.h - depth); ctx.lineTo(x + w - 5, FIELD.h - depth); ctx.stroke();
+      }
+      ctx.fillStyle = danger ? '#ffd0d5' : '#b4ffda';
+      ctx.fillText(danger ? (countdown ? `즉사 · ${countdown}` : '압살') : '안전 구역', x + w / 2, FIELD.h / 2);
     }
     ctx.restore();
   }

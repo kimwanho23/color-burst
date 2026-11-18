@@ -689,10 +689,12 @@ function myHurtFx(text: string) {
   setTimeout(() => st.classList.remove('hurt'), 300);
 }
 /** 화면 판정: 내 커서가 탄에 닿으면 서버에 알리고, 응답을 기다리지 않고 맞은 연출과 무적 깜빡임을 먼저 낸다 */
+let previousBulletCursor: { x: number; y: number; at: number } | undefined;
 function checkBulletHit(m: PlayerState | undefined, now: number, live: boolean) {
   const pos = gameCursor.pos;
-  if (!rules.coop || !live || !m || m.outAt || now < m.immuneUntil || !pos || !coopVolleys.length) return;
-  const hit = hitShot(pos, coopVolleys, now, coopSkip);
+  if (!rules.coop || !live || !m || m.outAt || now < m.immuneUntil || !pos || !coopVolleys.length) { previousBulletCursor = undefined; return; }
+  const hit = hitShot(pos, coopVolleys, now, coopSkip, previousBulletCursor);
+  previousBulletCursor = { x: pos.x, y: pos.y, at: now };
   if (!hit) return;
   coopSkip.add(`${hit.volleyId}:${hit.shot}`);
   socket.emit('coop:hurt', hit);
@@ -716,7 +718,7 @@ socket.on('coop:hit', ({ playerId, by, hp, dmg, circleId, blocked }) => {
     else if (p) pushFeed($('feed'), coopItemIcon('guard', 18), `${p.name}: 방어막으로 막음`, COLORS[p.color].hex);
     return;
   }
-  const what = by === 'laser' ? '레이저' : by === 'beam' ? '회전 빔' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'bullet' || by === 'wall' ? '탄막' : '추적 원';
+  const what = by === 'crush' ? '압살' : by === 'laser' ? '레이저' : by === 'beam' ? '회전 빔' : by === 'slam' ? '내려찍기' : by === 'safe' ? '안전지대 밖' : by === 'rage' ? '분노 공격' : by === 'seal' ? '구역 봉인' : by === 'wall' ? '내려오는 벽' : by === 'bullet' ? '탄막' : '추적 원';
   const lost = dmg;
   if (playerId === myId()) {
     // 탄은 화면이 맞음을 알리면서 연출을 먼저 냈다
@@ -734,7 +736,7 @@ socket.on('coop:crystal', ({ id, hp, maxHp }) => {
 });
 socket.on('coop:safe', (d) => { coopSafe = d; if (d) { renderer.banner('안전지대로!', '#78ffaa'); sfx.patternWarn(); } });
 // 이미 있던 패턴을 다시 보낸 것(재개 shift)이면 현수막은 띄우지 않는다 (봉인·빔은 다음 고유 패턴 전에 끝나 null이 온다)
-socket.on('coop:seal', (d) => { const fresh = !!d && !coopSeal; coopSeal = d; if (fresh) { renderer.banner('구역 봉인! 빗금 친 줄에서 나가세요', '#ff5d73'); sfx.patternWarn(); } });
+socket.on('coop:seal', (d) => { const fresh = !!d && !coopSeal; coopSeal = d; if (fresh) { renderer.banner(d.lethal ? '즉사 압살! 밝은 안전 구역으로!' : '구역 봉인! 빗금 친 줄에서 나가세요', '#ff5d73'); sfx.patternWarn(); } });
 socket.on('coop:beam', (d) => { const fresh = !!d && !coopBeam; coopBeam = d; if (fresh) { renderer.banner('회전 빔! 빔을 피해 도세요', '#ff5d73'); sfx.patternWarn(); } });
 // 잡은 원이 보스에게: 빛줄기와 피해 숫자
 socket.on('coop:orb', ({ by, x, y, dmg }) => {

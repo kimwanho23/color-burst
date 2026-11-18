@@ -372,6 +372,76 @@ const beamsSent = () => sent.filter((s) => s.ev === 'coop:beam').map((s) => s.d 
 /** 저절로 나오는 고유 패턴을 막는다 (직접 부른 패턴만 보려고) */
 const noSkills = (r: CRoom) => { (r.coop as unknown as { nextSkill: number }).nextSkill = Infinity; };
 
+test('압살: 엑스퍼트 2·3단계 전용, 한 줄 안전과 3초 예고', () => {
+  const boss = COOP_BOSSES.core;
+  for (const phase of [1, 2, 3] as const) assert.ok(!boss.skills[phase].includes('crush'));
+  assert.ok(!boss.expertSkills[1]?.includes('crush'));
+  assert.ok(boss.expertSkills[2]!.includes('crush') && boss.expertSkills[3]!.includes('crush'));
+  for (const level of ['normal', 'hard', 'expert'] as const) {
+    for (const phase of [1, 2] as const) {
+      const { room, r } = coopRoom(1, 0, level);
+      r.coop.phase = phase;
+      const t = r.startAt + 5000;
+      (r.coop as unknown as SkillRun).useSkill('crush', t);
+      const seal = r.coop.state().seal;
+      if (level === 'expert' && phase === 2) {
+        assert.equal(seal?.lethal, true);
+        assert.equal(new Set(seal!.lanes).size, 2);
+        assert.equal(seal!.at, t + C.crush.warnMs + C.crush.snapMs);
+      } else assert.equal(seal, null);
+      room.destroy();
+    }
+  }
+});
+
+test('압살: 예고 중 안전, 무적·방어막 관통 즉사와 안전 구역의 단발 판정', () => {
+  const { room, r, me, ids } = coopRoom(2, 0, 'expert');
+  noSkills(r); r.coop.phase = 2;
+  const other = room.players.find((p) => p.id === ids[1])!;
+  const t = r.startAt + 5000;
+  (r.coop as unknown as SkillRun).useSkill('crush', t);
+  const s = r.coop.state().seal!;
+  const safe = [0, 1, 2].find((lane) => !s.lanes.includes(lane))!;
+  const badX = (s.lanes[0]! + 0.5) * FIELD.w / 3;
+  r.cursors.set(me.id, { x: badX, y: 700, at: t });
+  r.cursors.set(other.id, { x: (safe + 0.5) * FIELD.w / 3, y: 700, at: t });
+  me.immuneUntil = s.at + 10_000; me.coopFx!.guardUntil = s.at + 10_000;
+  r.coop.tick(s.at - 1);
+  assert.equal(me.hp, C.hpMax);
+  r.coop.tick(s.at);
+  assert.equal(me.hp, 0); assert.ok(me.outAt);
+  assert.equal(other.hp, C.hpMax);
+  r.cursors.set(other.id, { x: badX, y: 700, at: s.at + 1 });
+  r.coop.tick(s.at + 100);
+  assert.equal(other.hp, C.hpMax);
+  const hit = sent.filter((x) => x.ev === 'coop:hit').find((x) => (x.d as { by: string }).by === 'crush')!;
+  assert.equal((hit.d as { dmg: number }).dmg, C.hpMax);
+  room.destroy();
+});
+
+test('압살: 지연된 틱 판정, 일시정지 보정과 보호막 진입 취소', () => {
+  const { room, r, me, ids } = coopRoom(2, 0, 'expert');
+  noSkills(r); r.coop.phase = 2;
+  const other = room.players.find((p) => p.id === ids[1])!;
+  const t = r.startAt + 5000;
+  (r.coop as unknown as SkillRun).useSkill('crush', t);
+  const before = r.coop.state().seal!;
+  r.coop.shift(5000);
+  const s = r.coop.state().seal!;
+  assert.equal(s.at, before.at + 5000); assert.equal(s.warnAt, before.warnAt + 5000);
+  assert.equal(s.lethal, true);
+  const safe = [0, 1, 2].find((l) => !s.lanes.includes(l))!;
+  r.cursors.set(me.id, { x: (s.lanes[0]! + 0.5) * FIELD.w / 3, y: 700, at: t });
+  r.cursors.set(other.id, { x: (safe + 0.5) * FIELD.w / 3, y: 700, at: t });
+  r.coop.tick(s.until + 100);
+  assert.equal(me.hp, 0); assert.equal(other.hp, C.hpMax);
+  assert.equal(r.coop.state().seal, null);
+  (r.coop as unknown as SkillRun).useSkill('crush', s.until + 200);
+  toShield(r, other, s.until + 300, C.phaseAt[1]);
+  assert.equal(r.coop.state().seal, null);
+  room.destroy();
+});
+
 test('엑스퍼트 단계 상승: 실제 탄막 간격·속도와 큰 구체 수·속도에 단계별 수치 적용', async () => {
   const { coopAttackRules, coopThreatCount, threatSpeed } = await import('../src/index.ts');
   const { room, r } = coopRoom(1, 0, 'expert');
@@ -1476,7 +1546,7 @@ test('회전 빔: 서버가 커서로 판정, 한 빔에 한 번, 경고 중엔 
 });
 
 test('내려오는 벽: 2단계 틈 2개, 3단계 틈 1개', () => {
-  assert.deepEqual(C.wall, { warnMs: 2_000, gaps: [2, 1], speed: [240, 300] });
+  assert.deepEqual(C.wall, { warnMs: 2_000, gaps: [2, 1], speed: [900, 1100] });
   for (const x of [0, 0.5, 0.999]) {
     for (const [phase, gaps] of [[2, 2], [3, 1]] as const) {
       const { room, r } = coopRoom(1, 0);

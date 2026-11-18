@@ -206,7 +206,9 @@ export class CoopRun {
       this.host.emit('coop:state', this.state());
     }
     if (this.inBurst(now) || !this.nextSkill || now < this.nextSkill) return;
-    const k = pickSkill(COOP_BOSSES.core.skills[this.phase], this.lastSkill, this.rand);
+    const boss = COOP_BOSSES.core;
+    const skills = this.level === 'expert' ? boss.expertSkills[this.phase] ?? boss.skills[this.phase] : boss.skills[this.phase];
+    const k = pickSkill(skills, this.lastSkill, this.rand);
     this.lastSkill = k;
     this.useSkill(k, now);
     this.nextSkill += C.skillEveryMs;
@@ -229,8 +231,14 @@ export class CoopRun {
       if (this.safe) return;
       this.safe = rollSafe(L.safeCount, now + C.safe.warnMs, this.rand);
       this.host.emit('coop:safe', this.safe);
-    } else if (k === 'seal') {
-      this.seal = rollSeal(this.phase, now, this.rand);
+    } else if (k === 'seal' || k === 'crush') {
+      if (k === 'crush' && (this.level !== 'expert' || this.phase === 1)) return;
+      this.seal = rollSeal(k === 'crush' ? 3 : this.phase, now, this.rand);
+      if (k === 'crush') {
+        this.seal.lethal = true;
+        this.seal.at = now + C.crush.warnMs + C.crush.snapMs;
+        this.seal.until = this.seal.at + C.crush.holdMs;
+      }
       this.sealHit.clear();
       this.host.emit('coop:seal', this.seal);
     } else if (k === 'beam') {
@@ -251,14 +259,17 @@ export class CoopRun {
   private tickSeal(now: number) {
     const s = this.seal;
     if (!s) return;
-    if (now >= s.until) { this.seal = null; this.sealHit.clear(); this.host.emit('coop:seal', null); return; }
+    if (now >= s.until && !s.lethal) { this.seal = null; this.sealHit.clear(); this.host.emit('coop:seal', null); return; }
     if (now < s.at) return;
     for (const p of this.alive()) {
       if (this.sealHit.has(p.id)) continue;
       const q = this.host.cursorOf(p.id);
-      if (q && inSeal(q, s, now) && this.damage(p, 'seal', now)) this.sealHit.add(p.id);
+      // 압살은 닫히는 순간 한 번만 판정한다. 늦은 tick도 판정을 건너뛰지 않는다.
+      if (s.lethal) this.sealHit.add(p.id);
+      if (q && inSeal(q, s, s.lethal ? s.at : now) && this.damage(p, s.lethal ? 'crush' : 'seal', now)) this.sealHit.add(p.id);
       if (!this.boss || this.seal !== s) return; // 판이 끝났거나 탈락으로 패턴이 지워짐
     }
+    if (now >= s.until) { this.seal = null; this.sealHit.clear(); this.host.emit('coop:seal', null); }
   }
 
   /** 회전 빔: at~until 동안 보스 중심에서 뻗는 빔 위의 살아 있는 사람이 맞는다 (한 빔에 한 번), 끝나면 null */
@@ -710,10 +721,10 @@ export class CoopRun {
 
   /** 체력을 hurt[by]만큼 깎고 무적·기절을 건다. 봇·탈락·무적이면 false. 방어막이 막으면 피해 없이 무적만 걸고 true */
   damage(p: PlayerState, by: CoopHitBy, now: number, circleId?: number): boolean {
-    if (p.bot || p.outAt || now < p.immuneUntil || p.hp <= 0) return false;
+    if (p.bot || p.outAt || (by !== 'crush' && now < p.immuneUntil) || p.hp <= 0) return false;
     const fx = C.hurtFx[by];
     // 방어막 아이템: 한 번 막고 사라진다. 피해 없이 맞은 것처럼 무적을 건다 (기절 없음). 봉인·빔도 그 패턴에 맞은 것으로 친다
-    if (p.coopFx && now < p.coopFx.guardUntil) {
+    if (by !== 'crush' && p.coopFx && now < p.coopFx.guardUntil) {
       p.coopFx.guardUntil = 0;
       p.immuneUntil = now + fx.immuneMs;
       this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, dmg: 0, immuneUntil: p.immuneUntil, blocked: true, ...(circleId !== undefined ? { circleId } : {}) });

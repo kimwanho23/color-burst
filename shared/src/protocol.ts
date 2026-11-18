@@ -56,7 +56,7 @@ export interface CoopResult {
   /** 진 이유: 수정 구간 실패(엑스퍼트 분노) / 모두 탈락 / 시간 끝 */
   reason?: 'crystal' | 'wipe' | 'time';
 }
-export type CoopHitBy = 'bullet' | 'wall' | 'threat' | 'beam' | 'laser' | 'slam' | 'seal' | 'safe' | 'rage';
+export type CoopHitBy = 'bullet' | 'wall' | 'threat' | 'beam' | 'laser' | 'slam' | 'seal' | 'safe' | 'rage' | 'crush';
 import type { AbilityId, AutoId, Pick, RoundEffect } from './arcade.ts';
 import type { ItemId, ItemTier } from './items.ts';
 import type { EventResult } from './events.ts';

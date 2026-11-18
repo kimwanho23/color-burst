@@ -1,5 +1,5 @@
 import { FIELD, RULES } from './rules.ts';
-import type { Point } from './cursor.ts';
+import { distToSegment, type Point } from './cursor.ts';
 import type { CoopPhase } from './coop.ts';
 
 export type BulletShape = 'spiral' | 'ring' | 'aimed' | 'scatter' | 'wall';
@@ -80,12 +80,21 @@ export function volleyDone(v: Volley, t: number): boolean {
 }
 
 /** 커서가 닿은 첫 탄. skip 키는 `${volleyId}:${shot}` */
-export function hitShot(cursor: Point, volleys: readonly Volley[], t: number, skip: ReadonlySet<string>): { volleyId: number; shot: number } | null {
+export function hitShot(cursor: Point, volleys: readonly Volley[], t: number, skip: ReadonlySet<string>, previous?: Point & { at: number }): { volleyId: number; shot: number } | null {
   for (const v of volleys) {
     for (let i = 0; i < v.shots.length; i++) {
       if (skip.has(key(v.id, i))) continue;
       const p = shotPos(v, i, t);
       if (p && Math.hypot(p.x - cursor.x, p.y - cursor.y) <= v.r) return { volleyId: v.id, shot: i };
+      // 빠른 벽이 프레임 사이에 커서를 통과해도 맞는다. 발사 전 경고 구간은 제외한다.
+      if (p && v.wall && previous && t > previous.at && t - previous.at <= RULES.lagWindowMs) {
+        const at = Math.max(previous.at, v.at + v.shots[i]!.d);
+        const start = shotPos(v, i, at);
+        if (!start) continue;
+        const f = (at - previous.at) / (t - previous.at);
+        const from = { x: start.x - previous.x - (cursor.x - previous.x) * f, y: start.y - previous.y - (cursor.y - previous.y) * f };
+        if (distToSegment({ x: 0, y: 0 }, from, { x: p.x - cursor.x, y: p.y - cursor.y }) <= v.r) return { volleyId: v.id, shot: i };
+      }
     }
   }
   return null;

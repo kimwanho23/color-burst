@@ -72,6 +72,7 @@ export const RULES = {
       bullet: { immuneMs: 600, stunMs: 0 }, wall: { immuneMs: 600, stunMs: 0 }, threat: { immuneMs: 1_000, stunMs: 0 },
       beam: { immuneMs: 2_000, stunMs: 1_000 }, laser: { immuneMs: 2_000, stunMs: 1_000 }, slam: { immuneMs: 2_000, stunMs: 1_000 },
       seal: { immuneMs: 2_000, stunMs: 1_000 }, safe: { immuneMs: 2_000, stunMs: 1_000 }, rage: { immuneMs: 2_000, stunMs: 0 },
+      crush: { immuneMs: 0, stunMs: 0 },
     } as Record<CoopHitBy, { immuneMs: number; stunMs: number }>,
     /** 단계 경계 (체력 비율). 경계에 닿으면 보호막 */
     phaseAt: [0.67, 0.33],
@@ -130,7 +131,9 @@ export const RULES = {
      */
     beam: { warnMs: 2_000, ms: 4_000, count: [2, 3], w: 0.6, halfWidth: 22, stillMs: 150 },
     /** 내려오는 벽: 경고 시간(그동안 제자리 미리보기, 맞지 않음), [2단계, 3단계] 틈 수, 속도(필드/초) */
-    wall: { warnMs: 2_000, gaps: [2, 1], speed: [240, 300] },
+    wall: { warnMs: 2_000, gaps: [2, 1], speed: [900, 1100] },
+    /** 엑스퍼트 압살: 한 줄을 안전 구역으로 남기고 예고 뒤 위아래 턱이 닫힌다. 일반 피격 무적·방어막을 관통한다. */
+    crush: { warnMs: 3_000, snapMs: 120, holdMs: 450 },
     /** 추적 원은 발사 위치·방향과 관계없이 최소 threatMinTravelMs 동안 대응할 수 있게 속도를 제한한다 */
     threatR: 30, threatPoints: 3, threatMinTravelMs: 3_000, threatWarnMs: 2_000,
     /**
@@ -156,28 +159,28 @@ export const RULES = {
     levels: {
       easy: {
         hpMult: 0.8,
-        hurt: { bullet: 5, wall: 15, threat: 15, beam: 20, laser: 20, slam: 20, seal: 10, safe: 30, rage: 30 } as Record<CoopHitBy, number>,
+        hurt: { bullet: 5, wall: 15, threat: 15, beam: 20, laser: 20, slam: 20, seal: 10, safe: 30, rage: 30, crush: 100 } as Record<CoopHitBy, number>,
         laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
         threatCount: 2, threatSpeed: 160,
         crystalHits: [6, 9], crystalSec: 15, safeCount: 2, orbMult: 1.1, bulletEveryMs: 1_600, bulletSpeed: 220,
       },
       normal: {
         hpMult: 1,
-        hurt: { bullet: 10, wall: 25, threat: 20, beam: 25, laser: 30, slam: 30, seal: 20, safe: 40, rage: 50 } as Record<CoopHitBy, number>,
+        hurt: { bullet: 10, wall: 25, threat: 20, beam: 25, laser: 30, slam: 30, seal: 20, safe: 40, rage: 50, crush: 100 } as Record<CoopHitBy, number>,
         laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
         threatCount: 3, threatSpeed: 200,
         crystalHits: [8, 12], crystalSec: 12, safeCount: 2, orbMult: 1, bulletEveryMs: 1_200, bulletSpeed: 260,
       },
       hard: {
         hpMult: 1.2,
-        hurt: { bullet: 15, wall: 35, threat: 25, beam: 30, laser: 40, slam: 40, seal: 30, safe: 50, rage: 70 } as Record<CoopHitBy, number>,
+        hurt: { bullet: 15, wall: 35, threat: 25, beam: 30, laser: 40, slam: 40, seal: 30, safe: 50, rage: 70, crush: 100 } as Record<CoopHitBy, number>,
         laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
         threatCount: 4, threatSpeed: 250,
         crystalHits: [10, 15], crystalSec: 10, safeCount: 1, orbMult: 0.9, bulletEveryMs: 950, bulletSpeed: 300,
       },
       expert: {
         hpMult: 1.8,
-        hurt: { bullet: 20, wall: 45, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity } as Record<CoopHitBy, number>,
+        hurt: { bullet: 20, wall: 45, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity, crush: 100 } as Record<CoopHitBy, number>,
         laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
         threatCount: 5, threatSpeed: 280,
         crystalHits: [12, 24], crystalSec: 8, safeCount: 1, orbMult: 0.8, bulletEveryMs: 850, bulletSpeed: 320,

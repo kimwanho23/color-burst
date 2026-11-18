@@ -5,6 +5,19 @@ import { COOP_BOSSES, FIELD, RULES, hitShot, makeVolley, shotGone, shotPos, voll
 const FROM = { x: 550, y: 190 };
 const seq = (vals: number[]) => { let i = 0; return () => vals[i++ % vals.length]; };
 
+test('빠른 벽: 프레임 사이 통과도 피격, 틈·경고·오래된 프레임은 제외', () => {
+  const wall = { id: 1, at: 0, r: 10, wall: true as const, shots: [{ x: 100, y: 100, a: Math.PI / 2, v: 1100, d: 0 }] };
+  const cursor = { x: 100, y: 180 };
+  assert.equal(hitShot(cursor, [wall], 100, new Set()), null);
+  assert.deepEqual(hitShot(cursor, [wall], 100, new Set(), { ...cursor, at: 50 }), { volleyId: 1, shot: 0 });
+  assert.equal(hitShot({ x: 150, y: 180 }, [wall], 100, new Set(), { x: 150, y: 180, at: 50 }), null);
+  assert.equal(hitShot(cursor, [wall], 100, new Set(['1:0']), { ...cursor, at: 50 }), null);
+  assert.equal(hitShot(cursor, [wall], 100, new Set(), { ...cursor, at: -RULES.lagWindowMs }), null);
+  const pending = { ...wall, at: 200 };
+  assert.equal(hitShot(cursor, [pending], 190, new Set(), { ...cursor, at: 150 }), null);
+  assert.deepEqual(hitShot({ x: 100, y: 130 }, [pending], 250, new Set(), { x: 100, y: 130, at: 150 }), { volleyId: 1, shot: 0 });
+});
+
 test('링: 발 수와 아래쪽 퍼짐', () => {
   const v = makeVolley('ring', 1, 0, FROM, { speed: 260, phase: 1 }, () => 0.5);
   assert.equal(v.shots.length, RULES.coop.bullets.ringCount);

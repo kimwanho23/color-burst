@@ -176,7 +176,7 @@ export function pickSkill(list: readonly CoopSkill[], last: CoopSkill | null, ra
 }
 
 /** 구역 봉인: 판을 세로로 3등분한 줄(lanes ⊂ {0,1,2}) 중 막힌 줄. warnAt부터 경고, at~until 동안 막힌 줄 안이면 맞는다 */
-export interface Seal { lanes: number[]; warnAt: number; at: number; until: number }
+export interface Seal { lanes: number[]; warnAt: number; at: number; until: number; lethal?: true }
 
 /** 2단계 1줄, 3단계 2줄 (1단계는 쓰지 않지만 1줄). 늘 한 줄 이상 남긴다 */
 export function rollSeal(phase: CoopPhase, now: number, rand: () => number): Seal {
