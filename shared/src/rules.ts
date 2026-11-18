@@ -61,6 +61,15 @@ export const RULES = {
     comboStep: 10, comboPer: 0.1, comboCap: 0.5,
     /** 큰 피해 구간: 길이, 피해 배율, 그동안 원 간격 */
     burst: { ms: 5_000, mult: 2, orbGapMs: 400 },
+    /**
+     * 탄막: 탄 반지름, 단계 배율(속도), 수정 구간 배율(속도), 겹쳐 쏠 확률(단계별), 무늬별 발 수·간격.
+     * spiralMs 발 사이 지연, aimedSpread 부채꼴 한쪽 각(라디안), wallGap 벽 탄 간격, gapW 벽 틈 폭, wallDy 보스 중심에서 벽까지 거리
+     */
+    bullets: {
+      r: 10, phaseMult: [1, 1.3, 1.6], shieldMult: 2, overlap: [0, 0.25, 0.5],
+      spiralCount: 12, spiralMs: 80, ringCount: 14, aimedCount: 5, aimedSpread: Math.PI / 9, scatterCount: 10,
+      wallGap: 20, gapW: 120, wallDy: 190,
+    },
     /** 수정: 반지름, 서로 떨어진 거리 */
     crystal: { r: 46, minGap: 140 },
     /** 수정을 다 못 깼을 때 분노 공격 경고 */
@@ -76,28 +85,28 @@ export const RULES = {
     stars: { three: { alive: 1, leftSec: 60 }, two: { alive: 0.5, leftSec: 0 } },
     /**
      * 난이도: laserWidth는 화면 높이 %(RoomRules.laserWidth와 같은 단위), 간격은 ms, 3단계는 간격 × phase3Mult.
-     * crystalHits: [첫 보호막, 두 번째 보호막] 수정 횟수, crystalSec: 보호막 제한 시간(초), orbMult: 원 간격 배율
+     * crystalHits: [첫 보호막, 두 번째 보호막] 수정 횟수, crystalSec: 보호막 제한 시간(초), orbMult: 원 간격 배율, bulletEveryMs·bulletSpeed: 탄막 간격(ms)·속도(필드/초)
      */
     levels: {
       easy: {
         laserEvery: [9_000, 12_000], laserWarnMs: 1_500, laserWidth: 15, volleyOdds: { single: 70, parallel: 30, cross: 0, radial: 0 },
         threatEvery: 6_000, threatCount: 2, threatSpeed: 160, phase3Mult: 0.85,
-        crystalHits: [6, 9], crystalSec: 15, slamEvery: 11_000, safeEvery: 22_000, safeCount: 2, mapEvery: 20_000, orbMult: 1.1,
+        crystalHits: [6, 9], crystalSec: 15, slamEvery: 11_000, safeEvery: 22_000, safeCount: 2, mapEvery: 20_000, orbMult: 1.1, bulletEveryMs: 1600, bulletSpeed: 220,
       },
       normal: {
         laserEvery: [7_000, 10_000], laserWarnMs: 1_200, laserWidth: 22, volleyOdds: { single: 40, parallel: 25, cross: 20, radial: 15 },
         threatEvery: 5_000, threatCount: 3, threatSpeed: 200, phase3Mult: 0.75,
-        crystalHits: [8, 12], crystalSec: 12, slamEvery: 9_000, safeEvery: 18_000, safeCount: 2, mapEvery: 16_000, orbMult: 1,
+        crystalHits: [8, 12], crystalSec: 12, slamEvery: 9_000, safeEvery: 18_000, safeCount: 2, mapEvery: 16_000, orbMult: 1, bulletEveryMs: 1200, bulletSpeed: 260,
       },
       hard: {
         laserEvery: [5_000, 7_500], laserWarnMs: 1_000, laserWidth: 30, volleyOdds: { single: 20, parallel: 30, cross: 25, radial: 25 },
         threatEvery: 4_000, threatCount: 4, threatSpeed: 250, phase3Mult: 0.65,
-        crystalHits: [10, 15], crystalSec: 10, slamEvery: 7_000, safeEvery: 14_000, safeCount: 1, mapEvery: 12_000, orbMult: 0.9,
+        crystalHits: [10, 15], crystalSec: 10, slamEvery: 7_000, safeEvery: 14_000, safeCount: 1, mapEvery: 12_000, orbMult: 0.9, bulletEveryMs: 950, bulletSpeed: 300,
       },
       expert: {
         laserEvery: [3_800, 5_800], laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
         threatEvery: 3_200, threatCount: 5, threatSpeed: 300, phase3Mult: 0.55,
-        crystalHits: [13, 19], crystalSec: 8, slamEvery: 5_500, safeEvery: 11_000, safeCount: 1, mapEvery: 9_000, orbMult: 0.8,
+        crystalHits: [13, 19], crystalSec: 8, slamEvery: 5_500, safeEvery: 11_000, safeCount: 1, mapEvery: 9_000, orbMult: 0.8, bulletEveryMs: 750, bulletSpeed: 340,
       },
     },
   },
