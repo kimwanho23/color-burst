@@ -269,7 +269,10 @@ const renderer = new Renderer($<HTMLCanvasElement>('cv'), $('stage'));
 // ---------- 화면 전환 ----------
 /** 자리 4칸 아래 작은 칸: 내 색 고르기 또는 (방장) 방장 넘기기·내보내기 */
 let slotPanel: { kind: 'color' } | { kind: 'member'; id: string } | null = null;
+let resultTimer: ReturnType<typeof setTimeout> | null = null;
 function show(id: 'home' | 'lobby' | 'result' | null) {
+  if (resultTimer !== null) { clearTimeout(resultTimer); resultTimer = null; }
+  $('coopFail').hidden = true;
   for (const s of ['home', 'lobby', 'result']) $(s).hidden = s !== id;
   // 대기실에서는 위쪽 점수판을 숨긴다 (자리 칸과 겹쳐 보여 헷갈림). 자리는 그대로 두어 판 위치가 흔들리지 않게
   const wasLobby = document.body.classList.contains('lobby-on');
@@ -357,7 +360,7 @@ socket.on('room:state', (s) => {
   history.replaceState(null, '', s.solo ? location.pathname : `#${s.code}`);
   renderScores();
   renderLobby();
-  if (s.phase === 'lobby' && !playing && $('result').hidden) show('lobby');
+  if (s.phase === 'lobby' && !playing && $('result').hidden && resultTimer === null) show('lobby');
 });
 
 /** 점수표 보기 창: 이 방 규칙으로 계산한 점수 (열려 있으면 규칙이 바뀔 때마다 다시 채운다) */
@@ -1180,7 +1183,11 @@ socket.on('game:over', (d) => {
   $('toLobbyBtn').textContent = room?.solo ? '규칙 바꾸기' : '대기실로';
   $('resultHint').textContent = again ? '' : '방장이 한 판 더를 누르면 바로 시작해요';
   closeChipPop();
-  show('result');
+  if (d.coop && !d.coop.win) {
+    show(null);
+    $('coopFail').hidden = false;
+    resultTimer = setTimeout(() => show('result'), fxOn() ? 1700 : 600);
+  } else show('result');
 });
 
 // 게임 커서: 진짜 마우스 위치에서 정한다 (반대는 거울 위치, 감도 감소는 늦게 따라옴)

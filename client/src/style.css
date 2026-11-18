@@ -831,6 +831,13 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .codex .cx-card { height: min(760px, calc(100% - 16px)); }
 .codex .cx-body { flex: 1; min-height: 0; max-height: none; }
 
+/* 협력전 패배 연출 */
+.coop-fail { z-index: 10; background: rgba(8, 9, 22, .78); }
+.coop-fail span { font-family: var(--display); font-size: clamp(40px, 10vw, 88px); letter-spacing: .12em; padding-left: .12em; color: var(--red); text-shadow: 0 3px 18px rgba(255, 93, 115, .25); animation: coopFailIn 900ms ease-out both; }
+@keyframes coopFailIn { from { opacity: 0; } to { opacity: 1; } }
+.reduce-fx .coop-fail span { animation: none; }
+@media (prefers-reduced-motion: reduce) { .coop-fail span { animation: none; } }
+
 /* 협력전 스페셜 어택 */
 .special-picker > p { color: #b9bbd5; font-size: 12px; margin: 6px 0 10px; }
 .special-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
