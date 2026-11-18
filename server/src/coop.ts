@@ -799,7 +799,7 @@ export class CoopRun {
     if (p.bot || p.outAt || (by !== 'crush' && now < p.immuneUntil) || p.hp <= 0) return false;
     const fx = C.hurtFx[by];
     // 우클릭 보호막: 켜진 동안 피해·기절·무적 없이 막는다. 아이템 방어막은 소모하지 않는다. 압살·분노·큰 구체 놓침은 관통
-    if (by !== 'crush' && by !== 'rage' && by !== 'threat' && p.coopFx && now < p.coopFx.barrierUntil) {
+    if (by !== 'crush' && by !== 'rage' && by !== 'threat' && p.coopFx && now < p.coopFx.barrierUntil + C.barrier.lagMs) {
       this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, dmg: 0, immuneUntil: p.immuneUntil, blocked: true, barrier: true, ...(circleId !== undefined ? { circleId } : {}) });
       return true;
     }

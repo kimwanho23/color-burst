@@ -14,7 +14,7 @@ import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lob
 import { renderResult } from './results.ts';
 import { coopResultHtml, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
 import { renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
-import { pointerAction } from './pointer.ts';
+import { barrierGuarding, pointerAction } from './pointer.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId } from '@color-burst/shared';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
 import { UI, abilityIcon, coopItemIcon, icon, itemIcon } from './icons.ts';
@@ -136,8 +136,11 @@ function renderCoop() {
 }
 /** 우클릭 보호막: 터치 기기면 화면 버튼으로 쓴다 */
 let usedTouch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+/** 마지막으로 보호막을 요청한 서버 시각 (응답 전 예측 연출을 건너뛰는 데 쓴다) */
+let barrierRequestedAt = 0;
 function useBarrier() {
   if (!playing || !rules.coop || pausedView || serverNow() < startAt) return;
+  barrierRequestedAt = serverNow();
   socket.emit('coop:barrier');
 }
 function renderBarrier() {
@@ -715,8 +718,9 @@ function checkBulletHit(m: PlayerState | undefined, now: number, live: boolean) 
   const v = coopVolleys.find((x) => x.id === hit.volleyId);
   const C = RULES.coop, by = v?.wall ? 'wall' as const : 'bullet' as const;
   const dmg = C.levels[coopState?.level ?? rules.coopLevel].hurt[by];
-  // 우클릭 보호막: 서버가 막고 무적도 걸지 않는다. 화면도 무적을 걸지 않는다
-  if (m.coopFx && now < m.coopFx.barrierUntil) return;
+  // 우클릭 보호막: 서버가 막고 무적도 걸지 않는다. 화면도 무적을 걸지 않는다.
+  // 방금 요청해 응답을 기다리는 중이면 맞은 연출을 미리 내지 않는다 (실제로 맞았으면 서버 응답으로 연출)
+  if (barrierGuarding(m.coopFx, barrierRequestedAt, now)) return;
   m.immuneUntil = now + C.hurtFx[by].immuneMs;
   // 방어막이 있으면 서버가 막는다: 맞은 연출은 서버 응답(막음!)으로만
   if (m.coopFx && now < m.coopFx.guardUntil) return;

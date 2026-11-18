@@ -7,7 +7,7 @@ export function specialPickerHtml(p: PlayerState | undefined): string {
   const chosen = specialId(p?.coopSpecial);
   const maxCharge = Math.max(...COOP_SPECIAL_IDS.map((id) => specialRule(id).charge));
   const maxDamage = Math.max(...COOP_SPECIAL_IDS.map((id) => specialRule(id).damage));
-  return `<b>스페셜 어택</b><p>원 획득 +${RULES.coop.special.gain.orb} · 수정 타격 +${RULES.coop.special.gain.crystal} · 큰 원 제거 +${RULES.coop.special.gain.threat}<br>SPACE로 자동 공격 · 딜 타임 피해 ${RULES.coop.burst.mult}배</p><div class="special-choices">${COOP_SPECIAL_IDS.map((id) => {
+  return `<b>스페셜 어택</b><p>원 획득 +${RULES.coop.special.gain.orb} · 수정 타격 +${RULES.coop.special.gain.crystal} · 큰 원 제거 +${RULES.coop.special.gain.threat}<br>SPACE로 자동 공격 · 딜 타임 피해 ${RULES.coop.burst.mult}배<br>우클릭(휴대폰은 화면 버튼) 보호막: ${RULES.coop.barrier.durationMs / 1000}초 동안 피해를 막아요 · 판마다 이지 ${RULES.coop.barrier.uses.easy} · 노말 ${RULES.coop.barrier.uses.normal} · 하드 ${RULES.coop.barrier.uses.hard}회</p><div class="special-choices">${COOP_SPECIAL_IDS.map((id) => {
     const a = COOP_SPECIALS[id], r = specialRule(id);
     return `<button type="button" class="special-choice${id === chosen ? ' selected' : ''}" data-special="${id}" aria-pressed="${id === chosen}" style="--special-color:${a.color}">
       <div class="special-emblem">${coopSpecialIcon(id, 48)}</div>
@@ -36,6 +36,8 @@ export function renderBarrierHud(stage: HTMLElement, p: PlayerState | undefined,
     el = document.createElement('button'); el.id = 'coopBarrierHud'; el.type = 'button'; el.className = 'barrier-hud';
     // 버튼을 누른 터치가 캔버스 클릭으로 이어지지 않게 막는다
     el.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (!el!.disabled) onUse(); });
+    // 버튼 위 터치 이동·떼기가 창의 게임 커서 이동으로 새지 않게 막는다 (누르는 순간 커서가 버튼으로 순간이동하지 않게)
+    for (const ev of ['pointermove', 'pointerup'] as const) el.addEventListener(ev, (e) => e.stopPropagation());
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     stage.appendChild(el);
   }

@@ -115,17 +115,20 @@ test('아이템 방어막은 보호막이 켜진 동안 소모되지 않는다',
   assert.equal(r.coop.damage(me, 'bullet', now + 500), true);
   assert.equal(fx(me).guardUntil, now + C.items.guardMs);
   // 보호막이 끝난 뒤에는 방어막이 막고 사라진다
-  assert.equal(r.coop.damage(me, 'bullet', now + 1500), true);
+  assert.equal(r.coop.damage(me, 'bullet', now + 1500 + B.lagMs), true);
   assert.equal(me.hp, C.hpMax);
   assert.equal(fx(me).guardUntil, 0);
   room.destroy();
 });
 
-test('종료: 1.5초 뒤에는 피해를 받는다', () => {
+test('종료: 화면에서 끝나기 직전에 맞은 탄은 신고 지연(lagMs) 안이면 막고, 그 뒤에는 피해를 받는다', () => {
+  assert.equal(B.lagMs, 150);
   const { room, r, me } = coopRoom();
   const now = r.startAt + 5000;
   r.coop.activateBarrier(me, now);
-  assert.equal(r.coop.damage(me, 'bullet', now + 1500), true);
+  assert.equal(r.coop.damage(me, 'bullet', now + 1500 + 100), true);
+  assert.equal(me.hp, C.hpMax, '지연 안의 신고는 막음');
+  assert.equal(r.coop.damage(me, 'bullet', now + 1500 + B.lagMs), true);
   assert.equal(me.hp, C.hpMax - C.levels.normal.hurt.bullet);
   room.destroy();
 });
@@ -147,6 +150,52 @@ test('방 조건: 시작 카운트다운 중 요청은 무시', () => {
   r.coopBarrier(me.id);
   assert.equal(fx(me).barrierLeft, 2);
   room.destroy();
+});
+
+test('안내: 대기실 협력전 설명에 우클릭 보호막 한 줄', async () => {
+  const { specialPickerHtml } = await import('../../client/src/coopUI.ts');
+  const html = specialPickerHtml(undefined);
+  assert.ok(html.includes('우클릭') && html.includes('보호막'), html);
+  assert.ok(html.includes(`${B.durationMs / 1000}초`), html);
+});
+
+test('화면 예측: 켜진 동안과 요청 직후 응답 대기 중에는 맞은 연출을 미리 내지 않는다', async () => {
+  const { barrierGuarding, BARRIER_PENDING_MS } = await import('../../client/src/pointer.ts');
+  const t = 10_000;
+  const fx = { barrierUntil: 0, barrierLeft: 2 };
+  assert.equal(barrierGuarding(fx, 0, t), false, '요청 없음');
+  assert.equal(barrierGuarding(fx, t - 100, t), true, '요청 직후');
+  assert.equal(barrierGuarding(fx, t - BARRIER_PENDING_MS, t), false, '응답 대기 시간 지남');
+  assert.equal(barrierGuarding({ barrierUntil: 0, barrierLeft: 0 }, t - 100, t), false, '남은 횟수 0이면 서버가 거절');
+  assert.equal(barrierGuarding({ barrierUntil: t + 1, barrierLeft: 1 }, 0, t), true, '켜짐');
+  assert.equal(barrierGuarding(undefined, t - 100, t), false);
+});
+
+test('모바일 버튼: 누르면 보호막을 쓰고, 버튼 위 터치 이동은 게임 커서로 새지 않는다', async () => {
+  const { renderBarrierHud } = await import('../../client/src/coopUI.ts');
+  const on: Record<string, (e: unknown) => void> = {};
+  const el = {
+    id: '', type: '', className: '', hidden: false, disabled: false, innerHTML: '',
+    classList: { toggle() {} }, setAttribute() {},
+    addEventListener(ev: string, f: (e: unknown) => void) { on[ev] = f; },
+  };
+  const stage = { appendChild() {} } as unknown as HTMLElement;
+  const g = globalThis as { document?: unknown };
+  const prev = g.document;
+  g.document = { getElementById: () => null, createElement: () => el };
+  try {
+    let used = 0;
+    const me = { bot: false, coopFx: { barrierUntil: 0, barrierLeft: 2 } } as unknown as PlayerState;
+    renderBarrierHud(stage, me, 'normal', true, () => { used++; });
+    const ev = () => { const e = { stopped: 0, prevented: 0, stopPropagation() { e.stopped++; }, preventDefault() { e.prevented++; } }; return e; };
+    const down = ev(); on.pointerdown!(down);
+    assert.equal(used, 1);
+    assert.equal(down.stopped, 1);
+    for (const name of ['pointermove', 'pointerup']) {
+      const e = ev(); on[name]!(e);
+      assert.equal(e.stopped, 1, name);
+    }
+  } finally { g.document = prev; }
 });
 
 test('우클릭은 클릭 판정이 아니다', () => {
