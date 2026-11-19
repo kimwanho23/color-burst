@@ -78,7 +78,9 @@ test('단계 순서와 장면 목록', () => {
 test('단계 시작: 콤보 단계는 콤보 9, 그 밖은 0, 피버는 꺼짐', () => {
   const me = newPlayer('a', 'A', 0);
   me.combo = 3; me.fever = 50; me.feverUntil = Date.now() + 5000;
+  me.comboPaidTo = 12;
   enterStep('combo', me);
+  assert.equal(me.comboPaidTo, 0);
   assert.deepEqual([me.combo, me.fever, me.feverUntil], [9, 0, 0]);
   enterStep('steal', me);
   assert.equal(me.combo, 0);

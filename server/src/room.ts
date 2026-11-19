@@ -199,7 +199,10 @@ export class Room {
     t.target = null; t.zoneCatches = 0;
     if (b.kind !== 'card') t.gain = null;
     if (b.kind === 'focus' && b.accept === 'circle') {
-      if (b.prep?.combo !== undefined) me.combo = b.prep.combo;
+      if (b.prep?.combo !== undefined) {
+        clearCombo(me);
+        me.combo = b.prep.combo;
+      }
       if (b.prep?.fever !== undefined) me.fever = b.prep.fever;
       if (b.prep) this.emitPlayers();
       const kind: CircleKind = b.spawn === 'yellow' ? 'y' : b.spawn === 'bot' && bot ? bot.color : me.color;

@@ -2,7 +2,7 @@
  * 튜토리얼 장면 목록과 판단: 단계마다 장면(짚기·설명 카드·자유 연습·봇 견제)을 차례로 보여 준다.
  * 방 상태(원 목록 등)는 건드리지 않고 방이 묻는 것에만 답한다. 수치는 RULES.tutorial, 문구는 화면(client/src/tutorial.ts)
  */
-import { RULES, isFever, type CircleKind, type PlayerState, type TutorialStep } from '@color-burst/shared';
+import { RULES, clearCombo, isFever, type CircleKind, type PlayerState, type TutorialStep } from '@color-burst/shared';
 
 const T = RULES.tutorial;
 
@@ -72,7 +72,8 @@ export function freeDone(b: FreeBeat, me: PlayerState, now: number, zoneCatches:
 
 /** 단계 시작 준비: 콤보 단계는 시작 콤보, 그 밖은 0. 피버는 끈다 */
 export function enterStep(step: TutorialStep, me: PlayerState): void {
-  me.combo = step === 'combo' ? T.comboStart : 0;
+  clearCombo(me);
+  if (step === 'combo') me.combo = T.comboStart;
   me.feverUntil = 0;
   me.fever = 0;
 }
