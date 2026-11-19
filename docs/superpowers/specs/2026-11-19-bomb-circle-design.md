@@ -82,6 +82,7 @@
 
 ```ts
 specialCircles: {
+  // 2026-11-19 얼음·분열 원 추가로 chance는 RULES.specialCircles.chance로 옮겨 셋이 나눠 쓴다
   bomb: { chance: 0.025, halfWidth: 30, chainDelayMs: 150, r: 36 },
 }
 ```
