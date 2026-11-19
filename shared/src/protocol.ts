@@ -79,7 +79,11 @@ import type { MapPattern } from './patterns.ts';
 import type { Beam, Homing, SafeZones, Seal, Slam } from './coop.ts';
 
 /** 커서 자석으로 끌려가는 원: at부터 ms 동안 by의 커서로 빨려 들어간 뒤 잡힌다 */
-export interface Pull { circleId: number; by: string; from: Point; at: number; ms: number }
+export interface Pull {
+  circleId: number; by: string; from: Point; at: number; ms: number;
+  /** 자기장이 끌어오는 고정 클릭 위치 */
+  target?: Point;
+}
 /** 레이저: at(서버 시각)에 a-b 선분으로 발사 (그 전은 경고) */
 /** 레이저 볼리: 한 번에 같이 쏘는 줄들, at = 발사 시각 */
 export interface LaserVolley { lines: { a: Point; b: Point }[]; at: number }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { AUG, COMBO, UNIQUE, FIELD, RULES, clearCombo, buffOn, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, isUnique, type Circle, type MapPattern, type Pick, type ServerToClient } from '../src/index.ts';
+import { AUG, COMBO, UNIQUE, FIELD, RULES, clearCombo, buffOn, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, isUnique, type Circle, type MapPattern, type Pick, type Pull, type ServerToClient } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -169,6 +169,7 @@ test('빈 곳 클릭은 지금처럼 페널티', () => {
 type Priv = {
   updateLaser(now: number): void;
   updatePulls(now: number): void;
+  pulls: Map<number, Pull>;
   lasers: { lines: { a: { x: number; y: number }; b: { x: number; y: number } }[]; at: number; hit: Set<string> }[];
   nextLaserAt: number;
   endAt: number;
@@ -249,6 +250,40 @@ test('자석: 커서 근처 내 원을 1초에 2개까지(레전드) 끌어와 0
   priv(room).updatePulls(now + 1100);
   assert.equal(sent.filter((e) => e === 'circle:pull').length, 3);
   room.destroy();
+});
+
+test('자기장: 내 색 5클릭 뒤 범위 안의 내 원만 최대 4개를 끌어와 기본 점수 전부를 받는다', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const x = CX + 300, y = CY;
+  me.picks = [{ id: 'autoMagnet', tier: 3 }, { id: 'treasure', tier: 0 }];
+  for (let i = 1; i <= 6; i++) {
+    circles.set(i, slowAt(i, me.color, x, y, now));
+    room.click(me.id, { circleId: i, x, y });
+    assert.equal(me.magneticFieldClicks, Math.min(i, 5));
+    assert.equal(priv(room).pulls.size, 0);
+  }
+  const other = room.players.find((p) => p !== me)!;
+  circles.set(7, slowAt(7, me.color, x, y, now));
+  for (let i = 8; i <= 12; i++) circles.set(i, slowAt(i, me.color, x, y + (i - 7) * 20, now));
+  circles.set(13, slowAt(13, other.color, x, y + 10, now));
+  circles.set(14, slowAt(14, 'y', x, y + 10, now));
+  room.click(me.id, { circleId: 7, x, y });
+  assert.deepEqual([...priv(room).pulls.keys()], [8, 9, 10, 11]);
+  assert.deepEqual(priv(room).pulls.get(8)?.target, { x, y });
+  assert.equal(me.magneticFieldClicks, 0);
+
+  room.click(other.id, { circleId: 8, x, y: y + 20 });
+  assert.equal(circles.has(8), true);
+  const { score, combo, fever, chestCount } = me;
+  priv(room).updatePulls(now + RULES.magnet.pullMs);
+  assert.equal(me.score - score, 4 * RULES.points.own * 2);
+  assert.equal(me.combo, combo);
+  assert.equal(me.fever, fever);
+  assert.equal(me.chestCount, chestCount);
+  assert.deepEqual([...circles.keys()], [12, 13, 14]);
 });
 
 test('자석: 스턴 중이거나 커서가 오래되면 끌지 않는다', () => {
@@ -1298,8 +1333,8 @@ test('일시정지: 게임 정보에 멈춘 시각이 들어 있어 다시 접�
   assert.equal(payload.pausedAt, at);
 });
 
-type AutoRoom = { updateAuto(now: number): void };
-test('자동 시전(방): 충전기 1분 6번이면 10초마다 피버 게이지 +10, 일시정지하면 다음 발동도 밀림', (t) => {
+type AutoRoom = { updateAuto(now: number): void; updateArcadeTimers(now: number): void };
+test('자동 시전(방): 레어 충전기는 8초마다 피버 게이지 +20, 일시정지하면 다음 발동도 밀림', (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.now() });
   const { room, me } = playingRoom();
   t.after(() => room.destroy());
@@ -1307,30 +1342,80 @@ test('자동 시전(방): 충전기 1분 6번이면 10초마다 피버 게이지
   me.picks = [{ id: 'autoCharge', tier: 1 }];
   me.fever = 0;
   const t0 = Date.now();
-  me.autoAt = { autoCharge: t0 + 10_000 };
-  r.updateAuto(t0 + 9_900);
+  me.autoAt = { autoCharge: t0 + 8_000 };
+  r.updateAuto(t0 + 7_900);
   assert.equal(me.fever, 0);
-  r.updateAuto(t0 + 10_000);
-  assert.ok(me.fever >= 10, '10초에 발동');
-  assert.equal(me.autoAt.autoCharge, t0 + 20_000);
+  r.updateAuto(t0 + 8_000);
+  assert.equal(me.fever, 20);
+  assert.equal(me.autoAt.autoCharge, t0 + 16_000);
   room.pause(me.id);
   t.mock.timers.tick(5_000);
   room.resume(me.id);
   t.mock.timers.tick(RULES.pause.resumeMs);
-  assert.equal(me.autoAt.autoCharge, t0 + 20_000 + 5_000 + RULES.pause.resumeMs);
+  assert.equal(me.autoAt.autoCharge, t0 + 16_000 + 5_000 + RULES.pause.resumeMs);
 });
 
-test('자동 시전(방): 보호막 발생기는 보호막 버프, 자기장은 자석 버프 (봇은 자기장 없음)', () => {
+test('자동 시전(방): 레전드 충전기는 4초마다 피버 게이지 +30', (t) => {
+  const { room, me } = playingRoom();
+  t.after(() => room.destroy());
+  const r = room as unknown as AutoRoom;
+  const now = Date.now();
+  me.picks = [{ id: 'autoCharge', tier: 3 }];
+  me.autoAt = { autoCharge: now + 4_000 };
+  r.updateAuto(now + 3_999);
+  assert.equal(me.fever, 0);
+  r.updateAuto(now + 4_000);
+  assert.equal(me.fever, 30);
+  assert.equal(me.autoAt.autoCharge, now + 8_000);
+});
+
+test('충전기: 피버를 시작시킨 초과분만 절반 이월하고 과충전 레전드와 합산한다', (t) => {
+  const cases = [
+    { gauge: 70, overcharge: false, carry: 0 },
+    { gauge: 95, overcharge: false, carry: 12.5 },
+    { gauge: 90, overcharge: true, carry: 60 },
+  ];
+  for (const { gauge, overcharge, carry } of cases) {
+    const { room, me } = playingRoom();
+    t.after(() => room.destroy());
+    const r = room as unknown as AutoRoom;
+    const now = Date.now();
+    me.picks = [{ id: 'autoCharge', tier: 3 }];
+    if (overcharge) me.picks.push({ id: 'overcharge', tier: 3 });
+    me.fever = gauge;
+    me.autoAt = { autoCharge: now };
+    r.updateAuto(now);
+    const until = me.feverUntil;
+    assert.ok(until > now + 4000);
+    assert.equal(me.fever, 0);
+    assert.equal(me.feverCarry, carry);
+    r.updateAuto(now + 4000);
+    assert.equal(me.feverCarry, carry);
+    r.updateArcadeTimers(until);
+    assert.equal(me.fever, carry);
+    assert.equal(me.feverCarry, 0);
+  }
+});
+
+test('자동 시전(방): 보호막 발생기는 보호막·득점 충전을 채운다', () => {
   const { room, me } = playingRoom();
   const r = room as unknown as AutoRoom;
   const now = Date.now();
   const bot = room.players.find((p) => p.id !== me.id)!;
   bot.bot = true;
-  for (const p of [me, bot]) { p.picks = [{ id: 'autoGuard', tier: 0 }, { id: 'autoMagnet', tier: 0 }]; p.autoAt = { autoGuard: now, autoMagnet: now }; p.buffs = {}; }
+  for (const p of [me, bot]) { p.picks = [{ id: 'autoGuard', tier: 0 }]; p.autoAt = { autoGuard: now }; p.buffs = {}; }
   r.updateAuto(now);
-  assert.ok(buffOn(me, 'guard', now) && buffOn(me, 'magnet', now));
-  assert.equal(buffOn(bot, 'guard', now), true);
-  assert.equal(buffOn(bot, 'magnet', now), false);
+  assert.equal(buffOn(me, 'guard', now), false);
+  for (const p of [me, bot]) {
+    assert.equal(p.generatorGuard, true);
+    assert.equal(p.generatorScore, true);
+    assert.equal(p.autoAt.autoGuard, now + 10_000);
+  }
+  me.generatorGuard = false;
+  r.updateAuto(now + 9_999);
+  assert.equal(me.generatorGuard, false);
+  r.updateAuto(now + 10_000);
+  assert.equal(me.generatorGuard, true);
   room.destroy();
 });
 
@@ -1387,18 +1472,35 @@ test('보물 상자 레전드와 애호가 레전드: 콤보가 끊겨도 누적
   me.combo = 12; clearCombo(me);
   room.cursor(me.id, { x: 880, y: 560 });
   circles.set(1, slowAt(1, me.color, 850, 550, now));
-  t.mock.method(Math, 'random', () => 0.05);
+  t.mock.method(Math, 'random', () => 0.2); // 상자와 추가 발동 모두 흔함 자석
   const initial = itemEvents.length;
   room.click(me.id, { circleId: 1, x: 850, y: 550 });
   const fired = itemEvents.slice(initial);
   assert.equal(me.chestCount, 0);
-  assert.deepEqual(fired.map((e) => [e.circleId, e.tier, !!e.extra]), [[null, 1, false], [null, 0, true], [null, 0, true]]);
+  assert.deepEqual(fired.map((e) => [e.circleId, e.tier, !!e.extra]), [[null, 0, false], [null, 0, true], [null, 0, true]]);
   assert.deepEqual([fired[0].x, fired[0].y], [880, 560]);
-  assert.ok(me.feverUntil > now);
-  assert.equal(me.fever, 0);
+  assert.equal(me.feverUntil, 0);
+  assert.equal(me.fever, RULES.fever.own + 25);
 });
 
-test('아이템 애호가 일반은 추가분을 다시 굴리지 않고 잡화점은 추가분에도 충전한다', (t) => {
+test('보물 상자 레전드의 아이템 등급은 50%, 45%, 5% 경계에서 바뀐다', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  me.picks = [{ id: 'treasure', tier: 3 }];
+  let rand = 0;
+  t.mock.method(Math, 'random', () => rand);
+  const now = Date.now();
+  for (const [roll, tier] of [[0.4999, 0], [0.5, 1], [0.9499, 1], [0.95, 2]]) {
+    rand = roll;
+    me.chestCount = 7;
+    circles.set(1, slowAt(1, me.color, 850, 550, now));
+    const initial = itemEvents.length;
+    room.click(me.id, { circleId: 1, x: 850, y: 550 });
+    assert.deepEqual(itemEvents.slice(initial).map((e) => e.tier), [tier]);
+  }
+});
+
+test('아이템 애호가는 원마다 추가 발동하고 잡화점 피버 충전은 묶음마다 한 번이다', (t) => {
   const { room, me, circles } = playingRoom();
   t.after(() => room.destroy());
   const now = Date.now();
@@ -1408,9 +1510,53 @@ test('아이템 애호가 일반은 추가분을 다시 굴리지 않고 잡화�
   const initial = itemEvents.length;
   room.click(me.id, { circleId: 1, x: 850, y: 550 });
   assert.deepEqual(itemEvents.slice(initial).map((e) => [e.circleId, !!e.extra]), [[1, false], [null, true]]);
-  assert.equal(COMBO.bazaarFever, 50);
+  assert.equal(COMBO.bazaarFever, 25);
+  assert.equal(me.feverUntil, 0);
+  assert.equal(me.fever, 25);
+
+  for (const id of [2, 3, 4]) {
+    circles.set(id, { ...slowAt(id, 'item', 850, 550, now), itemTier: 0 });
+    room.click(me.id, { circleId: id, x: 850, y: 550 });
+    assert.equal(me.fever, (id * 25) % 100);
+  }
   assert.ok(me.feverUntil > now);
-  assert.equal(me.fever, 0);
+});
+
+test('필드 클리어와 폭죽으로 얻은 콤보는 보물 상자를 열지 않는다', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  me.picks = [{ id: 'treasure', tier: 3 }];
+  me.chestCount = 7;
+  const now = Date.now();
+  for (const [tier, item, rand] of [[1, 'bomb', 0.8], [2, 'fieldClear', 0.5]] as const) {
+    const roll = t.mock.method(Math, 'random', () => rand);
+    circles.set(1, { ...slowAt(1, 'item', 850, 550, now), itemTier: tier });
+    circles.set(2, slowAt(2, me.color, 880, 550, now));
+    const initial = itemEvents.length;
+    room.click(me.id, { circleId: 1, x: 850, y: 550 });
+    assert.deepEqual(itemEvents.slice(initial).map((e) => e.item), [item]);
+    assert.equal(circles.has(2), false);
+    assert.equal(me.chestCount, 7);
+    assert.equal(me.combo, tier);
+    roll.mock.restore();
+  }
+  assert.ok(me.score > 0);
+});
+
+test('넓은 손: 아이템 범위로만 잡은 원은 보물 상자를 충전하지 않는다', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  me.picks = [{ id: 'treasure', tier: 3 }, { id: 'wideHand', tier: 0 }];
+  const now = Date.now();
+  me.buffs.wideHand = now + 1000;
+  const near = slowAt(1, me.color, 850, 550, now);
+  const farther = slowAt(2, me.color, 850 + near.r + RULES.hitPad + 30, 550, now);
+  circles.set(1, near);
+  circles.set(2, farther);
+  room.click(me.id, { circleId: null, x: 850, y: 550 });
+  assert.equal(circles.size, 0);
+  assert.equal(me.combo, 2);
+  assert.equal(me.chestCount, 1);
 });
 
 test('라운드 시작 예열 피버도 무의 시간을 걸고, 룸 상태의 종료 시각에 풀린다', (t) => {

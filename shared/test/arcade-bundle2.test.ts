@@ -47,8 +47,8 @@ test('무의 시간: 원본 빌드는 유지하고 점수·피버·조합·시�
   resolveClaim(a, b.color, [a, b], 1400, G, raw);
   assert.equal(b.reflectLeft, 1);
   shiftTimes(b, 2000, 5000);
-  assert.equal(releaseSilence(b, 8099), false);
-  assert.equal(releaseSilence(b, 8100), true);
+  assert.equal(releaseSilence(b, 9099), false);
+  assert.equal(releaseSilence(b, 9100), true);
   assert.equal(modsFor(b).hammer, ABILITY.hammer.values[3]);
 });
 
@@ -60,12 +60,12 @@ test('무의 시간: 즉시 피버로 발동, 다시 걸리면 갱신, 걸린 �
   const rules = { ...G, team: true };
   const players = [a, b, c];
   applyItem(a, 'instantFever', 1000, rules, players);
-  assert.equal(b.silencedUntil, 3000);
+  assert.equal(b.silencedUntil, 4000);
   addFever(b, 100, 1500, rules, players, true);
   assert.equal(a.silenced, false);
   assert.equal(c.silenced, false);
   addFever(c, 100, 2000, rules, players, true);
-  assert.equal(b.silencedUntil, 4000);
+  assert.equal(b.silencedUntil, 5000);
 });
 
 test('거울: 상대 팀 1등의 일반 증강만 복사하고 중첩 상한·레전드를 적용한다', () => {
@@ -130,15 +130,16 @@ test('사냥 본능: 보스 처치 관여와 독식, 짧은 라운드 두 배, �
 
 test('수확과 황금 수집가: 획득 조건, 배율, 상한, 무의 시간', () => {
   const a = player(pick('harvest'));
-  a.harvestCount = UNIQUE.harvest.every - 1;
+  a.harvestCount = 19;
   resolveClaim(a, 0, [a], 1000, G, { via: 'magnet', ...raw });
   assert.equal(a.stacks.harvest, undefined);
   a.silenced = true;
   resolveClaim(a, 0, [a], 1100, G, raw);
-  assert.equal(a.harvestCount, UNIQUE.harvest.every - 1);
+  assert.equal(a.harvestCount, 19);
   a.silenced = false;
   resolveClaim(a, 0, [a], 1200, G, { via: 'save', ...raw });
   assert.equal(a.stacks.harvest, 1);
+  assert.equal(a.harvestCount, 0);
   assert.equal(extraMult(a, 1200, [a]), 1.02);
   addUniqueStack(a, 'harvest', 100);
   assert.equal(a.stacks.harvest, UNIQUE.harvest.max);

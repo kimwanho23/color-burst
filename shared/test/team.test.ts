@@ -114,8 +114,8 @@ test('팀전: 방해 아이템·1등 저격·무의 시간는 같은 팀에게 �
   a.picks = [{ id: 'silence', tier: 0 }];
   addFever(a, 200, 2000, TG, players, true);
   assert.equal(c.silenced, false, '팀원 증강은 유지');
-  assert.equal(b.silencedUntil, 4000);
-  assert.equal(d.silencedUntil, 4000);
+  assert.equal(b.silencedUntil, 5000);
+  assert.equal(d.silencedUntil, 5000);
 });
 
 test('팀전: 팀 점수·최고 점수까지 같으면 무승부 (두 팀 모두 1승)', () => {

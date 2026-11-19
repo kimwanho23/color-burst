@@ -27,6 +27,7 @@ export class Bot {
     this.next = now + (L.gap * (0.7 + Math.random() * 0.7)) / this.skill;
 
     const fever = isFever(me, now);
+    const counterReady = me.counterReady && combosFor(me).has('counterStance');
     const cands = circles.filter((c) => now - c.born > (L.react + (c.kind === 'gold' ? L.goldDelay : 0)) / this.skill && !isOut(c, now) && !isGuarded(c, now));
     if (!cands.length) return null;
 
@@ -53,7 +54,7 @@ export class Bot {
       if (c.kind === 'y') return fever ? 5 : 3;
       if (coop) return 0;
       const owner = players.find((p) => p.color === c.kind);
-      if (owner && isMarked(owner, now)) return 4;
+      if (owner && (isMarked(owner, now) || counterReady)) return 4;
       return fever ? 2.5 : 0.5;
     });
     const total = weights.reduce((a, b) => a + b, 0);

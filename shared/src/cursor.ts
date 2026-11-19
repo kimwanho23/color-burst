@@ -111,7 +111,7 @@ export function pickMagnetTargets(
   const mine = ownTest(own);
   for (const c of circles) {
     // 이미 화면 밖으로 나간 원(서버는 지연 보정 때문에 잠깐 더 들고 있음)은 끌지 않는다
-    if (!mine(c.kind) || c.kind === 'rainbow' || skip?.has(c.id) || isGuarded(c, t) || isOut(c, t)) continue;
+    if (c.born > t || !mine(c.kind) || c.kind === 'rainbow' || skip?.has(c.id) || isGuarded(c, t) || isOut(c, t)) continue;
     const p = circlePos(c, t);
     const d = Math.hypot(p.x - cursor.x, p.y - cursor.y);
     if (d <= radius) found.push({ c, d });

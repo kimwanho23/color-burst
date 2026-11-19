@@ -2,7 +2,7 @@
  * 보스 한 번 타격: 피해·점수·콤보·피버 게이지·막타·독식·MVP를 계산해 바로 반영한다 (서버가 부른다).
  * 원 삭제·알림·자동 획득(사냥꾼 레전드·점화)은 부르는 쪽이 한다.
  */
-import { AUG, COMBO, LEGEND, UNIQUE, combosFor, hasLegend, modsFor } from './arcade.ts';
+import { AUG, COMBO, GROWTH, LEGEND, UNIQUE, combosFor, hasLegend, modsFor } from './arcade.ts';
 import {
   RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
   addStack, addUniqueStack, growthScoreMult, uniqueStacks, drillCheck, ragePenalty, rollJackpot, settleFever, type Circle, type GameRules, type PlayerState,
@@ -100,11 +100,10 @@ export function strikeBoss(
     out.killed = true;
     p.stats.bossKills++;
     const S = B.solo;
-    const isSolo = (id: string) => (hits.get(id) ?? 0) * 100 >= (c.maxHp ?? hp) * S.pct;
+    const maxHp = c.maxHp ?? hp;
+    const isSolo = (id: string) => (hits.get(id) ?? 0) * 100 >= maxHp * S.pct;
     out.solo = isSolo(p.id);
     out.killJackpot = rollJackpot(p, m, rand);
-    // 왕의 증표: 막타마다 한 칸 (레전드는 독식에도, 막타와 독식이 겹치면 한 칸)
-    addStack(p, 'crownMark');
     out.killGained = Math.round(info.kill * (out.solo ? S.killMult : 1) * mult * out.killJackpot);
     p.score += out.killGained;
     addSrc(p, 'boss', out.killGained, { fever, jackpot: out.killJackpot });
@@ -123,7 +122,6 @@ export function strikeBoss(
       if (started && q === p) out.feverStarted = true;
       else if (started) q.stats.fevers++;
       out.solos.push({ id, gained, feverStarted: started });
-      if (q !== p && hasLegend(q, 'crownMark')) addStack(q, 'crownMark');
     }
     // 최다 타격: 동점이면 막타 친 사람 우선, 그다음 먼저 때린 사람
     let best = 0;
@@ -138,8 +136,14 @@ export function strikeBoss(
       addSrc(mvpP, 'boss', out.mvpGained);
     }
     for (const q of players) {
-      if (q.outAt || (hits.get(q.id) ?? 0) < 1) continue;
-      const amount = isSolo(q.id) ? UNIQUE.hunt.solo : UNIQUE.hunt.assist;
+      const contributed = hits.get(q.id) ?? 0;
+      if (q.outAt || contributed < 1) continue;
+      const solo = isSolo(q.id);
+      if (q.id === p.id || contributed * 100 >= maxHp * GROWTH.crown.assistPct) {
+        const stacks = solo && hasLegend(q, 'crownMark') ? LEGEND.crownSoloStacks : 1;
+        addStack(q, 'crownMark', stacks);
+      }
+      const amount = solo ? UNIQUE.hunt.solo : UNIQUE.hunt.assist;
       addUniqueStack(q, 'huntInstinct', amount * (G.roundMs < UNIQUE.hunt.shortRoundMs ? 2 : 1));
     }
   }

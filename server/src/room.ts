@@ -2,7 +2,7 @@ import type { Server } from 'socket.io';
 import { BEATS, enterStep as enterTutorialStep, freeDone, freeKinds as tutorialKinds, type Beat } from './tutorial.ts';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosFor, goldGain, clearCombo, preventComboBreak, releaseSilence, onFeverStarted, pickMirror, hasLegendPick, rollItemTier, treasureEvery, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, autoEveryMs, AUG, COMBO, LEGEND, SPECIAL, addFever, combosFor, goldGain, clearCombo, preventComboBreak, releaseSilence, onFeverStarted, pickMirror, hasLegendPick, rollItemTier, treasureEvery, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, itemDurationMult, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsFor, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
@@ -857,7 +857,7 @@ export class Room {
       const c = this.circles.get(d.circleId);
       // 이미 누가 가져갔거나, 위치가 맞지 않거나, 남의 자석에 끌려가는 중이면 거절
       const pulled = c && this.pulls.get(c.id);
-      if (!c || !this.hitWithLag(c, now, d.x, d.y) || (pulled && pulled.by !== id)) this.rejectTo(id, d.circleId);
+      if (!c || !this.hitWithLag(c, now, d.x, d.y) || (pulled && (pulled.by !== id || pulled.target))) this.rejectTo(id, d.circleId);
       else {
         // 레이드 보스 직접 클릭은 헛클릭으로도 처리하지 않는다.
         if (c.boss === 'raid') return;
@@ -871,15 +871,22 @@ export class Room {
         else if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
         else if (c.kind === 'gold') this.claimGold(p, c, now);
-        else this.claim(p, c, now, 'click', false, !p.bot && this.hitWithLag(c, now, d.x, d.y, c.r * (AUG.preciseR - 1)));
+        else {
+          const precise = !p.bot && this.hitWithLag(c, now, d.x, d.y, c.r * (AUG.preciseR - 1));
+          this.claim(p, c, now, 'click', true, precise);
+          if (c.kind === p.color) this.chargeMagneticField(p, { x: d.x, y: d.y }, now);
+          this.emitPlayers();
+        }
       }
     }
     const reach = reachOf(p, now);
     if (reach > 0) {
+      const reachWithoutItem = reachOf(p, now, false);
       let ranged = false;
       for (const c of [...this.circles.values()]) {
         if (!this.owns(c.kind, p) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) continue;
-        this.claim(p, c, now, 'range', true);
+        const fromItem = reach > reachWithoutItem && !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reachWithoutItem);
+        this.claim(p, c, now, 'range', true, false, fromItem);
         ranged = got = true;
       }
       if (ranged) this.emitPlayers();
@@ -1199,6 +1206,7 @@ export class Room {
       p.silencedUntil = 0;
       p.silenceCastAt = 0;
       p.mirror = null;
+      p.generatorGuard = p.generatorScore = p.counterReady = false;
     }
   }
 
@@ -1653,12 +1661,15 @@ export class Room {
         const at = p.autoAt[id];
         if (at === undefined || now < at) continue;
         const every = autoEveryMs(p, id);
-        p.autoAt[id] = Number.isFinite(every) ? Math.max(at + every, now + 1) : undefined;
-        if (id === 'autoMagnet' && p.bot) continue;
-        const L = hasLegend(p, id);
-        if (id === 'autoMagnet') addBuff(p, 'magnet', GROWTH.autoMs.autoMagnet, now, 'auto');
-        else if (id === 'autoGuard') addBuff(p, 'guard', L ? LEGEND.autoGuardMs : GROWTH.autoMs.autoGuard, now, 'auto');
-        else addFever(p, L ? LEGEND.autoCharge : GROWTH.autoCharge, now, this.G, this.players, true);
+        p.autoAt[id] = Number.isFinite(every) ? (id === 'autoGuard' ? now + every : Math.max(at + every, now + 1)) : undefined;
+        if (id === 'autoGuard') {
+          if (p.generatorGuard && p.generatorScore) continue;
+          p.generatorGuard = p.generatorScore = true;
+        }
+        else {
+          const amount = hasLegend(p, id) ? LEGEND.autoCharge : GROWTH.autoCharge;
+          addFever(p, amount, now, this.G, this.players, true, GROWTH.autoChargeOverflow);
+        }
         this.io.to(this.code).emit('auto:fire', { playerId: p.id, id });
         changed = true;
       }
@@ -1683,16 +1694,33 @@ export class Room {
       const log = (this.pullLog.get(p.id) ?? []).filter((t) => now - t < 1000);
       this.pullLog.set(p.id, log);
       // 자석 레전드: 1초에 LEGEND.magnetPerSec개
-      // 자기장 레전드: 발동 중 1초에 하나 더
-      const per = (hasLegend(p, 'magnet') ? LEGEND.magnetPerSec : M.perSec) + (hasLegend(p, 'autoMagnet') && buffOn(p, 'magnet', now) ? LEGEND.autoMagnetAdd : 0);
+      const per = hasLegend(p, 'magnet') ? LEGEND.magnetPerSec : M.perSec;
       if (log.length >= per) continue;
       for (const c of pickMagnetTargets(this.circles.values(), (k) => this.owns(k, p), cur, now, radius, per - log.length, new Set(this.pulls.keys()))) {
-        const pl: Pull = { circleId: c.id, by: p.id, from: circlePos(c, now), at: now, ms: M.pullMs };
-        this.pulls.set(c.id, pl);
+        this.pullCircle(p, c, now);
         log.push(now);
-        this.io.to(this.code).emit('circle:pull', pl);
       }
     }
+  }
+
+  private chargeMagneticField(p: PlayerState, target: Point, now: number) {
+    const count = modsFor(p).autoMagnet;
+    if (count <= 0) return;
+    const field = GROWTH.magneticField;
+    if (p.magneticFieldClicks < field.clicks) {
+      p.magneticFieldClicks++;
+      return;
+    }
+    const targets = pickMagnetTargets(this.circles.values(), (kind) => kind === p.color, target, now, field.radius, count, new Set(this.pulls.keys()));
+    if (!targets.length) return;
+    p.magneticFieldClicks = 0;
+    for (const c of targets) this.pullCircle(p, c, now, target);
+  }
+
+  private pullCircle(p: PlayerState, c: Circle, now: number, target?: Point) {
+    const pl: Pull = { circleId: c.id, by: p.id, from: circlePos(c, now), at: now, ms: RULES.magnet.pullMs, ...(target ? { target } : {}) };
+    this.pulls.set(c.id, pl);
+    this.io.to(this.code).emit('circle:pull', pl);
   }
 
   /** 다 끌려온 원을 끄는 사람이 잡은 것으로 처리. all이면 시간과 상관없이 모두 (라운드가 끝날 때) */
@@ -1700,15 +1728,15 @@ export class Room {
     let claimed = false;
     for (const [id, pl] of [...this.pulls]) {
       const p = this.players.find((x) => x.id === pl.by);
-      if (p?.silenced && magnetOf(p, now) <= 0) {
+      if (p?.silenced && (pl.target || magnetOf(p, now) <= 0)) {
         this.pulls.delete(id);
         this.io.to(this.code).emit('circle:unpull', { circleId: id });
         continue;
       }
       if (!all && pl.at + pl.ms > now) continue;
-      this.pulls.delete(id);
       const c = this.circles.get(id);
       if (c && p) { this.claim(p, c, now, 'magnet', true); claimed = true; }
+      this.pulls.delete(id);
     }
     if (claimed) this.emitPlayers();
   }
@@ -1732,28 +1760,30 @@ export class Room {
   }
 
   /** quiet: 여러 원을 한꺼번에 잡을 때는 플레이어 상태를 부르는 쪽에서 한 번만 보낸다 */
-  private claim(p: PlayerState, c: Circle, now: number, via: ClaimVia, quiet = false, precise = false) {
+  private claim(p: PlayerState, c: Circle, now: number, via: ClaimVia, quiet = false, precise = false, fromItem = false) {
     // 같은 틱에 다른 경로(장판·범위·다른 사람)로 이미 가져간 원이면 무시
     if (!this.circles.has(c.id)) return;
     // 남의 자석에 끌려가는 원은 그 사람만 잡는다
     const pulled = this.pulls.get(c.id);
-    if (pulled && pulled.by !== p.id) return;
+    if (pulled && (pulled.by !== p.id || (pulled.target && via !== 'magnet'))) return;
     this.circles.delete(c.id);
     // 잡는 순간 원이 있던 자리로 점수 구역을 정한다 (잡는 방법과 상관없이)
     const { x, y } = circlePos(c, now);
     const comboBefore = p.combo;
     const owner = this.players.find((q) => q !== p && q.color === c.kind);
     const ownerCombo = owner?.combo ?? 0;
-    const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }), precise });
-    this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
+    const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }), precise, magneticField: !!pulled?.target });
+    this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, ...(pulled?.target ?? { x, y }) });
     // 하이에나: 1등이 잡으면 하이에나를 가진 사람이 확률로 점수를 얻는다
     for (const g of hyenaGains(p, this.players.filter((x) => !x.outAt), result.gained)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
     // 연쇄 폭발: 확률로 근처 내 원도 함께 (연쇄로 잡힌 원은 다시 연쇄하지 않음)
     // 점수가 바뀌었으니 꼴찌를 벗어난 역전 기회는 바로 끈다 (조용한 연속 획득 사이에도)
     sweepComeback(this.players);
     if (this.tutorial) this.tutorialClaimed(p, zoneOf({ x, y }));
-    this.chargeTreasure(p, p.combo - comboBefore, { x, y }, now);
-    if (owner && result.reflectedTo === owner.id) this.chargeTreasure(owner, owner.combo - ownerCombo, { x, y }, now);
+    if (!fromItem && via !== 'zone') {
+      this.chargeTreasure(p, p.combo - comboBefore, { x, y }, now);
+      if (owner && result.reflectedTo === owner.id) this.chargeTreasure(owner, owner.combo - ownerCombo, { x, y }, now);
+    }
     if (via !== 'blast') {
       const m = modsFor(p);
       // 점화: 피버가 터지면 화면의 내 원 자동 획득 (레전드는 전부)
@@ -1831,15 +1861,15 @@ export class Room {
       const every = treasureEvery(rate);
       if (p.chestCount < every) break;
       p.chestCount -= every;
-      const rolled = rollItemTier();
-      this.activateItem(p, hasLegend(p, 'treasure') && rolled === 0 ? 1 : rolled, x, y, now, null);
+      const tier = rollItemTier(Math.random, hasLegend(p, 'treasure') ? LEGEND.treasureTierOdds : undefined);
+      this.activateItem(p, tier, x, y, now, null);
     }
   }
 
   private activateItem(p: PlayerState, tier: 0 | 1 | 2, x: number, y: number, now: number, circleId: number | null) {
     const queue = this.pendingItems;
     queue.push({ p, tier, x, y, now, circleId });
-    // 아이템 폭발로 얻은 콤보가 상자를 열어도 현재 아이템과 추가 발동을 먼저 끝낸다.
+    // 처리 중 새 아이템이 들어오면 현재 묶음 뒤에 발동한다.
     if (queue.length > 1) return;
     try {
       for (const entry of queue) {
@@ -1851,6 +1881,7 @@ export class Room {
           if (!chance || Math.random() * 100 >= chance) break;
           this.fireItem(p, rollItemTier(), x, y, now, null, true);
         }
+        if (combosFor(p).has('bazaar') && addFever(p, COMBO.bazaarFever, now, this.G, this.players, true)) p.stats.fevers++;
       }
     } finally {
       queue.length = 0;
@@ -1876,7 +1907,7 @@ export class Room {
         for (const o of [...this.circles.values()]) {
           if (o.kind === 'boss' || o.kind === 'item' || o.kind === 'gold' || isGuarded(o, now)) continue;
           const q = circlePos(o, now);
-          if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast', true);
+          if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast', true, false, true);
         }
         break;
       case 'timeStop': {
@@ -1900,8 +1931,6 @@ export class Room {
         break;
       }
     }
-    if (combosFor(p).has('bazaar') && addFever(p, COMBO.bazaarFever, now, this.G, this.players, true)) p.stats.fevers++;
-
   }
 
   private hitWithLag(c: Circle, now: number, x: number, y: number, pad: number = RULES.hitPad) {

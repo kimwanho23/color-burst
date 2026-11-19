@@ -40,7 +40,7 @@ test('무지개 사냥 레전드로 게이지가 차서 터진 피버도 무의 
   p.fever = 60;
   const r = resolveClaim(p, 'rainbow', [p, o], 100, G);
   assert.equal(r.feverStarted, true);
-  assert.equal(o.silencedUntil, 2100);
+  assert.equal(o.silencedUntil, 3100);
 });
 
 test('출발 신호 레전드: 일시정지한 만큼 창이 늦게 끝남', () => {

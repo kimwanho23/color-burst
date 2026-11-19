@@ -5,6 +5,8 @@
  * 밸런스는 이 파일의 ABILITIES 수치와 TIER_ODDS만 고치면 된다.
  */
 
+import { RULES } from './rules.ts';
+
 export type Tier = 0 | 1 | 2 | 3;
 export const TIERS = [
   { name: '노말', color: '#ffffff' },
@@ -41,21 +43,21 @@ export const LEGEND = {
   hammerChance: 0.15, hammerDmg: 3, comboBonusAdd: 10, headStartMs: 10_000, headStartMult: 1.5, jackpotMults: [2, 3, 5],
   preheatMult: 2, overtimeMs: 100, overchargeKeep: 50, afterglowMult: 2, shieldDrain: 3, plunderTopMult: 2,
   wideHandMult: 1.5, magnetPerSec: 2, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
-  tauntMs: 1_000, zoneComboAdd: 1, preciseComboAdd: 1, itemLoverExtra: 2, counterFever: 20,
+  tauntMs: 1_000, zoneComboAdd: 1, preciseComboAdd: 1, treasureTierOdds: [50, 45, 5], itemLoverExtra: 2, counterFever: 20,
   pickyFeverMult: 2, frenzyComboMult: 2, vanguardMult: 2, rainbowFeverMult: 2,
-  autoCharge: 15, autoGuardMs: 3_000, autoMagnetAdd: 1, luckHighMult: 2,
+  autoCharge: 30, luckHighMult: 2, crownSoloStacks: 2,
 } as const;
 
 /**
  * 성장 증강 수치. 스택형: 한 칸 효과 (drillEvery콤보마다 단련 한 칸). 자동 시전형: 효과 시간·양
  * (발동 간격은 60초 ÷ 등급 수치)
  */
-export const GROWTH = { drillEvery: 10, drillPts: 1, crownFever: 0.2, luckPct: 1, autoMs: { autoMagnet: 2_000, autoGuard: 2_000 }, autoCharge: 10 } as const;
+export const GROWTH = { drillEvery: 10, drillPts: 1, crown: { assistPct: 25, feverPerStack: 0.6, atThree: 1, atFive: 2 }, luckPct: 1, magneticField: { clicks: 5, radius: 140 }, autoCharge: 20, autoChargeOverflow: 0.5, guardScorePct: 50, guardScoreCap: 100 } as const;
 
 /** 증강 조합 보너스 수치 */
 export const COMBO = {
-  feverAdd: 1, comboBonusMult: 2, bossDmgAdd: 1, bossHitMult: 1.5, bossKillMult: 2, stealMult: 3, stealMarkCutMs: 1_000,
-  jackpotAdd: 10, outskirtsMult: 1.5, ironKeepPct: 80, bossSoloFever: 25, bazaarDur: 1.5, bazaarFever: 50,
+  feverAdd: 1, bossDmgAdd: 1, bossHitMult: 1.5, bossKillMult: 2, stealMult: 3, stealMarkCutMs: 1_000,
+  jackpotAdd: 10, outskirtsMult: 1.5, ironKeepPct: 80, bossSoloFever: 25, bazaarDur: 1.5, bazaarFever: 25, shieldBashPoints: 40,
 } as const;
 /** 빌드 가중치: 가진 증강과 같은 분류 ×sameCat, 가진 조합의 나머지 ×comboPart (곱함) */
 export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
@@ -102,7 +104,7 @@ export type AbilityId =
   | 'insurance' | 'shield'
   | 'thickSkin' | 'plunder' | 'counterPro'
   | 'precise' | 'treasure' | 'itemLover' | UniqueId
-  | 'jackpot' | 'wideHand' | 'magnet' | 'reflect' | 'edge'
+  | 'jackpot' | 'wideHand' | 'magnet' | 'autoMagnet' | 'reflect' | 'edge'
   | 'missSave' | 'rebound' | 'rapid' | 'laserProof' | 'centerKing' | 'ignite' | 'vanguard' | 'taunt'
   | StackId | AutoId
   | CurseId | SpecialId;
@@ -114,9 +116,9 @@ export type SpecialId =
 /** 스택형 증강 (조건마다 한 칸, 게임 끝까지) */
 export type StackId = 'drill' | 'crownMark' | 'luckStack';
 /** 자동 시전형 증강 (1분에 등급 수치만큼 저절로) */
-export type AutoId = 'autoMagnet' | 'autoCharge' | 'autoGuard';
+export type AutoId = 'autoCharge' | 'autoGuard';
 export const STACK_IDS: readonly StackId[] = ['drill', 'crownMark', 'luckStack'];
-export const AUTO_IDS: readonly AutoId[] = ['autoMagnet', 'autoCharge', 'autoGuard'];
+export const AUTO_IDS: readonly AutoId[] = ['autoCharge', 'autoGuard'];
 
 export type CurseId = 'glassCannon' | 'gambler' | 'berserker' | 'oneWay' | 'vampire' | 'timeBomb' | 'selfTarget' | 'devilPact';
 
@@ -184,18 +186,18 @@ export const ABILITIES: readonly AbilityDef[] = [
 
   { id: 'taunt', name: '도발', cat: '견제', values: [5, 10, 15, 25], cap: 50, desc: (v) => `견제하면 상대 피버 게이지 ${v}%를 빼앗아 내 게이지에` },
   // 보조
-  { id: 'treasure', name: '보물 상자', cat: '보조', values: [50, 67, 83, 125], cap: 167, desc: (v) => `${treasureEvery(v)}콤보마다 무작위 아이템이 바로 발동` },
+  { id: 'treasure', name: '보물 상자', cat: '보조', values: [50, 67, 83, 125], cap: 167, desc: (v) => `${treasureEvery(v)}콤보마다 무작위 아이템이 바로 발동 (아이템으로 잡은 원 제외)` },
   { id: 'itemLover', name: '아이템 애호가', cat: '보조', values: [40, 60, 80, 100], cap: 100, desc: (v) => `아이템이 발동하면 ${v}% 확률로 새 아이템이 한 번 더` },
   { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 70], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
   { id: 'magnet', name: '자석', cat: '보조', values: [45, 65, 90, 180], cap: 180, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (무지개 제외, 점수 ${AUG.magnetPointPct}%만)` },
   { id: 'missSave', name: '헛손질 보정', cat: '보조', values: [40, 60, 80, 120], cap: 160, desc: (v) => `빈 곳을 클릭하면 반경 ${v} 안의 가장 가까운 내 원을 대신 잡음` },
 
-  { id: 'autoMagnet', name: '자기장', cat: '보조', values: [3, 4, 6, 10], cap: 15, desc: (v) => `1분에 ${v}번 저절로 자석 ${sec(GROWTH.autoMs.autoMagnet)}` },
-  { id: 'autoCharge', name: '충전기', cat: '보조', values: [4, 6, 8, 12], cap: 20, desc: (v) => `1분에 ${v}번 저절로 피버 게이지 +${GROWTH.autoCharge}` },
-  { id: 'autoGuard', name: '보호막 발생기', cat: '보조', values: [3, 4, 6, 10], cap: 15, desc: (v) => `1분에 ${v}번 저절로 보호막 ${sec(GROWTH.autoMs.autoGuard)} (견제당해도 페널티 없음)` },
+  { id: 'autoMagnet', name: '자기장', cat: '보조', values: [1, 2, 3, 4], cap: 4, desc: (v) => `내 색 원 ${GROWTH.magneticField.clicks}개를 직접 잡으면 충전. 다음 내 색 클릭에서 반경 ${GROWTH.magneticField.radius} 안 내 색 원 최대 ${v}개를 끌어와 점수 100% 획득 (콤보·피버 충전 없음). 주변에 내 색 원이 없으면 충전 유지` },
+  { id: 'autoCharge', name: '충전기', cat: '보조', values: [6, 7.5, 10, 15], cap: 20, desc: (v) => `${+(60 / v).toFixed(1)}초마다 저절로 피버 게이지 +${GROWTH.autoCharge}. 이 충전으로 피버가 시작되면 100 초과분의 ${pct(GROWTH.autoChargeOverflow)}를 피버 종료 후 이월` },
+  { id: 'autoGuard', name: '보호막 발생기', cat: '보조', values: [6, 7.5, 10, 15], cap: 15, desc: (v) => `시작 시 및 ${+(60 / v).toFixed(1)}초마다 보호막과 득점 충전 각 1회. 보호막은 견제의 콤보 끊김·강탈·도발을 막고, 득점 충전은 다음 내 색 직접 클릭에 +${GROWTH.guardScorePct}% (최대 +${GROWTH.guardScoreCap}점)` },
   // 성장: 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 (수치 = 최대 칸)
   { id: 'drill', name: '단련', cat: '성장', values: [2, 3, 5, 8], cap: 12, desc: (v) => `${GROWTH.drillEvery}콤보마다 내 색 +${GROWTH.drillPts}점이 쌓임 (최대 ${v}칸)` },
-  { id: 'crownMark', name: '왕의 증표', cat: '성장', values: [1, 2, 3, 5], cap: 8, desc: (v) => `보스 막타마다 피버 배율 +${GROWTH.crownFever}이 쌓임 (최대 ${v}칸)` },
+  { id: 'crownMark', name: '왕의 증표', cat: '성장', values: [2, 3, 4, 5], cap: 5, desc: (v) => `보스 체력 ${GROWTH.crown.assistPct}% 이상 피해 또는 막타 시 1칸 (최대 ${v}칸). 피버 배율은 칸당 +${GROWTH.crown.feverPerStack}, 3칸에서 +${GROWTH.crown.atThree}, 5칸에서 추가 +${GROWTH.crown.atFive}` },
   { id: 'luckStack', name: '행운 축적', cat: '성장', values: [3, 5, 7, 10], cap: 15, desc: (v) => `잭팟이 터질 때마다 잭팟 확률 +${GROWTH.luckPct}%가 쌓임 (최대 ${v}칸)` },
 ];
 
@@ -206,7 +208,7 @@ export const ASSIST_ABILITIES: readonly AbilityId[] = ['wideHand', 'magnet', 'mi
 const L_ = LEGEND;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
-  precise: `정밀하게 맞히면 콤보 +${1 + L_.preciseComboAdd}`, treasure: '희귀 이상 아이템만',
+  precise: `정밀하게 맞히면 콤보 +${1 + L_.preciseComboAdd}`, treasure: `상자 아이템 확률 흔함 ${L_.treasureTierOdds[0]}%, 희귀 ${L_.treasureTierOdds[1]}%, 전설 ${L_.treasureTierOdds[2]}%`,
   itemLover: `추가 발동에 성공하면 한 번 더 (최대 ${1 + L_.itemLoverExtra}개)`,
   picky: `내 색 원을 잡으면 피버 게이지가 ${L_.pickyFeverMult}배로 참`, yellowTaste: '노란 원도 피버 게이지가 내 색 원만큼 참',
   rainbowHunt: `무지개 원의 피버 게이지 ${L_.rainbowFeverMult}배`, comboArtist: `콤보 보너스 점수 +${L_.comboBonusAdd}`,
@@ -224,23 +226,25 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   rebound: `끊긴 콤보의 절반을 그 ${sec(AUG.reboundMs)} 안에 되찾음`, rapid: `연속 ${L_.rapidStreak}개면 다음 원 잭팟 확정`,
   laserProof: `레이저·위험 패턴에 닿으면 피버 게이지 +${L_.laserFever}`,
   centerKing: `중앙에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
-  drill: '한 칸 쌓일 때 콤보 보너스도 받음', crownMark: '보스 독식에도 한 칸', luckStack: `잭팟 배율 ×3 이상 확률 ${L_.luckHighMult}배`,
-  autoMagnet: `발동 중 자석으로 1초에 ${L_.autoMagnetAdd}개 더`, autoCharge: `피버 게이지 +${GROWTH.autoCharge} → +${L_.autoCharge}`, autoGuard: `보호막 ${sec(GROWTH.autoMs.autoGuard)} → ${sec(L_.autoGuardMs)}`,
+  drill: '한 칸 쌓일 때 콤보 보너스도 받음', crownMark: `보스 체력 절반 이상을 깎으면 ${L_.crownSoloStacks}칸 획득`, luckStack: `잭팟 배율 ×3 이상 확률 ${L_.luckHighMult}배`,
+  autoCharge: `피버 게이지 +${GROWTH.autoCharge} → +${L_.autoCharge}`,
   ignite: '화면의 내 원 전부', vanguard: `보스 등장 후 ${sec(AUG.vanguardMs)} 동안 주는 피해 ${L_.vanguardMult}배`,
   taunt: `피버 중인 상대를 견제하면 그 피버가 ${sec(L_.tauntMs)} 짧아짐`,
 };
 
-export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall' | 'bazaar';
+export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall' | 'bazaar' | 'counterStance' | 'shieldBash';
 /** 증강 조합: 필요한 증강을 모두 가지면(등급 무관) 보너스. 같은 조합은 한 번 */
 export const COMBOS: readonly { id: ComboId; name: string; needs: readonly AbilityId[]; text: string }[] = [
   { id: 'feverMaster', name: '피버 마스터', needs: ['preheat', 'overtime', 'frenzy'], text: `피버 배율 +${COMBO.feverAdd}` },
-  { id: 'comboMachine', name: '콤보 머신', needs: ['comboArtist', 'insurance'], text: `콤보 보너스 ×${COMBO.comboBonusMult}` },
+  { id: 'comboMachine', name: '콤보 머신', needs: ['comboArtist', 'insurance'], get text() { return `콤보 보너스 ×${RULES.comboMachineMult}`; } },
   { id: 'bossHunter', name: '보스 헌터', needs: ['hammer', 'hunter', 'crusher'], text: `보스 피해 +${COMBO.bossDmgAdd}, 타격 점수 ×${COMBO.bossHitMult}, 막타 점수 ×${COMBO.bossKillMult}, 붉은 공격형도 감점 없이 때림, 독식하면 피버 게이지 +${COMBO.bossSoloFever}` },
   { id: 'stealKing', name: '견제왕', needs: ['plunder', 'counterPro', 'thickSkin'], text: `견제·반격 점수 ×${COMBO.stealMult}, 표적 시간 −${COMBO.stealMarkCutMs / 1000}초` },
   { id: 'lucky', name: '행운아', needs: ['jackpot', 'rainbowHunt'], text: `잭팟 확률 +${COMBO.jackpotAdd}%` },
   { id: 'outskirts', name: '변두리', needs: ['edge', 'magnet'], text: `커서가 가장자리 구역이면 자석 범위 ×${COMBO.outskirtsMult}` },
   { id: 'gourmet', name: '미식가', needs: ['picky', 'yellowTaste'], text: '노란 원도 내 색 원처럼 (점수·피버 게이지)' },
-  { id: 'bazaar', name: '잡화점', needs: ['treasure', 'itemLover'], text: `아이템 효과 시간 ×${COMBO.bazaarDur}, 아이템이 발동할 때마다 피버 게이지 +${COMBO.bazaarFever}` },
+  { id: 'bazaar', name: '잡화점', needs: ['treasure', 'itemLover'], text: `아이템 효과 시간 ×${COMBO.bazaarDur}, 아이템 원을 잡거나 보물 상자를 열면 피버 게이지 +${COMBO.bazaarFever}` },
+  { id: 'shieldBash', name: '보호막 강타', needs: ['autoGuard', 'shield'], text: `반격에 성공하면 보호막 발생기의 충전 1회를 써서 +${COMBO.shieldBashPoints}점. 추가 점수에는 피버 배율만 적용` },
+  { id: 'counterStance', name: '반격 태세', needs: ['autoGuard', 'counterPro'], text: '보호막 발생기로 견제를 막으면 반격권 1회. 표적이 아닌 상대 색 원을 직접 누르면 반격권을 써서 반격' },
   { id: 'ironWall', name: '철옹성', needs: ['shield', 'insurance', 'rebound'], text: `콤보가 끊기지 않고 ${100 - COMBO.ironKeepPct}%만 줄어듦` },
 ];
 
@@ -328,9 +332,9 @@ export type UniqueId = 'silence' | 'mirror' | 'resonance' | 'huntInstinct' | 'ha
 export const UNIQUE_ODDS = [0, 3, 8, 10] as const;
 export const UNIQUE_LAST_FINAL = 10;
 export const UNIQUE = {
-  silenceMs: 2_000, resonanceFever: 20,
+  silenceMs: 3_000, resonanceFever: 20,
   hunt: { assist: 1, solo: 3, pct: 10, max: 10, shortRoundMs: 60_000 },
-  harvest: { every: 25, pct: 2, max: 15 },
+  harvest: { every: 20, pct: 2, max: 15 },
   ember: { ms: 1_000, max: 5 },
   gold: { points: 20, pct: 5, max: 3 },
 } as const;
@@ -429,7 +433,7 @@ export function modsOf(picks: readonly Pick[] | undefined): Mods {
 /** 중첩 상한: 진화하면 ×capMult, 잭팟만은 +jackpotCapAdd(%p)만 (확률 상한이 너무 커지지 않게) */
 export function evolvedCap(id: AbilityId, evolved: boolean) {
   const cap = ABILITY[id].cap ?? Infinity;
-  if (id === 'itemLover') return cap;
+  if (id === 'itemLover' || id === 'autoGuard' || id === 'autoMagnet' || id === 'crownMark') return cap;
   if (!evolved) return cap;
   return id === 'jackpot' ? cap + EVOLVE.jackpotCapAdd : cap * EVOLVE.capMult;
 }

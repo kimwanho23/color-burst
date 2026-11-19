@@ -1104,7 +1104,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   if (mine && result.precise) renderer.preciseRing(x, y);
   if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
   if (mine) {
-    const label = blasted ? '' : (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
+    const label = blasted ? '' : (result.shieldBash ? ' 보호막 강타!' : result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
     // 점수 글자는 특별한 순간일수록 높은 단계 (0점이면 글자 없음)
     const tier = scoreTier({ jackpot: result.jackpot, fever: isFever(who, serverNow()), special: result.comboBonus || result.type === 'counter' });
     // 협력전은 점수 대신 보스 위 피해 숫자(coop:orb)로 보여 준다
@@ -1120,6 +1120,8 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     // 조합 발동 반짝임 (그 조합이 없으면 아무 일 없음)
     const bar = $('comboBar');
     if (!blasted && (result.type === 'steal' || result.type === 'feverSteal' || result.type === 'counter')) flashCombo(bar, 'stealKing');
+    if (result.forcedCounter) flashCombo(bar, 'counterStance');
+    if (result.shieldBash) flashCombo(bar, 'shieldBash');
     if (result.comboBonus) flashCombo(bar, 'comboMachine');
     if (result.feverStarted) flashCombo(bar, 'feverMaster');
     if (result.jackpot > 1) flashCombo(bar, 'lucky');
@@ -1129,7 +1131,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     renderer.text(x, y, who.name, COLORS[who.color].hex, 0.75);
   }
   if (result.brokeComboOf === myId()) { sfx.comboBroken(); renderer.text(x, y - 45, '콤보 끊김!', '#ff5d73', 1.1); }
-  if (result.shielded && claimedKind === me()?.color) renderer.text(x, y - 45, '방패!', '#4d9bff', 1.1);
+  if (result.shielded && claimedKind === me()?.color) renderer.text(x, y - 45, result.generatorBlocked ? '보호막 발생기!' : '방패!', '#4d9bff', 1.1);
   // 방패 레전드: 견제한 사람 점수를 빼앗음
   if (result.drained) {
     if (mine) renderer.text(x, y + 45, `방패 반격 −${result.drained}`, '#ff5d73', 0.9);
@@ -1649,7 +1651,7 @@ function frame() {
     specials: rules.coop ? { attacks: coopState?.specials ?? [], to: coopBossPos(now) } : undefined,
     missiles: rules.coop && coopMissiles.length ? { list: coopMissiles, to: coopBossPos(now), flyMs: RULES.coop.items.missileFlyMs } : undefined,
     meId: myId(),
-    pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.by === myId() ? gameCursor.pos : null, at: pl.at, ms: pl.ms }])),
+    pulls: new Map([...pulls].map(([id, pl]) => [id, { from: pl.from, to: pl.target ?? (pl.by === myId() ? gameCursor.pos : null), at: pl.at, ms: pl.ms }])),
   });
   requestAnimationFrame(frame);
 }

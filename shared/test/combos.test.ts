@@ -24,7 +24,7 @@ test('조합 효과: 피버 마스터·콤보 머신·보스 헌터·견제왕·
   assert.equal(feverMultOf(f, G), G.feverMult + 0.5 + 1);
   const c = pl(0, 'comboArtist', 'insurance');
   c.combo = 8; // 주기 9
-  assert.equal(resolveClaim(c, 0, [c], 100, G).gained, 3 + 5 * COMBO.comboBonusMult, '콤보 머신: 콤보 보너스 ×2');
+  assert.equal(resolveClaim(c, 0, [c], 100, G).gained, 11, '콤보 머신: 기본 3점과 콤보 보너스 5점 ×1.5를 합산한 뒤 반올림');
   const h = bossHitInfo(pl(0, 'hammer', 'hunter', 'crusher'), () => 0.99);
   assert.equal(h.damage, 2); // 기본 1 + 파쇄 0.5(이번엔 안 터짐) + 조합 1
   const hb = bossHitInfo(pl(0, 'hammer', 'hunter'), () => 0.99);

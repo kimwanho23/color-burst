@@ -1,9 +1,9 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
-  COMBOS, COOP_ITEMS, COOP_ITEM_IDS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, RULES, SYNERGY, buffUntil, combosFor, synergiesFor,
+  COMBOS, COOP_ITEMS, COOP_ITEM_IDS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, RULES, SYNERGY, GROWTH, buffUntil, combosFor, modsFor, synergiesFor,
   type BuffId, type CoopItemId, type PatternId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
-import { UI, comboIcon, categoryIcon, coopItemIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
+import { UI, abilityIcon, comboIcon, categoryIcon, coopItemIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
 import { comboTip } from './arcadeUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -151,6 +151,11 @@ export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: 
     items.push(`<span class="buff it${ITEMS[id].tier}${left < 1000 ? ' blink' : ''}" style="--f:${frac}" title="${ITEMS[id].name}">${itemIcon(id, 18)}</span>`);
   }
   if (p.goldLeft > 0) items.push(`<span class="buff it1 gold" style="--f:1" title="${ITEMS.goldHand.name}">${itemIcon('goldHand', 18)}<em>${p.goldLeft}</em></span>`);
+  if (modsFor(p).autoMagnet > 0) {
+    const max = GROWTH.magneticField.clicks, count = p.magneticFieldClicks;
+    const progress = count >= max ? '준비' : `${count}/${max}`;
+    items.push(`<span class="buff it1" style="--f:${count / max}" title="자기장 ${progress}" aria-label="자기장 ${progress}">${abilityIcon('autoMagnet', 18)}<em>${progress}</em></span>`);
+  }
   items.push(...coopBuffs(p, now));
   const html = items.join('');
   if (el.dataset.v !== html) { el.dataset.v = html; el.innerHTML = html; }
@@ -176,8 +181,13 @@ function coopBuffs(p: PlayerState, now: number): string[] {
 export function buffChips(p: PlayerState, now: number, size = 12) {
   const ids: ItemId[] = BUFF_IDS.filter((id) => buffUntil(p, id) > now);
   if (p.goldLeft > 0) ids.push('goldHand');
-  if (!ids.length) return '';
-  return `<span class="buffs-mini">${ids.map((id) => `<span class="bm it${ITEMS[id].tier}" title="${ITEMS[id].name}">${itemIcon(id, size)}</span>`).join('')}</span>`;
+  const charges = p.silenced ? '' : [
+    p.generatorGuard ? `<span class="bm" title="견제 보호막 준비">${abilityIcon('autoGuard', size)}</span>` : '',
+    p.generatorScore ? `<span class="bm" title="내 색 득점 보너스 준비">${itemIcon('goldHand', size)}</span>` : '',
+    p.counterReady ? `<span class="bm" title="반격권 준비">${abilityIcon('counterPro', size)}</span>` : '',
+  ].join('');
+  if (!ids.length && !charges) return '';
+  return `<span class="buffs-mini">${ids.map((id) => `<span class="bm it${ITEMS[id].tier}" title="${ITEMS[id].name}">${itemIcon(id, size)}</span>`).join('')}${charges}</span>`;
 }
 
 /** 랜덤 이벤트 결과를 읽을 수 있게 띄워 두는 시간 (선택 시간 보너스 안에서 끝나야 한다) */
