@@ -1448,7 +1448,7 @@ export class Room {
     for (const p of this.players) {
       if (this.phase !== 'play') return;
       const bot = this.bots.get(p.id);
-      if (!bot || p.outAt) continue;
+      if (!bot || p.outAt || isStunned(p, now)) continue;
       const target = bot.think(p, this.botCandidates(), this.players, now, this.rules.team, this.G.coop);
       if (!target) continue;
       if (target.boss === 'raid') continue;
