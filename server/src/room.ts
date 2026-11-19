@@ -885,7 +885,8 @@ export class Room {
         else if (this.coop && (c.kind === 'y' || typeof c.kind === 'number')) this.catchCoopOrb(p, c, now);
         else if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
-        else if (c.kind === 'bomb') this.detonate(p, c, now);
+        // 막 보호 구역에 들어가 터지지 않았으면 거절 (화면이 다시 누를 수 있게)
+        else if (c.kind === 'bomb') { if (!this.detonate(p, c, now)) { got = false; this.rejectTo(id, c.id); } }
         else if (c.kind === 'gold') this.claimGold(p, c, now);
         else {
           const precise = !p.bot && this.hitWithLag(c, now, d.x, d.y, c.r * (AUG.preciseR - 1));
@@ -901,7 +902,7 @@ export class Room {
       let ranged = false;
       for (const c of [...this.circles.values()]) {
         // 넓은 손 범위에 걸린 폭탄 원은 터진다 (보호 구역 안이면 detonate가 무시)
-        if (c.kind === 'bomb' && this.circles.has(c.id) && this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) { this.detonate(p, c, now); ranged = got = true; continue; }
+        if (c.kind === 'bomb') { if (this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach) && this.detonate(p, c, now)) ranged = got = true; continue; }
         if (!this.owns(c.kind, p) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) continue;
         const fromItem = reach > reachWithoutItem && !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reachWithoutItem);
         this.claim(p, c, now, 'range', true, false, fromItem);
@@ -1827,8 +1828,9 @@ export class Room {
   }
 
   /** 폭탄 원 폭발: 가로·세로 판 끝까지 십자에 걸린 원은 p가 잡고(견제 페널티 없음), 보스는 1회 타격, 다른 폭탄은 연쇄 예약 */
-  private detonate(p: PlayerState, bomb: Circle, now: number, chain = false) {
-    if (!this.circles.has(bomb.id) || isGuarded(bomb, now)) return;
+  private detonate(p: PlayerState, bomb: Circle, now: number, chain = false): boolean {
+    // 이미 터졌거나 지금 보호 구역 안이면 터지지 않는다 (false)
+    if (!this.circles.has(bomb.id) || isGuarded(bomb, now)) return false;
     this.circles.delete(bomb.id);
     const q = circlePos(bomb, now);
     this.io.to(this.code).emit('bomb:blast', { circleId: bomb.id, by: p.id, x: q.x, y: q.y, chain });
@@ -1845,6 +1847,7 @@ export class Room {
       this.claim(p, o, now, 'cross', true);
     }
     this.emitPlayers();
+    return true;
   }
 
   private queueBlast(by: string, bomb: Circle, now: number) {

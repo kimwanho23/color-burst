@@ -300,3 +300,25 @@ test('보호 구역 안 폭탄을 누르면 거절을 받는다 (다시 누를 �
   assert.equal(count('bomb:blast'), 0);
   assert.ok(events.some((e) => e.ev === 'circle:rejected' || e.ev === 'click:rejected'));
 });
+
+/** 가운데로 들어오는 폭탄: 지금은 보호 구역 안(CX+80), 100ms 전에는 밖(CX+130) */
+const incoming = (now: number): Circle => ({ id: 1, kind: 'bomb', from: { x: CX + 150, y: CY }, angle: Math.PI, speed: 500, r: RULES.specialCircles.bomb.r, born: now - 140 });
+
+test('막 보호 구역에 들어간 폭탄을 지연 보정으로 누르면 터지지 않고 거절을 보낸다', (t) => {
+  const { room, r, me, now } = playing(t);
+  r.circles.set(1, incoming(now()));
+  room.click(me.id, { circleId: 1, x: CX + 130, y: CY });
+  assert.equal(count('bomb:blast'), 0);
+  assert.ok(r.circles.has(1));
+  assert.ok(events.some((e) => e.ev === 'click:rejected' && e.data.circleId === 1));
+});
+
+test('넓은 손 범위에 터지지 않은 폭탄만 있으면 빈 곳 클릭이다', (t) => {
+  const { room, r, me, now } = playing(t);
+  me.picks = [{ id: 'wideHand', tier: 3 }];
+  r.circles.set(1, incoming(now()));
+  const misses = me.stats.misses;
+  room.click(me.id, { circleId: null, x: CX + 130, y: CY + 60 });
+  assert.equal(count('bomb:blast'), 0);
+  assert.equal(me.stats.misses, misses + 1);
+});
