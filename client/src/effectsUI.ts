@@ -132,7 +132,8 @@ export function popOnChip(scoresEl: HTMLElement, playerId: string, iconHtml: str
 
 /** 내 버프: 아이콘 + 원형 남은 시간, 끝나기 1초 전 깜빡임. 황금 손은 남은 개수 */
 /** 방해 디버프 → 아이콘으로 보여 줄 아이템 */
-const DEBUFF_ITEM: Record<DebuffId, ItemId> = { slow: 'slowCursor', invert: 'invertCursor', blind: 'blind' };
+/** 얼어 가는 중(frost)은 칩 대신 커서 서리로 보여 준다 */
+const DEBUFF_ITEM: Partial<Record<DebuffId, ItemId>> = { slow: 'slowCursor', invert: 'invertCursor', blind: 'blind' };
 
 export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: number, durOf: (id: BuffId) => number, debuffMs: (id: DebuffId) => number, comebackMult = 0) {
   if (!p) { el.innerHTML = ''; return; }
@@ -143,7 +144,7 @@ export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: 
   for (const id of Object.keys(DEBUFF_ITEM) as DebuffId[]) {
     const left = (p.debuffs[id] ?? 0) - now;
     if (left <= 0) continue;
-    const it = DEBUFF_ITEM[id];
+    const it = DEBUFF_ITEM[id]!;
     items.push(`<span class="buff debuff${left < 1000 ? ' blink' : ''}" style="--f:${Math.min(1, left / debuffMs(id))}" title="${ITEMS[it].name}">${itemIcon(it, 18)}</span>`);
   }
   for (const id of BUFF_IDS) {

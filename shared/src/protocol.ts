@@ -243,6 +243,12 @@ export interface ServerToClient {
   'item:got': (d: { circleId: number | null; by: string; item: ItemId; tier: ItemTier; x: number; y: number; extra?: boolean }) => void;
   /** 폭탄 원이 터짐: 십자 연출이 먼저, 걸린 원은 circle:claimed(via 'cross')로 이어진다. chain: 연쇄로 터짐 */
   'bomb:blast': (d: { circleId: number; by: string; x: number; y: number; chain: boolean }) => void;
+  /** 얼음 원이 터짐: targets는 freezeAt까지 커서가 느려진 뒤 얼어붙는다 */
+  'ice:burst': (d: { circleId: number; by: string; x: number; y: number; targets: string[]; freezeAt: number }) => void;
+  /** 분열 원이 터짐 (파편은 circle:spawn으로 따로 온다) */
+  'split:burst': (d: { circleId: number; by: string; x: number; y: number }) => void;
+  /** 분열 파편이 남의 커서에 닿아 사라짐 */
+  'split:hit': (d: { circleId: number; playerId: string }) => void;
   'zone:add': (z: Zone) => void;
   /** 레이저 예고 (at에 발사) */
   'laser:warn': (d: LaserVolley) => void;
@@ -251,7 +257,7 @@ export interface ServerToClient {
   /** 가시 공이 커서에 닿아 사라짐 */
   'map:pop': (d: { index: number; by: string }) => void;
   /** 스턴: until까지 클릭 불가 */
-  stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' | 'spike' | 'ring' }) => void;
+  stun: (d: { playerId: string; until: number; by: 'laser' | 'snipe' | 'spike' | 'ring' | 'ice' | 'split' }) => void;
   /** 이동형 보스 오오라를 클릭해 점수를 잃음 */
   /** 이동형 보스 오오라에 닿음: 피버 게이지 −, 콤보 감소 (피버 중이면 들어갈 때 피버 절반) */
   'aura:hit': (d: { by: string; x: number; y: number }) => void;

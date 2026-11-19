@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import {
   ABILITY, ARCADE, STACK_IDS, UNIQUE_STACK_MAX, combosOf, COMBOS, COLORS, COOP_ITEMS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosFor, holdLasers, isLast, ownsKind, isGuarded, modsFor, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
-  type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
+  type CursorMode, rangeTargets, isSpecialCircle, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
   type UniqueStackId, type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Seal, type Beam, type Homing, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
@@ -104,6 +104,8 @@ let lastClick = { x: 0, y: 0 };
 /** 판 중앙과 중앙에서 구석까지 거리 (화면 문구·폭죽 위치) */
 const CX = FIELD.w / 2, CY = FIELD.h / 2, CORNER = Math.hypot(CX, CY);
 let blast = { x: CX, y: CY, R: CORNER };
+/** 얼음 원: 내가 얼어붙는 시각(그때까지 서리가 차오름), 얼어붙음이 끝나는 시각 */
+let frostUntil = 0, icedUntil = 0;
 /** 마지막 폭탄 원 십자 폭발 중심 (걸린 원을 거리 순으로 늦춰 터뜨린다) */
 let crossAt = { x: CX, y: CY };
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
@@ -1206,6 +1208,22 @@ socket.on('bomb:blast', ({ circleId, x, y }) => {
   renderer.crossBlast(x, y, RULES.specialCircles.bomb.halfWidth * 2);
   sfx.cross();
 });
+socket.on('ice:burst', ({ circleId, x, y, targets, freezeAt }) => {
+  circles.delete(circleId); pending.delete(circleId);
+  renderer.iceBurst(x, y);
+  sfx.ice();
+  if (targets.includes(myId())) frostUntil = freezeAt;
+});
+socket.on('split:burst', ({ circleId, x, y }) => {
+  circles.delete(circleId); pending.delete(circleId);
+  renderer.splitBurst(x, y);
+  sfx.split();
+});
+socket.on('split:hit', ({ circleId, playerId }) => {
+  const c = circles.get(circleId);
+  if (c) { const q = circlePos(c, serverNow()); renderer.burst(q.x, q.y, '#e4e7ef', playerId === myId()); }
+  circles.delete(circleId); pending.delete(circleId);
+});
 socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); });
 // ---------- 게임 커서: 레이저·스턴·자석 끌기 ----------
 const gameCursor = new GameCursor();
@@ -1240,10 +1258,11 @@ socket.on('map:pop', ({ index, by }) => {
   const q = moverAt(p.balls[index], p.at, serverNow(), RULES.patterns.spikes.r);
   renderer.burst(q.x, q.y, '#ff5d73', by === myId());
 });
-socket.on('stun', ({ playerId, by }) => {
+socket.on('stun', ({ playerId, until, by }) => {
   const p = nameOf(playerId);
   const snipe = by === 'snipe';
   if (playerId === myId()) {
+    if (by === 'ice') { icedUntil = until; frostUntil = 0; }
     if (snipe) { sfx.snipe(); renderer.snipe(); renderer.text(CX, CY + -70, '저격당했다!', '#ff5d73', 1.6); }
     else sfx.stun();
     const c = gameCursor.pos ?? { x: CX, y: CY };
@@ -1433,7 +1452,7 @@ function onCanvasPress(e: PointerEvent) {
   } else {
     // 넓은 손·자석으로 잡힐 원이 있으면 빗나간 표시를 하지 않는다 (서버가 잡아서 알려 준다)
     // 넓은 손 범위로 같이 잡힐 원이 있으면 빗나간 게 아니다
-    const saved = !!m && (rangeTargets(circles.values(), (k) => k === 'bomb' || ownsKind(k, m, players, !!room?.rules.team), x, y, now, reach, pending, RULES.lagWindowMs).length > 0 || missSaveNear(m, x, y, now));
+    const saved = !!m && (rangeTargets(circles.values(), (k) => isSpecialCircle(k) || ownsKind(k, m, players, !!room?.rules.team), x, y, now, reach, pending, RULES.lagWindowMs).length > 0 || missSaveNear(m, x, y, now));
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
     // 보스가 막 터진 직후의 빈 곳 클릭은 서버도 페널티를 주지 않으므로 가볍게만 표시
     const grace = now - bossKilledAt < RULES.boss.killGraceMs;
@@ -1653,7 +1672,9 @@ function frame() {
     frozen: now < frozenUntil,
     cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView && !blink && !out
       ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now, gameCursor.pos) : 0,
-        barrier: rules.coop && m?.coopFx && now < m.coopFx.barrierUntil ? (m.coopFx.barrierUntil - now) / RULES.coop.barrier.durationMs : 0 }
+        barrier: rules.coop && m?.coopFx && now < m.coopFx.barrierUntil ? (m.coopFx.barrierUntil - now) / RULES.coop.barrier.durationMs : 0,
+        frost: now < frostUntil ? 1 - (frostUntil - now) / RULES.specialCircles.ice.slowMs : 0,
+        iced: !!m && isStunned(m, now) && now < icedUntil }
       : null,
     lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),
     blind: live && m?.blind && (m.debuffs.blind ?? 0) > now ? { ...m.blind, until: m.debuffs.blind! } : null,

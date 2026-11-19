@@ -1,4 +1,4 @@
-import { FIELD, bossState, circlePos, combosFor, isFever, isGuarded, isMarked, isOut, ownsKind, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
+import { FIELD, RULES, debuffOn, bossState, circlePos, combosFor, isFever, isGuarded, isMarked, isOut, ownsKind, type BotLevel, type Circle, type PlayerState } from '@color-burst/shared';
 
 /**
  * gap: 클릭 간격(ms), react: 원이 나온 뒤 반응까지 걸리는 시간(ms).
@@ -24,7 +24,9 @@ export class Bot {
     const L = LEVELS[this.level];
     if (!this.next) this.next = now + 800 + Math.random() * 600;
     if (now < this.next) return null;
-    this.next = now + (L.gap * (0.7 + Math.random() * 0.7)) / this.skill;
+    // 얼어 가는 중(얼음 원)이면 클릭 간격이 늘어난다
+    const frost = debuffOn(me, 'frost', now) ? RULES.specialCircles.ice.botGapMult : 1;
+    this.next = now + (L.gap * (0.7 + Math.random() * 0.7) * frost) / this.skill;
 
     const fever = isFever(me, now);
     const counterReady = me.counterReady && combosFor(me).has('counterStance');
@@ -49,7 +51,9 @@ export class Bot {
         return 4 + (1 - (c.hp ?? 1) / (c.maxHp ?? 1)) * 14;
       }
       if (c.kind === 'item') return 5;
-      if (c.kind === 'bomb') return 5;
+      if (c.kind === 'bomb' || c.kind === 'ice' || c.kind === 'split') return 5;
+      // 남의 분열 파편은 눌러 봐야 기절만 한다
+      if (c.splitBy && !ownsKind(c.kind, me, players, team)) return 0;
       if (c.kind === 'rainbow' || c.kind === 'gold') return 6;
       if (c.kind === me.color || (team && ownsKind(c.kind, me, players, true))) return 5;
       if (c.kind === 'y') return fever ? 5 : 3;

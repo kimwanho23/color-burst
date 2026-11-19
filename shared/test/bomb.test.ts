@@ -215,12 +215,13 @@ test('터지는 경로: 넓은 손·장판·필드 클리어로는 터지고 헛
 });
 
 test('생성: 방 규칙 꺼짐·협력전·튜토리얼·하드코어에서는 폭탄 원이 없다', () => {
-  const kinds = (bombChance: number, extra = {}) => Array.from({ length: 2000 }, (_, i) => makeCircle(i, 0, 0, [0, 1], G, Math.random, { bombChance, ...extra }).kind);
+  const kinds = (specialChance: number, extra = {}) => Array.from({ length: 2000 }, (_, i) => makeCircle(i, 0, 0, [0, 1], G, Math.random, { specialChance, ...extra }).kind);
   assert.ok(!kinds(0).includes('bomb'));
-  const all = Array.from({ length: 50 }, (_, i) => makeCircle(i, 0, 0, [0, 1], G, Math.random, { bombChance: 1 }));
+  // 특수 원 확률 1, 종류 굴림 0 → 첫 종류(폭탄)
+  const all = Array.from({ length: 50 }, (_, i) => makeCircle(i, 0, 0, [0, 1], G, () => 0, { specialChance: 1 }));
   assert.ok(all.every((c) => c.kind === 'bomb' && c.r === RULES.specialCircles.bomb.r));
-  assert.equal(makeCircle(1, 0, 0, [0, 1], G, Math.random, { bombChance: 1, forceKind: 'y' }).kind, 'y');
-  assert.equal(makeCircle(1, 0, 0, [0, 1], G, () => 0, { bombChance: 1, itemChance: 1 }).kind, 'item');
+  assert.equal(makeCircle(1, 0, 0, [0, 1], G, Math.random, { specialChance: 1, forceKind: 'y' }).kind, 'y');
+  assert.equal(makeCircle(1, 0, 0, [0, 1], G, () => 0, { specialChance: 1, itemChance: 1 }).kind, 'item');
   assert.equal(DEFAULT_RULES.specialCircles, true);
   assert.equal(toGameRules(DEFAULT_RULES).specialCircles, true);
   assert.equal(toGameRules({ ...DEFAULT_RULES, coop: true }).specialCircles, false);

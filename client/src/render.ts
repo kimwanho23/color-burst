@@ -4,7 +4,7 @@
  */
 import {
   COLORS, COOP_BOSSES, FIELD, RULES, YELLOW, auraAt, barSegment, beamAngles, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
-  type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam, type Homing, homingAlpha, homingRule } from '@color-burst/shared';
+  type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type SpecialKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam, type Homing, homingAlpha, homingRule } from '@color-burst/shared';
 
 import { COOP_SPECIALS, attackSpecialRule, type CoopSpecialAttack, type CoopWard } from '@color-burst/shared';
 
@@ -47,7 +47,7 @@ const SCORE_TIER: Record<ScoreTier, { col: string; size: number }> = {
 /** 보스 처치 배너 높이: 판 중앙에서 220 위 (화면 문구와 안 겹치게) */
 const BANNER_Y = FIELD.h / 2 - 220, BANNER_LIFE = 1.2;
 
-type BasicKind = Exclude<CircleKind, 'boss' | 'item' | 'threat' | 'crystal' | 'bomb'>;
+type BasicKind = Exclude<CircleKind, 'boss' | 'item' | 'threat' | 'crystal' | SpecialKind>;
 const GOLD_TRAIL = [40, 80, 120];
 
 type Fx =
@@ -105,7 +105,8 @@ export interface DrawState {
   frozen?: boolean;
   /** 게임 커서 (내 커서만): 스턴이면 회색, 넓은 손·자석 범위 */
   /** barrier: 우클릭 보호막 남은 비율 1→0 (0이면 꺼짐) */
-  cursor?: { x: number; y: number; stunned: boolean; reach: number; magnet: number; barrier?: number } | null;
+  /** frost: 얼어 가는 정도 0→1, iced: 얼음 원에 얼어붙은 중 */
+  cursor?: { x: number; y: number; stunned: boolean; reach: number; magnet: number; barrier?: number; frost?: number; iced?: boolean } | null;
   /** 레이저: at 전에는 경고선, at부터 fireMs 동안 빛줄기 */
   lasers?: { lines: { a: { x: number; y: number }; b: { x: number; y: number } }[]; at: number }[];
   /** 시야 방해: 종류·시드·끝나는 시각 */
@@ -245,6 +246,16 @@ export class Renderer {
   /** 협력전: 잡은 원에서 보스로 날아가는 빛줄기 */
   beam(x0: number, y0: number, x1: number, y1: number, col: string) { this.add({ type: 'line', x: x0, y: y0, x1, y1, col, t: 0, life: 0.3 }); }
   shockwave(x: number, y: number, R: number) { this.add({ type: 'ring', x, y, col: '#fff', t: 0, life: 0.35, r0: 10, r1: R, w: 6 }); }
+  /** 얼음 원 폭발: 하늘색 서리 고리. 효과 줄이기면 고리만 */
+  iceBurst(x: number, y: number) {
+    this.add({ type: 'ring', x, y, col: '#a5e4ff', t: 0, life: 0.5, r0: 20, r1: 220, w: 8 });
+    if (!reduceMotion) this.sparks(x, y, '#e3f7ff', 14, 300);
+  }
+  /** 분열 원: 짧은 번쩍임 + 파편 조각. 효과 줄이기면 고리만 */
+  splitBurst(x: number, y: number) {
+    this.add({ type: 'ring', x, y, col: '#e4e7ef', t: 0, life: 0.25, r0: 10, r1: 70, w: 5 });
+    if (!reduceMotion) this.sparks(x, y, '#c8ccd8', 10, 260);
+  }
   /** 폭탄 원 십자 폭발. 효과 줄이기면 번쩍임·파편 없이 빛줄기만 */
   crossBlast(x: number, y: number, w: number) {
     this.add({ type: 'cross', x, y, w, t: 0, life: 0.45 });
@@ -388,9 +399,14 @@ export class Renderer {
       if (c.kind === 'gold' && !this.warp) this.drawGoldTrail(c, s.now);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
       else if (c.kind === 'bomb') this.drawBomb(p.x, p.y, now, r);
+      else if (c.kind === 'ice') this.drawIce(p.x, p.y, now, r);
+      else if (c.kind === 'split') this.drawSplit(p.x, p.y, now, r);
       else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, s);
       else if (c.kind === 'crystal') crystals.push({ c, x: p.x, y: p.y, r });
-      else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
+      else {
+        this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
+        if (c.splitBy) this.drawPieceEdge(c, p.x, p.y, r);
+      }
     }
     ctx.globalAlpha = base;
     if (s.missiles?.list.length) this.drawMissiles(s.missiles, s.now);
@@ -847,7 +863,19 @@ export class Renderer {
     ctx.strokeStyle = col; ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-6, 0); ctx.moveTo(6, 0); ctx.lineTo(18, 0); ctx.moveTo(0, -18); ctx.lineTo(0, -6); ctx.moveTo(0, 6); ctx.lineTo(0, 18); ctx.stroke();
-    if (c.stunned) {
+    // 얼어 가는 중: 커서 둘레 서리 고리가 차오른다
+    if (c.frost && c.frost > 0) {
+      ctx.strokeStyle = 'rgba(165, 228, 255, .9)'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, c.frost)); ctx.stroke();
+    }
+    // 얼어붙음: 커서가 얼음 결정(육각형)에 갇힌다
+    if (c.iced) {
+      ctx.fillStyle = 'rgba(165, 228, 255, .35)'; ctx.strokeStyle = '#d8f3ff'; ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = (i * Math.PI) / 3 + Math.PI / 6; if (i === 0) ctx.moveTo(Math.cos(a) * 26, Math.sin(a) * 26); else ctx.lineTo(Math.cos(a) * 26, Math.sin(a) * 26); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    if (c.stunned && !c.iced) {
       ctx.fillStyle = '#ffd43b';
       for (let i = 0; i < 3; i++) {
         const a = frameNow / 250 + (Math.PI * 2 * i) / 3;
@@ -918,6 +946,82 @@ export class Renderer {
   }
 
   /** 아이템 원: 등급색 테두리 + 천천히 흔들리는 ? (전설은 프리즘이 돈다) */
+  /** 얼음 원: 하늘색 반투명 몸체, 흰 눈송이(여섯 갈래) 무늬, 가장자리 반짝임 */
+  private drawIce(x: number, y: number, frameNow: number, r: number) {
+    const ctx = this.ctx;
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(150, 220, 255, .55)';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#d8f3ff'; ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    const k = r * 0.62;
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      const cx = Math.cos(a), sy = Math.sin(a);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(cx * k, sy * k); ctx.stroke();
+      // 가지
+      const bx = cx * k * 0.6, by = sy * k * 0.6, b = k * 0.25;
+      ctx.beginPath();
+      ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a + 0.7) * b, by + Math.sin(a + 0.7) * b);
+      ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a - 0.7) * b, by + Math.sin(a - 0.7) * b);
+      ctx.stroke();
+    }
+    if (!reduceMotion) {
+      const a = frameNow / 500;
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      ctx.beginPath(); ctx.arc(Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** 분열 원: 회색 몸체, 가운데서 갈라지는 검은 금, 천천히 맥동 */
+  private drawSplit(x: number, y: number, frameNow: number, r: number) {
+    const ctx = this.ctx;
+    const k = reduceMotion ? 1 : 1 + Math.sin(frameNow / 220) * 0.05;
+    ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+    ctx.fillStyle = '#8d93a3';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#e4e7ef'; ctx.stroke();
+    ctx.strokeStyle = '#1b1d24'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    const cracks: [number, number][][] = [
+      [[0, 0], [r * 0.25, -r * 0.3], [r * 0.15, -r * 0.6], [r * 0.4, -r * 0.85]],
+      [[0, 0], [-r * 0.35, -r * 0.1], [-r * 0.55, r * 0.25], [-r * 0.85, r * 0.3]],
+      [[0, 0], [r * 0.2, r * 0.35], [r * 0.55, r * 0.45], [r * 0.7, r * 0.7]],
+    ];
+    for (const line of cracks) {
+      ctx.beginPath(); ctx.moveTo(line[0][0], line[0][1]);
+      for (const [px, py] of line.slice(1)) ctx.lineTo(px, py);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** 분열 파편: 주인 색 원 위에 톱니 테두리 + 진행 반대쪽 짧은 잔상 (일반 원과 구분) */
+  private drawPieceEdge(c: Circle, x: number, y: number, r: number) {
+    const ctx = this.ctx;
+    const col = typeof c.kind === 'number' ? COLORS[c.kind].hex : '#ffffff';
+    ctx.save();
+    if (!reduceMotion) {
+      const dx = -Math.cos(c.angle), dy = -Math.sin(c.angle);
+      for (let i = 1; i <= 3; i++) {
+        ctx.globalAlpha *= 0.55;
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(x + dx * r * 0.9 * i, y + dy * r * 0.9 * i, r * (1 - i * 0.22), 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
+    ctx.save(); ctx.translate(x, y);
+    const n = 10, out = r + 7;
+    ctx.beginPath();
+    for (let i = 0; i < n * 2; i++) {
+      const a = (i * Math.PI) / n, rr = i % 2 === 0 ? out : r;
+      if (i === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.lineJoin = 'miter'; ctx.stroke();
+    ctx.restore();
+  }
+
   /** 폭탄 원: 검은 몸체, 흰 십자 무늬, 위쪽 심지 불꽃이 깜빡인다 */
   private drawBomb(x: number, y: number, frameNow: number, r: number) {
     const ctx = this.ctx;
@@ -1406,7 +1510,7 @@ export class Renderer {
 }
 
 /** 점수판, 버튼 등에 쓰는 작은 SVG 아이콘 */
-export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat' | 'crystal' | 'bomb'>, size = 22) {
+export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat' | 'crystal' | SpecialKind>, size = 22) {
   const s = size, h = s / 2;
   if (color === 'boss') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h - 1}" fill="#ffc23a" stroke="#fff" stroke-width="1.5"/><path d="M${s * .28} ${s * .62}V${s * .36}L${s * .39} ${s * .5}L${h} ${s * .3}L${s * .61} ${s * .5}L${s * .72} ${s * .36}V${s * .62}Z" fill="#502d00" fill-opacity=".6"/></svg>`;
   if (color === 'rainbow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><defs><linearGradient id="rg${s}" x1="0" x2="1"><stop offset="0" stop-color="#ff5d73"/><stop offset=".5" stop-color="#ffd43b"/><stop offset="1" stop-color="#4dabf7"/></linearGradient></defs><circle cx="${h}" cy="${h}" r="${h - 1}" fill="url(#rg${s})"/></svg>`;

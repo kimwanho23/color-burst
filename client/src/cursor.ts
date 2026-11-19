@@ -80,7 +80,7 @@ export class GameCursor {
       if (e < RULES.sabotage.slideMs) { this.pos = slideBack(this.slideFrom, target, e); return; }
       this.slideFrom = null;
     }
-    this.pos = followCursor(this.pos, target, dtMs, !!mode?.slow);
+    this.pos = followCursor(this.pos, target, dtMs, !!mode?.slow, mode?.lagMs);
   }
 
   /**
@@ -98,7 +98,7 @@ export class GameCursor {
       const target = this.targetOf(mode);
       const goal = this.trapped >= 0 ? trapIn(p, this.trapped, target) : vortexBend(p, target, t);
       // 감도 감소면 그만큼 늦게, 아니면 짧게 부드럽게 (소용돌이가 생기는 순간 튀지 않게)
-      const lag = mode?.slow ? followCursor(this.pos!, goal, dtMs, true) : null;
+      const lag = mode?.slow ? followCursor(this.pos!, goal, dtMs, true, mode?.lagMs) : null;
       const k = 1 - Math.exp(-Math.max(0, dtMs) / RULES.patterns.vortex.followMs);
       let q = lag ?? { x: this.pos!.x + (goal.x - this.pos!.x) * k, y: this.pos!.y + (goal.y - this.pos!.y) * k };
       if (this.trapped < 0) this.trapped = eyeOf(p, q, t);
@@ -112,7 +112,7 @@ export class GameCursor {
       this.pos = r.pos; this.iceVel = r.vel;
       return;
     }
-    const goal = followCursor(this.pos!, target, dtMs, !!mode?.slow);
+    const goal = followCursor(this.pos!, target, dtMs, !!mode?.slow, mode?.lagMs);
     const dx = goal.x - this.pos!.x, dy = goal.y - this.pos!.y;
     const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / STEP));
     let q = pushOut(p, this.pos!, t);

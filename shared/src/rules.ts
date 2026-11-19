@@ -326,9 +326,18 @@ export const RULES = {
     rainbowRain: 0.15,
     itemRushMult: 4,
   },
-  /** 특수 원: 폭탄 원은 터지면 가로·세로 판 끝까지 십자로 걸린 원을 가져간다. halfWidth 줄 반폭, chainDelayMs 연쇄 간격 */
+  /**
+   * 특수 원: 일반 원이 생길 때 chance로 하나 나오고 종류는 weights 비율.
+   * 폭탄: 가로·세로 판 끝까지 십자로 걸린 원을 가져간다 (halfWidth 줄 반폭, chainDelayMs 연쇄 간격).
+   * 얼음: 터뜨린 사람 빼고 모두 slowMs 동안 커서가 느려진 뒤(slowLagMs 지연) stunMs 기절. botGapMult: 얼어 가는 봇의 클릭 간격 배율.
+   * 분열: 터뜨린 사람 색 파편 count개(반지름 pieceR, 속력 ×speedMult). 남의 커서에 닿으면 stunMs 기절.
+   */
   specialCircles: {
-    bomb: { chance: 0.025, halfWidth: 30, chainDelayMs: 150, r: 36 },
+    chance: 0.025,
+    weights: { bomb: 1, ice: 1, split: 1 },
+    bomb: { halfWidth: 30, chainDelayMs: 150, r: 36 },
+    ice: { r: 36, slowMs: 1_000, slowLagMs: 1_200, stunMs: 1_000, botGapMult: 2 },
+    split: { r: 36, count: 4, pieceR: 22, speedMult: 1.5, stunMs: 1_000 },
   },
   /** 아이템 원 */
   items: {
@@ -664,7 +673,11 @@ export type ColorIndex = 0 | 1 | 2 | 3;
 export type BossType = 'normal' | 'guard' | 'rage' | 'runner' | 'raid';
 /** 아케이드 라운드 테마 */
 export type ThemeId = 'goldRush' | 'bossRush' | 'reverse' | 'rainbowRain' | 'itemRush' | 'allYellow';
-export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold' | 'threat' | 'crystal' | 'bomb';
+export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold' | 'threat' | 'crystal' | SpecialKind;
+/** 특수 원 종류 */
+export type SpecialKind = 'bomb' | 'ice' | 'split';
+export const SPECIAL_KINDS: readonly SpecialKind[] = ['bomb', 'ice', 'split'];
+export const isSpecialCircle = (kind: CircleKind): kind is SpecialKind => kind === 'bomb' || kind === 'ice' || kind === 'split';
 
 export interface Circle {
   id: number;
@@ -685,6 +698,8 @@ export interface Circle {
   boss?: BossType;
   /** 아이템 원만: 등급 (0 흔함, 1 희귀, 2 전설). 무슨 아이템인지는 잡을 때 정해진다 */
   itemTier?: 0 | 1 | 2;
+  /** 분열 원 파편: 주인(터뜨린 사람 id). 남의 커서에 닿으면 기절 */
+  splitBy?: string;
   /** 시간 정지로 멈춘 구간 [시작 서버 시각, 길이 ms] */
   holds?: [from: number, ms: number][];
   /** 역발사: 가장자리에서 중앙으로 */
@@ -718,14 +733,14 @@ export interface PlayerStats {
 }
 
 /** 점수 출처: 원(직접·넓은 손·헛손질 보정·자동 획득), 콤보 보너스, 자석, 황금 원, 보스, 견제(견제·반격·강탈), 폭탄(십자에 걸린 원) */
-export type SrcKey = 'circle' | 'combo' | 'magnet' | 'gold' | 'boss' | 'steal' | 'threat' | 'bomb';
-export const SRC_KEYS: readonly SrcKey[] = ['circle', 'combo', 'magnet', 'gold', 'boss', 'steal', 'threat', 'bomb'];
+export type SrcKey = 'circle' | 'combo' | 'magnet' | 'gold' | 'boss' | 'steal' | 'threat' | 'bomb' | 'split';
+export const SRC_KEYS: readonly SrcKey[] = ['circle', 'combo', 'magnet', 'gold', 'boss', 'steal', 'threat', 'bomb', 'split'];
 /** lost: 남에게 빼앗기거나 감점된 점수. fever·jackpot: 참고값(피버 중 얻은 점수, 잭팟으로 더 얻은 점수, 위 출처와 겹침) */
 export interface ScoreSrc extends Record<SrcKey, number> { lost: number; fever: number; jackpot: number }
 
 export const emptyStats = (): PlayerStats => ({
   hits: 0, misses: 0, steals: 0, counters: 0, fevers: 0, maxCombo: 0, bossHits: 0, bossKills: 0,
-  src: { circle: 0, combo: 0, magnet: 0, gold: 0, boss: 0, steal: 0, threat: 0, bomb: 0, lost: 0, fever: 0, jackpot: 0 },
+  src: { circle: 0, combo: 0, magnet: 0, gold: 0, boss: 0, steal: 0, threat: 0, bomb: 0, split: 0, lost: 0, fever: 0, jackpot: 0 },
 });
 
 /** 점수 출처 기록. fever: 피버 중이면 참고값에도, jackpot(>1): 잭팟으로 더 얻은 몫을 참고값에 */
@@ -805,6 +820,8 @@ export interface PlayerState {
   stunUntil: number;
   /** 방해 효과가 끝나는 서버 시각 */
   debuffs: Partial<Record<DebuffId, number>>;
+  /** 얼음 원: 얼어붙을 서버 시각 (0 = 예약 없음). 그때까지 frost 디버프로 커서가 느려진다 */
+  frostAt: number;
   /** 시야 방해 모양 (서버가 정해서 재접속해도 같음) */
   blind: { kind: BlindKind; seed: number } | null;
   /** 역전 기회 (아케이드, 라운드 끝에 판정). 꼴찌를 벗어나면 꺼진다 */
@@ -853,8 +870,8 @@ export interface PlayerState {
   rapidJackpot: boolean;
 }
 
-/** 방해 효과: 감도 감소, 마우스 반대, 시야 방해 */
-export type DebuffId = 'slow' | 'invert' | 'blind';
+/** 방해 효과: 감도 감소, 마우스 반대, 시야 방해, 얼어 가는 중(얼음 원) */
+export type DebuffId = 'slow' | 'invert' | 'blind' | 'frost';
 export type BlindKind = 'ink' | 'half' | 'doodle' | 'lens';
 export const BLIND_KINDS: readonly BlindKind[] = ['ink', 'half', 'doodle', 'lens'];
 
@@ -880,7 +897,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number, sou
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'frostAt'] as const) if (p[k] > since) p[k] += delta;
   // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
   if (p.roundBegin + headStartMsOf({ ...p, silenced: false }) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.autoBuffs ?? {}) as BuffId[]) if (p.autoBuffs[k]! > since) p.autoBuffs[k]! += delta;
@@ -986,7 +1003,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     id, name, color, bot, connected: true, score: 0, combo: 0, comboPaidTo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, silenced: false, silencedUntil: 0, silenceCastAt: 0, mirror: null, harvestCount: 0, chestCount: 0, shieldLeft: 0, generatorGuard: false, generatorScore: false, counterReady: false, magneticFieldClicks: 0,
     firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
-    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
+    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
     pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
@@ -1024,7 +1041,7 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.firstFlameReady = p.regularCustomerReady = false;
   p.previousOwnZone = null;
   p.riposteUntil = 0;
-  p.debuffs = {}; p.blind = null;
+  p.debuffs = {}; p.frostAt = 0; p.blind = null;
   p.buffs = {}; p.autoBuffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.roundEnd = endAt || startAt + G.roundMs;
@@ -1099,17 +1116,18 @@ export function halveFever(p: PlayerState, now: number) {
  * 위험 스턴 공통 (레이저·가시 공·좁아지는 링): 철벽이거나 무적 중(스턴이 끝나고 RULES.laser.immuneMs 안)이면 0.
  * 아니면 방해 내성 레전드 피버 게이지 +, 피버 중이면 피버 절반, 방해 내성만큼 줄인 스턴을 건다. 건 스턴 ms (0이면 스턴 없음)
  */
-export function hazardStun(p: PlayerState, now: number, baseMs: number, G: GameRules, players: PlayerState[]) {
+export function hazardStun(p: PlayerState, now: number, baseMs: number, G: GameRules, players: PlayerState[], opts: { soft?: boolean } = {}) {
   const m = modsFor(p);
   if (m.fortress || now < p.stunUntil + RULES.laser.immuneMs || now < (p.hazardUntil ?? 0)) return -1;
   const ms = Math.max(0, baseMs * (1 - m.laserProof / 100));
   // 스턴이 없어도(완전 면역) 무적 시간을 둔다: 링처럼 계속 닿아 있어도 한 번만
   p.hazardUntil = now + ms + RULES.laser.immuneMs;
   // 피버 반감을 먼저 (방해 내성 레전드 +20으로 막 터진 피버는 줄지 않게), 완전 면역이면 반감 없음
-  if (ms > 0) halveFever(p, now);
+  // soft(얼음·분열 원): 피버를 줄이지 않고 콤보도 끊지 않는다
+  if (ms > 0 && !opts.soft) halveFever(p, now);
   if (hasLegend(p, 'laserProof')) addFever(p, LEGEND.laserFever, now, G, players, true);
   if (ms <= 0) return 0;
-  if (G.arcade) breakCombo(p, m, now);
+  if (G.arcade && !opts.soft) breakCombo(p, m, now);
   p.stunUntil = now + ms;
   return ms;
 }
@@ -1412,11 +1430,19 @@ export function spawnInterval(elapsedMs: number, G: GameRules) {
 /** 원 생성 옵션: 아이템 원 확률, 색 고정(내 색 비·전원 같은 색), 확률 덮어쓰기(라운드 테마) */
 export interface SpawnOpts {
   itemChance?: number;
-  /** 폭탄 원 확률 (아이템 원이 아닐 때, forceKind가 없을 때만 굴림) */
-  bombChance?: number;
+  /** 특수 원(폭탄·얼음·분열) 확률 (아이템 원이 아닐 때, forceKind가 없을 때만 굴림). 종류는 RULES.specialCircles.weights 비율 */
+  specialChance?: number;
   forceKind?: CircleKind;
   yellowChance?: number;
   rainbowChance?: number;
+}
+
+/** 특수 원 종류를 RULES.specialCircles.weights 비율로 고른다 */
+function pickSpecial(rand: () => number): SpecialKind {
+  const W = RULES.specialCircles.weights;
+  let roll = rand() * SPECIAL_KINDS.reduce((a, k) => a + W[k], 0);
+  for (const k of SPECIAL_KINDS) { roll -= W[k]; if (roll < 0) return k; }
+  return SPECIAL_KINDS[SPECIAL_KINDS.length - 1];
 }
 
 /** kinds: 이번 판에 참가한 색 목록(주인 없는 색은 나오지 않음) */
@@ -1424,12 +1450,12 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
   const prog = Math.min(1, elapsedMs / G.roundMs);
   const rush = elapsedMs > G.roundMs - RULES.finalRushMs ? 1.25 : 1;
   const item = rand() < (opts.itemChance ?? 0);
-  const bomb = !item && opts.forceKind === undefined && !!opts.bombChance && rand() < opts.bombChance;
+  const special = !item && opts.forceKind === undefined && !!opts.specialChance && rand() < opts.specialChance ? pickSpecial(rand) : null;
   const rainbow = opts.rainbowChance ?? G.rainbowChance;
   const roll = rand();
   let kind: CircleKind;
   if (item) kind = 'item';
-  else if (bomb) kind = 'bomb';
+  else if (special) kind = special;
   else if (opts.forceKind !== undefined) kind = opts.forceKind;
   else if (roll < rainbow) kind = 'rainbow';
   else if (roll < rainbow + (opts.yellowChance ?? RULES.yellowChance)) kind = 'y';
@@ -1443,7 +1469,7 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
     born: now,
   };
   if (item) { c.r = RULES.items.r; c.itemTier = rollItemTier(rand); }
-  else if (bomb) c.r = RULES.specialCircles.bomb.r;
+  else if (special) c.r = RULES.specialCircles[special].r;
   else c.r *= G.circleScale ?? 1;
   return c;
 }
@@ -1627,7 +1653,7 @@ export const crossedCombo = (before: number, after: number, every: number) =>
  */
 export function resolveClaim(
   claimer: PlayerState, kind: CircleKind, players: PlayerState[], now: number, G: GameRules,
-  opts: { via?: ClaimVia; rand?: () => number; zone?: ZoneIndex; precise?: boolean; reflected?: boolean; magneticField?: boolean; fromItem?: boolean } = {},
+  opts: { via?: ClaimVia; rand?: () => number; zone?: ZoneIndex; precise?: boolean; reflected?: boolean; magneticField?: boolean; fromItem?: boolean; split?: boolean } = {},
 ): ClaimResult {
   const via = opts.via ?? 'click';
   const direct = via === 'click' && !opts.reflected;
@@ -1863,9 +1889,11 @@ export function resolveClaim(
   const comboPart = bonus > 0 && pts > 0 ? Math.round(scored * bonus / pts) : 0;
   // 십자 폭발로 잡은 원은 원 점수·콤보 몫 모두 폭탄 출처로
   const cross = via === 'cross';
-  addSrc(claimer, cross ? 'bomb' : magnet ? 'magnet' : steal ? 'steal' : 'circle', scored - comboPart + generatorBonus, ref);
-  if (fixedBonus) addSrc(claimer, cross ? 'bomb' : 'circle', fixedBonus);
-  addSrc(claimer, cross ? 'bomb' : 'combo', comboPart, ref);
+  // 분열 원 파편(주인·팀원이 잡음)은 잡은 방법과 상관없이 '분열'
+  const split = !!opts.split;
+  addSrc(claimer, split ? 'split' : cross ? 'bomb' : magnet ? 'magnet' : steal ? 'steal' : 'circle', scored - comboPart + generatorBonus, ref);
+  if (fixedBonus) addSrc(claimer, split ? 'split' : cross ? 'bomb' : 'circle', fixedBonus);
+  addSrc(claimer, split ? 'split' : cross ? 'bomb' : 'combo', comboPart, ref);
   addSrc(claimer, 'steal', res.plundered);
   if (res.shieldBash) addSrc(claimer, 'steal', res.shieldBash, { fever });
   if (!magnet && !steal && m.harvest && !claimer.silenced && uniqueStacks(claimer, 'harvest') < UNIQUE.harvest.max) {

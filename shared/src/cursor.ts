@@ -7,7 +7,8 @@ import { FIELD, RULES, circlePos, debuffOn, isGuarded, isOut, ownTest, type Circ
 
 export type Point = { x: number; y: number };
 /** 커서 효과: slow(늦게 따라옴), invert(거울 위치). 오오라만 걸리면 {} */
-export type CursorMode = { slow?: boolean; invert?: boolean };
+/** lagMs: 감도 감소 지연 시간 상수 (없으면 RULES.sabotage.slowLagMs, 얼음 원이면 더 김) */
+export type CursorMode = { slow?: boolean; invert?: boolean; lagMs?: number };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -21,9 +22,9 @@ export function cursorTarget(real: Point, mode: CursorMode | null): Point {
 }
 
 /** 감도 감소: 커서가 목표를 늦게 따라간다 (시간 상수 RULES.sabotage.slowLagMs). 아니면 바로 목표 */
-export function followCursor(prev: Point, target: Point, dtMs: number, slow: boolean): Point {
+export function followCursor(prev: Point, target: Point, dtMs: number, slow: boolean, lagMs: number = RULES.sabotage.slowLagMs): Point {
   if (!slow) return target;
-  const k = 1 - Math.exp(-Math.max(0, dtMs) / RULES.sabotage.slowLagMs);
+  const k = 1 - Math.exp(-Math.max(0, dtMs) / lagMs);
   return { x: prev.x + (target.x - prev.x) * k, y: prev.y + (target.y - prev.y) * k };
 }
 
@@ -129,9 +130,11 @@ export function cursorActive(s: { playing: boolean; picking: boolean; roundOver:
 
 /** 방해 디버프로 정해지는 커서 효과 (감도 감소·마우스 반대, 둘 다면 합침). 없으면 null */
 export function cursorModeOf(p: PlayerState, now: number): CursorMode | null {
-  const slow = debuffOn(p, 'slow', now), invert = debuffOn(p, 'invert', now);
+  const frost = debuffOn(p, 'frost', now);
+  const slow = frost || debuffOn(p, 'slow', now), invert = debuffOn(p, 'invert', now);
   if (!slow && !invert) return null;
-  return { ...(slow ? { slow: true } : {}), ...(invert ? { invert: true } : {}) };
+  // 얼어 가는 중(얼음 원)이면 감도 감소보다 더 긴 지연
+  return { ...(slow ? { slow: true } : {}), ...(frost ? { lagMs: RULES.specialCircles.ice.slowLagMs } : {}), ...(invert ? { invert: true } : {}) };
 }
 
 /** 효과가 끝난 뒤 게임 커서가 진짜 마우스 위치로 미끄러져 돌아온다 (slideMs 동안) */

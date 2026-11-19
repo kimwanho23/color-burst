@@ -68,7 +68,7 @@ export function makeWave(
   const base = rand() * Math.PI * 2;
   const out: Circle[] = [];
   layout(pattern, base).forEach(({ angle, delay }, i) => {
-    const c = makeCircle(firstId + i, now, elapsedMs, kinds, G, rand, { ...opts, itemChance: 0, bombChance: 0 });
+    const c = makeCircle(firstId + i, now, elapsedMs, kinds, G, rand, { ...opts, itemChance: 0, specialChance: 0 });
     c.angle = angle;
     c.born = now + delay;
     // 한 묶음은 같은 속도로 날아가야 모양이 유지된다
