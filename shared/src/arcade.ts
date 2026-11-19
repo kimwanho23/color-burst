@@ -103,7 +103,7 @@ export type AbilityId =
   | 'hammer' | 'hunter' | 'crusher'
   | 'insurance' | 'shield'
   | 'thickSkin' | 'plunder' | 'counterPro'
-  | 'precise' | 'treasure' | 'itemLover' | UniqueId
+  | 'precise' | 'treasure' | 'itemLover' | 'firstFlame' | 'finisher' | 'spacing' | 'riposte' | 'regularCustomer' | UniqueId
   | 'jackpot' | 'wideHand' | 'magnet' | 'autoMagnet' | 'reflect' | 'edge'
   | 'missSave' | 'rebound' | 'rapid' | 'laserProof' | 'centerKing' | 'ignite' | 'vanguard' | 'taunt'
   | StackId | AutoId
@@ -141,12 +141,15 @@ export interface AbilityDef {
   /** 특별 카드: 역전 기회인 꼴찌만 받는 카드 (등급 없음, 게임 끝까지) */
   special?: true;
   unique?: true;
+  solo?: true;
   aim?: AbilityCategory;
 }
 
 const sec = (ms: number) => `${+(ms / 1000).toFixed(1)}초`;
 
 export const treasureEvery = (rate: number) => Math.max(AUG.treasureFloor, Math.round(AUG.treasureRate / rate));
+
+export const SOLO_SYNERGY = { scorePct: 15, finisherHpPct: 20, riposteMs: 3_000 } as const;
 
 export const ABILITIES: readonly AbilityDef[] = [
   // 점수
@@ -195,6 +198,11 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'autoMagnet', name: '자기장', cat: '보조', values: [1, 2, 3, 4], cap: 4, desc: (v) => `내 색 원 ${GROWTH.magneticField.clicks}개를 직접 잡으면 충전. 다음 내 색 클릭에서 반경 ${GROWTH.magneticField.radius} 안 내 색 원 최대 ${v}개를 끌어와 점수 100% 획득 (콤보·피버 충전 없음). 주변에 내 색 원이 없으면 충전 유지` },
   { id: 'autoCharge', name: '충전기', cat: '보조', values: [6, 7.5, 10, 15], cap: 20, desc: (v) => `${+(60 / v).toFixed(1)}초마다 저절로 피버 게이지 +${GROWTH.autoCharge}. 이 충전으로 피버가 시작되면 100 초과분의 ${pct(GROWTH.autoChargeOverflow)}를 피버 종료 후 이월` },
   { id: 'autoGuard', name: '보호막 발생기', cat: '보조', values: [6, 7.5, 10, 15], cap: 15, desc: (v) => `시작 시 및 ${+(60 / v).toFixed(1)}초마다 보호막과 득점 충전 각 1회. 보호막은 견제의 콤보 끊김·강탈·도발을 막고, 득점 충전은 다음 내 색 직접 클릭에 +${GROWTH.guardScorePct}% (최대 +${GROWTH.guardScoreCap}점)` },
+  { id: 'firstFlame', name: '첫 불꽃', cat: '피버', solo: true, values: [8, 12, 16, 24], desc: (v) => `피버 중 첫 내 색 직접 클릭에 고정 +${v}점` },
+  { id: 'finisher', name: '결정타', cat: '보스', solo: true, values: [12, 18, 25, 36], desc: (v) => `체력 ${SOLO_SYNERGY.finisherHpPct}% 이하인 보스를 때리면 고정 +${v}점 (보스당 1회)` },
+  { id: 'spacing', name: '거리 조절', cat: '점수', solo: true, values: [2, 3, 4, 6], desc: (v) => `내 색 원을 연속으로 직접 잡을 때 직전과 다른 점수 구역이면 고정 +${v}점` },
+  { id: 'riposte', name: '응수', cat: '견제', solo: true, values: [8, 12, 18, 26], desc: (v) => `반격 성공 후 ${sec(SOLO_SYNERGY.riposteMs)} 안에 다음 내 색 직접 클릭에 고정 +${v}점 (1회)` },
+  { id: 'regularCustomer', name: '단골손님', cat: '보조', solo: true, values: [5, 8, 12, 18], desc: (v) => `아이템 발동 묶음이 끝나면 다음 내 색 직접 클릭에 고정 +${v}점 (최대 1회 보관)` },
   // 성장: 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 (수치 = 최대 칸)
   { id: 'drill', name: '단련', cat: '성장', values: [2, 3, 5, 8], cap: 12, desc: (v) => `${GROWTH.drillEvery}콤보마다 내 색 +${GROWTH.drillPts}점이 쌓임 (최대 ${v}칸)` },
   { id: 'crownMark', name: '왕의 증표', cat: '성장', values: [2, 3, 4, 5], cap: 5, desc: (v) => `보스 체력 ${GROWTH.crown.assistPct}% 이상 피해 또는 막타 시 1칸 (최대 ${v}칸). 피버 배율은 칸당 +${GROWTH.crown.feverPerStack}, 3칸에서 +${GROWTH.crown.atThree}, 5칸에서 추가 +${GROWTH.crown.atFive}` },
@@ -328,7 +336,7 @@ export const SPECIALS: readonly AbilityDef[] = ([
   id, name, cat: '특별' as const, values: [1, 1, 1, 1] as const, cap: 1, special: true as const, desc: () => text,
 }));
 
-export type UniqueId = 'silence' | 'mirror' | 'resonance' | 'huntInstinct' | 'harvest' | 'ember' | 'goldCollector';
+export type UniqueId = 'silence' | 'mirror' | 'resonance' | 'huntInstinct' | 'harvest' | 'ember' | 'goldCollector' | 'synergyLink';
 export const UNIQUE_ODDS = [0, 3, 8, 10] as const;
 export const UNIQUE_LAST_FINAL = 10;
 export const UNIQUE = {
@@ -352,6 +360,7 @@ export const UNIQUES: readonly AbilityDef[] = ([
   { id: 'harvest', name: '수확', aim: '점수', desc: () => `원 ${UNIQUE.harvest.every}개 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.harvest.pct}% (최대 ${UNIQUE.harvest.max}칸)` },
   { id: 'ember', name: '불씨', aim: '피버', desc: () => `피버가 끝날 때마다 한 칸. 칸당 피버 시간 +${sec(UNIQUE.ember.ms)} (최대 ${UNIQUE.ember.max}칸)` },
   { id: 'goldCollector', name: '황금 수집가', aim: '점수', desc: () => `황금 원 +${UNIQUE.gold.points}점, 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.gold.pct}% (최대 ${UNIQUE.gold.max}칸)` },
+  { id: 'synergyLink', name: '연결', aim: '보조', desc: () => '모든 분류 시너지에서 보유한 증강 종류 수를 각각 +1로 계산' },
 ] satisfies { id: UniqueId; name: string; aim: AbilityCategory; desc: () => string }[]).map((a) => ({
   ...a, cat: '유니크', values: [1, 1, 1, 1], cap: 1, unique: true,
 }));
@@ -462,16 +471,25 @@ export const SYNERGY: Record<SynergyCat, { need: number; text: string }> = {
 };
 const SYN_CATS = Object.keys(SYNERGY) as SynergyCat[];
 
-/** 시너지 진행도: 분류별 서로 다른 증강 수 (하나 이상 가진 분류만, SYNERGY 순서) */
+/** 시너지 진행도: 분류별 서로 다른 증강 수에 연결 보너스를 더한다. */
 export function synergyProgress(picks: readonly Pick[] | undefined) {
   const ids = new Set((picks ?? []).map((p) => p.id));
-  return SYN_CATS.map((cat) => ({ cat, have: [...ids].filter((id) => ABILITY[id]?.cat === cat).length, need: SYNERGY[cat].need, text: SYNERGY[cat].text }))
-    .filter((x) => x.have > 0);
+  const linkBonus = ids.has('synergyLink') ? 1 : 0;
+  const categories = [...ids].map((id) => ABILITY[id]?.cat);
+  return SYN_CATS.map((cat) => ({
+    cat, have: categories.filter((category) => category === cat).length + linkBonus, need: SYNERGY[cat].need, text: SYNERGY[cat].text,
+  })).filter((x) => x.have > 0);
 }
 
 /** 활성 시너지 */
 export function synergiesOf(picks: readonly Pick[] | undefined): Set<SynergyCat> {
   return new Set(synergyProgress(picks).filter((x) => x.have >= x.need).map((x) => x.cat));
+}
+
+export function soloSynergyActive(picks: readonly Pick[], hasOther?: boolean) {
+  const kinds = new Set(picks.filter(({ id }) => ABILITY[id]?.solo).map(({ id }) => id));
+  if (kinds.size !== 1 || picks.some(({ id }) => id === 'synergyLink')) return false;
+  return !(hasOther ?? (synergiesOf(picks).size > 0 || combosOf(picks).size > 0));
 }
 
 /** 같은 능력을 하나로 묶는다: 처음 고른 순서대로, 그중 가장 높은 등급, 고른 횟수 */

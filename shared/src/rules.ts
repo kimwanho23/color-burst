@@ -1,7 +1,7 @@
 import type { CoopHitBy } from './protocol.ts';
 import type { CoopFx, CoopItemId } from './coopItems.ts';
 import type { CoopSpecialId } from './coopSpecial.ts';
-import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, UNIQUE, UNIQUE_STACK_MAX, activePicks, modsOf, evolvedCap, evolvedOf, synergiesFor, combosFor, hasLegend, legendsFor, bossDamage, comboPeriod, jackpotMult, modsFor, type AutoId, type Mods, type Pick, type RoundEffect, type StackId, type UniqueStackId } from './arcade.ts';
+import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, SOLO_SYNERGY, UNIQUE, UNIQUE_STACK_MAX, activePicks, modsOf, evolvedCap, evolvedOf, synergiesFor, combosFor, soloSynergyActive, hasLegend, legendsFor, bossDamage, comboPeriod, jackpotMult, modsFor, type AutoId, type Mods, type Pick, type RoundEffect, type StackId, type UniqueStackId } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -771,6 +771,10 @@ export interface PlayerState {
   generatorScore: boolean;
   counterReady: boolean;
   magneticFieldClicks: number;
+  firstFlameReady: boolean;
+  previousOwnZone: ZoneIndex | null;
+  riposteUntil: number;
+  regularCustomerReady: boolean;
   /** 라운드 시작 때 점수 (도박사·악마의 계약 계산용) */
   roundStart: number;
   /** 이번 라운드 최대 콤보 (시한폭탄) */
@@ -867,7 +871,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number, sou
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil'] as const) if (p[k] > since) p[k] += delta;
   // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
   if (p.roundBegin + headStartMsOf({ ...p, silenced: false }) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.autoBuffs ?? {}) as BuffId[]) if (p.autoBuffs[k]! > since) p.autoBuffs[k]! += delta;
@@ -972,6 +976,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
   return {
     id, name, color, bot, connected: true, score: 0, combo: 0, comboPaidTo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, silenced: false, silencedUntil: 0, silenceCastAt: 0, mirror: null, harvestCount: 0, chestCount: 0, shieldLeft: 0, generatorGuard: false, generatorScore: false, counterReady: false, magneticFieldClicks: 0,
+    firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
@@ -987,6 +992,9 @@ export function resetForRound(p: PlayerState) {
   p.silenced = false; p.silencedUntil = 0; p.silenceCastAt = 0; p.mirror = null;
   p.generatorGuard = p.generatorScore = p.counterReady = false;
   p.magneticFieldClicks = 0;
+  p.firstFlameReady = p.regularCustomerReady = false;
+  p.previousOwnZone = null;
+  p.riposteUntil = 0;
   p.outAt = 0; p.outRank = 0; p.hp = 0; p.immuneUntil = 0;
 }
 
@@ -1004,6 +1012,9 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.generatorGuard = p.generatorScore = m.autoGuard > 0;
   p.counterReady = false;
   p.magneticFieldClicks = 0;
+  p.firstFlameReady = p.regularCustomerReady = false;
+  p.previousOwnZone = null;
+  p.riposteUntil = 0;
   p.debuffs = {}; p.blind = null;
   p.buffs = {}; p.autoBuffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
@@ -1129,6 +1140,7 @@ export function settleFever(p: PlayerState, now: number) {
   if (!(p.feverUntil > 0 && now >= p.feverUntil)) return false;
   p.feverUntil = 0;
   p.feverBonus = 0;
+  p.firstFlameReady = false;
   const carry = p.silenced ? 0 : p.feverCarry;
   p.fever = Math.min(100, p.fever + carry);
   p.feverCarry = 0;
@@ -1198,6 +1210,7 @@ export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[
 
 export function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
   p.fever = 0;
+  p.firstFlameReady = m.firstFlame > 0;
   const L = legendsFor(p);
   // 예열 레전드: 라운드 첫 피버만 배율 +2
   p.feverBonus = L.has('preheat') && p.firstFever ? LEGEND.preheatMult : 0;
@@ -1604,6 +1617,7 @@ export function resolveClaim(
 ): ClaimResult {
   const via = opts.via ?? 'click';
   const direct = via === 'click' && !opts.reflected;
+  if (direct && kind !== claimer.color) claimer.previousOwnZone = null;
   const blast = via === 'blast';
   // 자석으로 끌어온 원: 점수만 (콤보·콤보 보너스·잭팟·피버 게이지 없음)
   const magnet = via === 'magnet';
@@ -1676,6 +1690,7 @@ export function resolveClaim(
           claimer.counterReady = false;
           res.forcedCounter = true;
         }
+        if (direct && m.riposte) claimer.riposteUntil = now + SOLO_SYNERGY.riposteMs;
         // 반격 전문가 레전드: 반격하면 피버 게이지
         if (L.has('counterPro')) res.feverStarted = addFever(claimer, LEGEND.counterFever, now, G, players, true);
       } else if (fever || !G.stealPenalty) {
@@ -1795,6 +1810,26 @@ export function resolveClaim(
   }
   const magnetMult = magnet && !opts.magneticField ? AUG.magnetPointPct / 100 : 1;
   const earned = Math.round(pts * mult * res.jackpot * magnetMult);
+  let fixedBonus = 0;
+  if (direct && kind === claimer.color) {
+    if (fever && claimer.firstFlameReady && m.firstFlame) {
+      claimer.firstFlameReady = false;
+      fixedBonus += m.firstFlame;
+    }
+    if (m.spacing && claimer.previousOwnZone != null && claimer.previousOwnZone !== res.zone) fixedBonus += m.spacing;
+    claimer.previousOwnZone = m.spacing ? res.zone : null;
+    if (m.riposte && now < claimer.riposteUntil) {
+      claimer.riposteUntil = 0;
+      fixedBonus += m.riposte;
+    }
+    if (m.regularCustomer && claimer.regularCustomerReady) {
+      claimer.regularCustomerReady = false;
+      fixedBonus += m.regularCustomer;
+    }
+  }
+  const soloBonus = direct && (kind === claimer.color || kind === 'y' || kind === 'rainbow')
+    && soloSynergyActive(activePicks(claimer), SY.size > 0 || K.size > 0)
+    ? Math.round(earned * SOLO_SYNERGY.scorePct / 100) : 0;
   let generatorBonus = 0;
   if (claimer.generatorScore && m.autoGuard && direct && kind === claimer.color && earned > 0) {
     claimer.generatorScore = false;
@@ -1804,12 +1839,14 @@ export function resolveClaim(
     claimer.generatorGuard = false;
     res.shieldBash = Math.round(COMBO.shieldBashPoints * capMult(feverMult));
   }
-  res.gained = earned + res.plundered + generatorBonus + (res.shieldBash ?? 0);
+  const scored = earned + soloBonus;
+  res.gained = scored + fixedBonus + res.plundered + generatorBonus + (res.shieldBash ?? 0);
   claimer.score += res.gained;
   // 점수 출처: 콤보 보너스 몫은 기본 점수와의 비율대로 나눈다. 강탈은 견제
   const ref = { fever, jackpot: res.jackpot };
-  const comboPart = bonus > 0 && pts > 0 ? Math.round(earned * bonus / pts) : 0;
-  addSrc(claimer, magnet ? 'magnet' : steal ? 'steal' : 'circle', earned - comboPart + generatorBonus, ref);
+  const comboPart = bonus > 0 && pts > 0 ? Math.round(scored * bonus / pts) : 0;
+  addSrc(claimer, magnet ? 'magnet' : steal ? 'steal' : 'circle', scored - comboPart + generatorBonus, ref);
+  if (fixedBonus) addSrc(claimer, 'circle', fixedBonus);
   addSrc(claimer, 'combo', comboPart, ref);
   addSrc(claimer, 'steal', res.plundered);
   if (res.shieldBash) addSrc(claimer, 'steal', res.shieldBash, { fever });
@@ -1840,6 +1877,7 @@ export function goldGain(p: PlayerState, now: number, players: PlayerState[], G:
 
 /** 빈 공간 클릭 */
 export function resolveMiss(p: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
+  p.previousOwnZone = null;
   p.stats.misses++;
   const m = modsFor(p);
   // 헛클릭 무효 아이템이 먼저 막는다 (유리 대포 감점은 아래에서 그대로 적용)

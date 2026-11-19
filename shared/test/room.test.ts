@@ -1500,6 +1500,28 @@ test('보물 상자 레전드의 아이템 등급은 50%, 45%, 5% 경계에서 �
   }
 });
 
+test('단골손님은 여러 아이템 묶음 뒤에도 다음 내 색 원에 한 번만 보너스를 준다', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(Math, 'random', () => 0.05);
+  me.picks = [{ id: 'regularCustomer', tier: 0 }, { id: 'itemLover', tier: 3 }];
+  const x = CX + 300, y = CY;
+  for (const id of [1, 2]) {
+    circles.set(id, { ...slowAt(id, 'item', x, y, now), itemTier: 0 });
+    room.click(me.id, { circleId: id, x, y });
+  }
+  assert.equal(me.regularCustomerReady, true);
+  const before = me.score;
+  for (const id of [3, 4]) {
+    circles.set(id, slowAt(id, me.color, x, y, now));
+    room.click(me.id, { circleId: id, x, y });
+    assert.equal(me.regularCustomerReady, false);
+  }
+  assert.equal(me.score - before, 2 * RULES.points.own * 2 + 5);
+});
+
 test('아이템 애호가는 원마다 추가 발동하고 잡화점 피버 충전은 묶음마다 한 번이다', (t) => {
   const { room, me, circles } = playingRoom();
   t.after(() => room.destroy());

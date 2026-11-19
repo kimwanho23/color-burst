@@ -2,7 +2,7 @@
  * 보스 한 번 타격: 피해·점수·콤보·피버 게이지·막타·독식·MVP를 계산해 바로 반영한다 (서버가 부른다).
  * 원 삭제·알림·자동 획득(사냥꾼 레전드·점화)은 부르는 쪽이 한다.
  */
-import { AUG, COMBO, GROWTH, LEGEND, UNIQUE, combosFor, hasLegend, modsFor } from './arcade.ts';
+import { AUG, COMBO, GROWTH, LEGEND, SOLO_SYNERGY, UNIQUE, combosFor, hasLegend, modsFor } from './arcade.ts';
 import {
   RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
   addStack, addUniqueStack, growthScoreMult, uniqueStacks, drillCheck, ragePenalty, rollJackpot, settleFever, type Circle, type GameRules, type PlayerState,
@@ -42,6 +42,8 @@ export interface BossStrike {
 /** 보스 점수의 피버 배율: 방 규칙 피버 배율까지만 (증강으로 올린 몫은 일반 원에만) */
 export const bossFeverMult = (p: PlayerState, G: GameRules) => Math.min(feverMultOf(p, G), G.feverMult);
 
+const finisherUses = new WeakMap<Circle, Set<string>>();
+
 const huntMult = (p: PlayerState) => 1 + uniqueStacks(p, 'huntInstinct') * UNIQUE.hunt.pct / 100;
 
 export function strikeBoss(
@@ -62,6 +64,7 @@ export function strikeBoss(
     out.enraged = true; out.gained = -lose;
     return out;
   }
+  p.previousOwnZone = null;
   settleFever(p, now);
   const m = modsFor(p);
   const info = bossHitInfo(p, rand);
@@ -92,9 +95,19 @@ export function strikeBoss(
   out.jackpot = rollJackpot(p, m, rand);
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
   // 타격 점수는 클릭 한 번당 (피해와 곱하지 않음: 파쇄·막타 독식의 피해는 처치·막타·독식 경쟁에만)
-  out.gained = Math.round((info.hit * vanguard + bonus) * mult * out.jackpot);
+  const hitScore = Math.round((info.hit * vanguard + bonus) * mult * out.jackpot);
+  out.gained = hitScore;
+  addSrc(p, 'boss', hitScore, { fever, jackpot: out.jackpot });
+  if (m.finisher && c.boss !== 'raid' && hp * 100 <= (c.maxHp ?? hp) * SOLO_SYNERGY.finisherHpPct) {
+    const paid = finisherUses.get(c) ?? new Set<string>();
+    if (!paid.has(p.id)) {
+      paid.add(p.id);
+      finisherUses.set(c, paid);
+      out.gained += m.finisher;
+      addSrc(p, 'boss', m.finisher);
+    }
+  }
   p.score += out.gained;
-  addSrc(p, 'boss', out.gained, { fever, jackpot: out.jackpot });
 
   if (c.hp <= 0) {
     out.killed = true;

@@ -1,6 +1,6 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
-  COMBOS, COOP_ITEMS, COOP_ITEM_IDS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, RULES, SYNERGY, GROWTH, buffUntil, combosFor, modsFor, synergiesFor,
+  COMBOS, COOP_ITEMS, COOP_ITEM_IDS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, RULES, SYNERGY, SOLO_SYNERGY, GROWTH, buffUntil, combosFor, modsFor, synergiesFor, soloSynergyActive,
   type BuffId, type CoopItemId, type PatternId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
 import { UI, abilityIcon, comboIcon, categoryIcon, coopItemIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
@@ -15,13 +15,15 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export function renderComboBar(el: HTMLElement, p: PlayerState | undefined) {
   const ids = p ? [...combosFor(p)] : [];
   const syn = p ? [...synergiesFor(p)] : [];
-  const sig = [...ids, ...syn].join(',');
+  const solo = !!p && !p.silenced && soloSynergyActive(p.picks, ids.length + syn.length > 0);
+  const sig = [...ids, ...syn, ...(solo ? ['solo'] : [])].join(',');
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   el.innerHTML = ids.map((id) => {
     const c = COMBOS.find((x) => x.id === id)!;
     return `<span class="cbchip" data-c="${id}" data-tip="${esc(comboTip(id, p!.picks))}">${comboIcon(id, 13)}<b>${esc(c.name)}</b><span>${esc(c.text)}</span></span>`;
-  }).join('') + syn.map((cat) => `<span class="cbchip syn" data-tip="${esc(`<div class="tip-h"><b>${cat} 시너지</b></div><p>${SYNERGY[cat].text}</p>`)}">${categoryIcon(cat, 13)}<b>${cat}</b><span>${esc(SYNERGY[cat].text)}</span></span>`).join('');
+  }).join('') + syn.map((cat) => `<span class="cbchip syn" data-tip="${esc(`<div class="tip-h"><b>${cat} 시너지</b></div><p>${SYNERGY[cat].text}</p>`)}">${categoryIcon(cat, 13)}<b>${cat}</b><span>${esc(SYNERGY[cat].text)}</span></span>`).join('')
+    + (solo ? `<span class="cbchip syn"><b>독주</b><span>내 색·노란색·무지개 직접 획득 +${SOLO_SYNERGY.scorePct}%</span></span>` : '');
 }
 
 /** 조합 효과가 발동하면 그 칩을 잠깐 반짝인다 (그 조합이 없으면 아무것도 안 함) */

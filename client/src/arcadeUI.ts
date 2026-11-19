@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, ARCADE, COMBOS, EVENTS, LEGEND_TEXT, THEMES, TIERS, EVOLVE, STACK_IDS, SYNERGY, UNIQUE_STACK_MAX, abilityText, comboProgress, evolvedOf, synergiesOf, synergyProgress, combosCompletedBy, combosOf, groupPicks, modsOf, isSpecial,
+  ABILITY, ARCADE, COMBOS, EVENTS, LEGEND_TEXT, THEMES, TIERS, EVOLVE, STACK_IDS, SYNERGY, SOLO_SYNERGY, UNIQUE_STACK_MAX, abilityText, comboProgress, evolvedOf, synergiesOf, synergyProgress, soloSynergyActive, combosCompletedBy, combosOf, groupPicks, modsOf, isSpecial,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect, type StackId, type UniqueStackId,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, comboIcon, eventIcon, icon } from './icons.ts';
@@ -177,7 +177,12 @@ function cardGrowth(o: Pick, picks: readonly Pick[]) {
   const owned = picks.filter((p) => p.id === o.id).length;
   if (owned + 1 >= EVOLVE.count && owned < EVOLVE.count) tags.push(`<span class="ctag done evo">진화!</span>`);
   else if (owned + 2 === EVOLVE.count) tags.push(`<span class="ctag up evo">진화까지 1장 더</span>`);
-  const before = synergiesOf(picks), after = synergiesOf([...picks, o]);
+  const next = [...picks, o];
+  const soloBefore = soloSynergyActive(picks), soloAfter = soloSynergyActive(next);
+  if (soloAfter && !soloBefore) tags.push(`<span class="ctag done">독주 켜짐 · 내 색·노란색·무지개 직접 획득 +${SOLO_SYNERGY.scorePct}%</span>`);
+  else if (soloBefore && !soloAfter) tags.push(`<span class="ctag up">선택하면 독주 꺼짐</span>`);
+  else if (a.solo) tags.push(`<span class="ctag${soloAfter ? ' done' : ''}">독주 카드</span>`);
+  const before = synergiesOf(picks), after = synergiesOf(next);
   for (const cat of after) if (!before.has(cat)) tags.push(`<span class="ctag done">시너지: ${cat} · ${esc(SYNERGY[cat].text)}</span>`);
   return tags.length ? `<span class="ctags">${tags.join('')}</span>` : '';
 }

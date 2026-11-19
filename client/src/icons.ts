@@ -39,8 +39,9 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
   comebackBoost: Rocket, flip: FlipVertical2, focusFire: Siren, hyena: Dog, chaser: Footprints, momentum: Activity,
   allHands: HandMetal, fortress: Castle, chainBlast: Radiation, bossFeast: Medal, lastFlame: Sunrise, itemHunter: PackageSearch,
   precise: Target, treasure: Gift, itemLover: PackageSearch,
+  firstFlame: FlameKindling, finisher: Sword, spacing: Maximize2, riposte: Swords, regularCustomer: Gift,
   silence: CircleOff, mirror: Copy, resonance: Activity, huntInstinct: Footprints,
-  harvest: Sprout, ember: FlameKindling, goldCollector: CircleDollarSign,
+  harvest: Sprout, ember: FlameKindling, goldCollector: CircleDollarSign, synergyLink: Link,
   drill: Dumbbell, crownMark: Crown, luckStack: Clover, autoMagnet: Orbit, autoCharge: BatteryFull, autoGuard: ShieldPlus,
 };
 

@@ -1831,6 +1831,7 @@ export class Room {
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
     const { x, y } = circlePos(c, now);
+    p.previousOwnZone = null;
     // 일반 원과 같은 배율 (잡은 자리의 점수 구역 포함)
     const { gained, jackpot } = goldGain(p, now, this.players, this.G, zoneOf({ x, y }));
     p.score += gained;
@@ -1843,6 +1844,7 @@ export class Room {
   private claimItem(p: PlayerState, c: Circle, now: number) {
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
+    p.previousOwnZone = null;
     // 아이템 사냥꾼: 한 등급 위 아이템
     const up = modsFor(p).itemHunter ? 1 : 0;
     const tier = Math.min(2, (c.itemTier ?? 0) + up) as 0 | 1 | 2;
@@ -1881,6 +1883,7 @@ export class Room {
           if (!chance || Math.random() * 100 >= chance) break;
           this.fireItem(p, rollItemTier(), x, y, now, null, true);
         }
+        if (modsFor(p).regularCustomer) p.regularCustomerReady = true;
         if (combosFor(p).has('bazaar') && addFever(p, COMBO.bazaarFever, now, this.G, this.players, true)) p.stats.fevers++;
       }
     } finally {

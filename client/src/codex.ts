@@ -1,5 +1,5 @@
 /** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, COMBOS, treasureEvery, CURSES, EVOLVE, SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, UNIQUES, DEFAULT_RULES, comboProgress, type AbilityCategory, type AbilityId, type Pick } from '@color-burst/shared';
+import { ABILITIES, ABILITY, COMBOS, treasureEvery, CURSES, EVOLVE, SYNERGY, SOLO_SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, UNIQUES, DEFAULT_RULES, comboProgress, type AbilityCategory, type AbilityId, type Pick } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, comboIcon, icon, itemIcon } from './icons.ts';
 import { scoreTable } from './rulesUI.ts';
 
@@ -34,10 +34,11 @@ function capText(id: AbilityId, cap: number) {
 export function abilityTab() {
   const cats = [...new Set(ABILITIES.map((a) => a.cat))] as AbilityCategory[];
   const syn = (Object.keys(SYNERGY) as (keyof typeof SYNERGY)[]).map((c) => `<li><b>${c} ${SYNERGY[c].need}종</b> · ${esc(SYNERGY[c].text)}</li>`).join('');
-  const rules = `<p class="hint">같은 증강을 ${EVOLVE.count}번 고르면 <b>진화</b>: 레전드 효과를 얻고 중첩 상한이 ${EVOLVE.capMult}배가 돼요. 성장 증강은 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 남아요.</p>
+  const rules = `<p class="hint">독주 카드 한 종류를 보유하면 직접 잡은 내 색·노란색·무지개 원의 점수 +${SOLO_SYNERGY.scorePct}%. 연결을 고르거나 다른 시너지·조합을 완성하면 독주가 꺼져요.</p>
+    <p class="hint">같은 증강을 ${EVOLVE.count}번 고르면 <b>진화</b>: 레전드 효과를 얻고 중첩 상한이 ${EVOLVE.capMult}배가 돼요. 성장 증강은 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 남아요.</p>
     <h3>시너지 (같은 분류의 서로 다른 증강)</h3><ul class="cx-syn">${syn}</ul>`;
   return rules + cats.map((cat) => `<h3>${categoryIcon(cat, 16)} ${cat}</h3><ul class="cx-list">${ABILITIES.filter((a) => a.cat === cat).map((a) => `
-    <li><span class="cx-ic">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b>${a.cap !== undefined ? `<em class="cx-cap">${capText(a.id, a.cap)}</em>` : ''}
+    <li><span class="cx-ic">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b>${a.solo ? '<em class="cx-cap">독주</em>' : ''}${a.cap !== undefined ? `<em class="cx-cap">${capText(a.id, a.cap)}</em>` : ''}
       <ol class="cx-tiers">${a.values.map((v, t) => `<li class="t${t}"><span>${TIERS[t].name}</span>${esc(a.desc(v))}</li>`).join('')}</ol>
       ${LEGEND_TEXT[a.id] ? `<p class="cx-legend">레전드 효과: ${esc(LEGEND_TEXT[a.id]!)}</p>` : ''}</div></li>`).join('')}</ul>`).join('');
 }
