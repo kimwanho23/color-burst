@@ -7,7 +7,7 @@ import {
   applyItem, itemDurationMult, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsFor, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
-  auraAt, inAura,
+  auraAt, inAura, inCross,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimResult, type CoopResult, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
@@ -110,6 +110,8 @@ export class Room {
   private rain: { color: ColorIndex; until: number } | null = null;
   /** 시간 정지: 이 시각까지 새 원이 나오지 않는다 */
   private freezeUntil = 0;
+  /** 폭탄 원 연쇄: 십자에 걸린 폭탄은 at에 터진다 (점수는 처음 터뜨린 by) */
+  private pendingBlasts: { by: string; circleId: number; at: number }[] = [];
   /** 마지막으로 보스가 터진 시각: 직후 잠깐은 빈 곳 클릭 페널티를 주지 않는다 (보스 연타가 헛클릭이 되지 않게) */
   private bossKilledAt = 0;
   // ---------- 게임 커서 ----------
@@ -783,6 +785,7 @@ export class Room {
     this.cutWarned = false;
     if (this.rain && this.rain.until > this.pausedAt) this.rain.until += delta;
     if (this.freezeUntil > this.pausedAt) this.freezeUntil += delta;
+    for (const b of this.pendingBlasts) b.at += delta;
     for (const b of this.bots.values()) b.shift(delta);
     this.pausedAt = 0;
     this.pausedBy = null;
@@ -882,6 +885,7 @@ export class Room {
         else if (this.coop && (c.kind === 'y' || typeof c.kind === 'number')) this.catchCoopOrb(p, c, now);
         else if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
+        else if (c.kind === 'bomb') this.detonate(p, c, now);
         else if (c.kind === 'gold') this.claimGold(p, c, now);
         else {
           const precise = !p.bot && this.hitWithLag(c, now, d.x, d.y, c.r * (AUG.preciseR - 1));
@@ -896,6 +900,8 @@ export class Room {
       const reachWithoutItem = reachOf(p, now, false);
       let ranged = false;
       for (const c of [...this.circles.values()]) {
+        // 넓은 손 범위에 걸린 폭탄 원은 터진다 (보호 구역 안이면 detonate가 무시)
+        if (c.kind === 'bomb' && this.circles.has(c.id) && this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) { this.detonate(p, c, now); ranged = got = true; continue; }
         if (!this.owns(c.kind, p) || !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reach)) continue;
         const fromItem = reach > reachWithoutItem && !this.hitWithLag(c, now, d.x, d.y, RULES.hitPad + reachWithoutItem);
         this.claim(p, c, now, 'range', true, false, fromItem);
@@ -1152,6 +1158,7 @@ export class Room {
   private beginRound() {
     this.circles.clear();
     this.bossHits.clear();
+    this.pendingBlasts = [];
     this.clickLog.clear();
     this.nextDevAutoClick = 0;
     this.theme = this.nextTheme;
@@ -1212,6 +1219,7 @@ export class Room {
     this.roundPhase = 'pick';
     this.circles.clear();
     this.bossHits.clear();
+    this.pendingBlasts = [];
     this.spawnQueue = [];
     this.io.to(this.code).emit('round:end', { round: this.round });
     this.pickTimer = setTimeout(() => this.startPick(), RULES.roundEndMs);
@@ -1416,6 +1424,7 @@ export class Room {
       if (c.kind === 'boss') { this.bossHits.delete(id); this.io.to(this.code).emit('boss:escaped', { circleId: id }); }
       if (c.kind === 'threat') { this.coop?.threatEscaped(c, now); if (this.phase !== 'play') return; }
     }
+    this.tickBlasts(now);
 
     // 장판: 위를 지나는 주인의 내 원을 자동으로 잡는다
     this.zones = this.zones.filter((z) => z.until > now);
@@ -1424,9 +1433,12 @@ export class Room {
       const owner = this.players.find((p) => p.id === z.by);
       if (!owner || owner.outAt) continue;
       for (const c of [...this.circles.values()]) {
-        if (!this.owns(c.kind, owner) || isGuarded(c, now)) continue;
+        if ((c.kind !== 'bomb' && !this.owns(c.kind, owner)) || isGuarded(c, now) || !this.circles.has(c.id)) continue;
         const q = circlePos(c, now);
-        if (Math.hypot(q.x - z.x, q.y - z.y) <= c.r + z.r) { this.claim(owner, c, now, 'zone', true); zoned = true; }
+        if (Math.hypot(q.x - z.x, q.y - z.y) > c.r + z.r) continue;
+        if (c.kind === 'bomb') this.detonate(owner, c, now);
+        else this.claim(owner, c, now, 'zone', true);
+        zoned = true;
       }
     }
     if (zoned) this.emitPlayers();
@@ -1805,12 +1817,50 @@ export class Room {
   private spawnOpts(now: number): SpawnOpts {
     const T = RULES.themes;
     const chaos = this.G.chaos ? RULES.chaos.itemMult : 1;
-    const o: SpawnOpts = { itemChance: this.G.items ? RULES.items.chance * chaos * (this.theme === 'itemRush' ? T.itemRushMult : 1) : 0 };
+    const o: SpawnOpts = { itemChance: this.G.items ? RULES.items.chance * chaos * (this.theme === 'itemRush' ? T.itemRushMult : 1) : 0, bombChance: this.G.specialCircles && !this.tutorial ? RULES.specialCircles.bomb.chance : 0 };
     if (this.theme === 'goldRush') o.yellowChance = T.goldRushYellow;
     if (this.theme === 'rainbowRain') o.rainbowChance = T.rainbowRain;
     if (this.theme === 'allYellow') o.forceKind = 'y';
     if (this.rain && now < this.rain.until) o.forceKind = this.rain.color;
     return o;
+  }
+
+  /** 폭탄 원 폭발: 가로·세로 판 끝까지 십자에 걸린 원은 p가 잡고(견제 페널티 없음), 보스는 1회 타격, 다른 폭탄은 연쇄 예약 */
+  private detonate(p: PlayerState, bomb: Circle, now: number, chain = false) {
+    if (!this.circles.has(bomb.id) || isGuarded(bomb, now)) return;
+    this.circles.delete(bomb.id);
+    const q = circlePos(bomb, now);
+    this.io.to(this.code).emit('bomb:blast', { circleId: bomb.id, by: p.id, x: q.x, y: q.y, chain });
+    for (const o of [...this.circles.values()]) {
+      if (o.kind === 'gold' || o.kind === 'item' || isGuarded(o, now) || !this.circles.has(o.id)) continue;
+      if (!inCross(q, circlePos(o, now), o.r)) continue;
+      if (o.kind === 'bomb') { this.queueBlast(p.id, o, now); continue; }
+      if (o.kind === 'boss') {
+        // 보호막·붉은 보스는 십자가 지나간다 (직접 누르면 무효·감점인 상태라 억울하지 않게)
+        const st = bossState(o, now);
+        if (!st.shielded && !st.enraged) this.hitBoss(p, o, now);
+        continue;
+      }
+      this.claim(p, o, now, 'cross', true);
+    }
+    this.emitPlayers();
+  }
+
+  private queueBlast(by: string, bomb: Circle, now: number) {
+    if (this.pendingBlasts.some((b) => b.circleId === bomb.id)) return;
+    this.pendingBlasts.push({ by, circleId: bomb.id, at: now + RULES.specialCircles.bomb.chainDelayMs });
+  }
+
+  /** 시각이 된 연쇄 폭발을 터뜨린다 (터뜨린 사람이 나갔거나 탈락했거나 폭탄이 사라졌으면 버림) */
+  private tickBlasts(now: number) {
+    if (!this.pendingBlasts.length) return;
+    const due = this.pendingBlasts.filter((b) => b.at <= now);
+    this.pendingBlasts = this.pendingBlasts.filter((b) => b.at > now);
+    for (const b of due) {
+      const p = this.players.find((x) => x.id === b.by);
+      const bomb = this.circles.get(b.circleId);
+      if (p && !p.outAt && bomb) this.detonate(p, bomb, now, true);
+    }
   }
 
   /** quiet: 여러 원을 한꺼번에 잡을 때는 플레이어 상태를 부르는 쪽에서 한 번만 보낸다 */
@@ -1964,13 +2014,18 @@ export class Room {
         for (const o of [...this.circles.values()]) {
           if (o.kind === 'boss' || o.kind === 'item' || o.kind === 'gold' || isGuarded(o, now)) continue;
           const q = circlePos(o, now);
-          if (action.kind === 'fieldClear' || Math.hypot(q.x - x, q.y - y) <= o.r + I.bombR) this.claim(p, o, now, 'blast', true, false, true);
+          if (action.kind !== 'fieldClear' && Math.hypot(q.x - x, q.y - y) > o.r + I.bombR) continue;
+          // 폭죽·필드 클리어에 휘말린 폭탄 원은 폭발이 퍼진 뒤 연쇄로 터진다
+          if (o.kind === 'bomb') this.queueBlast(p.id, o, now);
+          else this.claim(p, o, now, 'blast', true, false, true);
         }
         break;
       case 'timeStop': {
         const ms = I.freezeMs * duration;
         const ids = holdCircles(this.circles.values(), now, ms);
         this.freezeUntil = now + ms;
+        // 예약된 연쇄 폭발도 멈춘 시간만큼 늦게
+        for (const b of this.pendingBlasts) b.at += ms;
         // 예고 중인 레이저도 멈춘 시간만큼 늦게 쏜다 (시간 정지 중에는 쏘지 않음)
         holdLasers(this.lasers, now, ms);
         // 예약된 웨이브 원도 정지가 끝난 뒤로 미룬다 (나선 간격은 유지)
@@ -1995,6 +2050,7 @@ export class Room {
   }
 
   private end(coopWin = false, coopReason?: CoopResult['reason']) {
+    this.pendingBlasts = [];
     const coopResult = this.coop?.result(Date.now(), this.startAt, coopWin, coopReason);
     this.coop?.dispose();
     this.coop = null;

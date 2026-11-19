@@ -13,3 +13,4 @@ export * from './coopBosses.ts';
 export * from './coopItems.ts';
 export * from './coopCounter.ts';
 export * from './coopSpecial.ts';
+export * from './bomb.ts';

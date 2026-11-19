@@ -241,6 +241,8 @@ export interface ServerToClient {
   'click:rejected': (d: { circleId: number }) => void;
   /** 아이템 원을 잡음. 블라스트(폭죽·필드 클리어)면 이 이벤트가 먼저 오고 circle:claimed가 이어진다 */
   'item:got': (d: { circleId: number | null; by: string; item: ItemId; tier: ItemTier; x: number; y: number; extra?: boolean }) => void;
+  /** 폭탄 원이 터짐: 십자 연출이 먼저, 걸린 원은 circle:claimed(via 'cross')로 이어진다. chain: 연쇄로 터짐 */
+  'bomb:blast': (d: { circleId: number; by: string; x: number; y: number; chain: boolean }) => void;
   'zone:add': (z: Zone) => void;
   /** 레이저 예고 (at에 발사) */
   'laser:warn': (d: LaserVolley) => void;

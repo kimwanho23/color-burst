@@ -47,7 +47,7 @@ const SCORE_TIER: Record<ScoreTier, { col: string; size: number }> = {
 /** 보스 처치 배너 높이: 판 중앙에서 220 위 (화면 문구와 안 겹치게) */
 const BANNER_Y = FIELD.h / 2 - 220, BANNER_LIFE = 1.2;
 
-type BasicKind = Exclude<CircleKind, 'boss' | 'item' | 'threat' | 'crystal'>;
+type BasicKind = Exclude<CircleKind, 'boss' | 'item' | 'threat' | 'crystal' | 'bomb'>;
 const GOLD_TRAIL = [40, 80, 120];
 
 type Fx =
@@ -61,7 +61,9 @@ type Fx =
   /** 자석 끌림 선 */
   | { type: 'line'; x: number; y: number; x1: number; y1: number; col: string; t: number; life: number }
   /** 화면 전체 번쩍임 */
-  | { type: 'flash'; t: number; life: number };
+  | { type: 'flash'; t: number; life: number }
+  /** 폭탄 원 십자 폭발: 중심에서 가로·세로 판 끝까지 뻗는 빛줄기 (w: 줄 굵기) */
+  | { type: 'cross'; x: number; y: number; w: number; t: number; life: number };
 
 /** 한 번에 화면에 있을 수 있는 효과 수. 넘으면 새 파티클은 버린다 (링·글자는 유지) */
 const MAX_FX = 400;
@@ -243,6 +245,11 @@ export class Renderer {
   /** 협력전: 잡은 원에서 보스로 날아가는 빛줄기 */
   beam(x0: number, y0: number, x1: number, y1: number, col: string) { this.add({ type: 'line', x: x0, y: y0, x1, y1, col, t: 0, life: 0.3 }); }
   shockwave(x: number, y: number, R: number) { this.add({ type: 'ring', x, y, col: '#fff', t: 0, life: 0.35, r0: 10, r1: R, w: 6 }); }
+  /** 폭탄 원 십자 폭발. 효과 줄이기면 번쩍임·파편 없이 빛줄기만 */
+  crossBlast(x: number, y: number, w: number) {
+    this.add({ type: 'cross', x, y, w, t: 0, life: 0.45 });
+    if (!reduceMotion) { this.add({ type: 'ring', x, y, col: '#ffb347', t: 0, life: 0.3, r0: 10, r1: 90, w: 6 }); this.sparks(x, y, '#ffcf70', 10, 360); }
+  }
   crystalFailure() {
     const x = FIELD.w / 2, y = FIELD.h / 2;
     const r = Math.hypot(x, y);
@@ -380,6 +387,7 @@ export class Renderer {
       fade(c);
       if (c.kind === 'gold' && !this.warp) this.drawGoldTrail(c, s.now);
       if (c.kind === 'item') this.drawItem(c, p.x, p.y, now, r);
+      else if (c.kind === 'bomb') this.drawBomb(p.x, p.y, now, r);
       else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, s);
       else if (c.kind === 'crystal') crystals.push({ c, x: p.x, y: p.y, r });
       else this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
@@ -419,6 +427,18 @@ export class Renderer {
         const mx = (f.x + f.x1) / 2 + (f.y1 - f.y) * 0.2, my = (f.y + f.y1) / 2 - (f.x1 - f.x) * 0.2;
         ctx.strokeStyle = f.col; ctx.lineWidth = 4; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.quadraticCurveTo(mx, my, f.x1, f.y1); ctx.stroke();
+      }
+      if (f.type === 'cross') {
+        // 처음 0.2초에 판 끝까지 뻗고, 나머지 시간 동안 가늘어지며 사라진다
+        const reach = Math.min(1, f.t / 0.2), fadeK = Math.max(0, (f.t - 0.2) / (f.life - 0.2));
+        const L = Math.max(FIELD.w, FIELD.h) * reach, w = f.w * (1 - 0.6 * fadeK);
+        ctx.globalAlpha = 0.85 * (1 - fadeK);
+        ctx.fillStyle = '#ffe3a3';
+        ctx.fillRect(f.x - L, f.y - w / 2, L * 2, w);
+        ctx.fillRect(f.x - w / 2, f.y - L, w, L * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(f.x - L, f.y - w / 6, L * 2, w / 3);
+        ctx.fillRect(f.x - w / 6, f.y - L, w / 3, L * 2);
       }
       if (f.type === 'flash') { ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.55 * (1 - k); ctx.fillRect(0, 0, FIELD.w, FIELD.h); }
       if (f.type === 'miss') { ctx.strokeStyle = '#9ca2d6'; ctx.lineWidth = 3; const m = 12; ctx.beginPath(); ctx.moveTo(f.x - m, f.y - m); ctx.lineTo(f.x + m, f.y + m); ctx.moveTo(f.x + m, f.y - m); ctx.lineTo(f.x - m, f.y + m); ctx.stroke(); }
@@ -898,6 +918,26 @@ export class Renderer {
   }
 
   /** 아이템 원: 등급색 테두리 + 천천히 흔들리는 ? (전설은 프리즘이 돈다) */
+  /** 폭탄 원: 검은 몸체, 흰 십자 무늬, 위쪽 심지 불꽃이 깜빡인다 */
+  private drawBomb(x: number, y: number, frameNow: number, r: number) {
+    const ctx = this.ctx;
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = '#16161c';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#ffb347'; ctx.stroke();
+    const k = r * 0.55, t = r * 0.14;
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.fillRect(-k, -t, k * 2, t * 2); ctx.fillRect(-t, -k, t * 2, k * 2);
+    // 심지
+    ctx.strokeStyle = '#c9a36b'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, -r); ctx.quadraticCurveTo(r * 0.25, -r * 1.25, r * 0.1, -r * 1.4); ctx.stroke();
+    if (reduceMotion || Math.floor(frameNow / 125) % 2 === 0) {
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath(); ctx.arc(r * 0.1, -r * 1.4, r * 0.16, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   private drawItem(c: Circle, x: number, y: number, frameNow: number, r = c.r) {
     const ctx = this.ctx, tier = c.itemTier ?? 0;
     ctx.save(); ctx.translate(x, y);
@@ -1366,7 +1406,7 @@ export class Renderer {
 }
 
 /** 점수판, 버튼 등에 쓰는 작은 SVG 아이콘 */
-export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat' | 'crystal'>, size = 22) {
+export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat' | 'crystal' | 'bomb'>, size = 22) {
   const s = size, h = s / 2;
   if (color === 'boss') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h - 1}" fill="#ffc23a" stroke="#fff" stroke-width="1.5"/><path d="M${s * .28} ${s * .62}V${s * .36}L${s * .39} ${s * .5}L${h} ${s * .3}L${s * .61} ${s * .5}L${s * .72} ${s * .36}V${s * .62}Z" fill="#502d00" fill-opacity=".6"/></svg>`;
   if (color === 'rainbow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><defs><linearGradient id="rg${s}" x1="0" x2="1"><stop offset="0" stop-color="#ff5d73"/><stop offset=".5" stop-color="#ffd43b"/><stop offset="1" stop-color="#4dabf7"/></linearGradient></defs><circle cx="${h}" cy="${h}" r="${h - 1}" fill="url(#rg${s})"/></svg>`;

@@ -326,6 +326,10 @@ export const RULES = {
     rainbowRain: 0.15,
     itemRushMult: 4,
   },
+  /** 특수 원: 폭탄 원은 터지면 가로·세로 판 끝까지 십자로 걸린 원을 가져간다. halfWidth 줄 반폭, chainDelayMs 연쇄 간격 */
+  specialCircles: {
+    bomb: { chance: 0.025, halfWidth: 30, chainDelayMs: 150, r: 36 },
+  },
   /** 아이템 원 */
   items: {
     /** 일반 원이 생길 때 대신 아이템 원이 나올 확률 */
@@ -432,6 +436,8 @@ export interface RoomRules {
   arcadeRoundSec: number;
   /** 아이템 원 등장 */
   items: boolean;
+  /** 특수 원(폭탄 원) 등장. 협력전에서는 꺼짐 */
+  specialCircles: boolean;
   /** 발사 패턴(부채꼴·동시 다발·나선 웨이브) */
   waves: boolean;
   /** 레이저 발사기 (커서가 맞으면 스턴) */
@@ -492,7 +498,7 @@ export const DEFAULT_RULES: RoomRules = {
   feverMult: 3, feverSec: 7, feverGain: 1,
   rainbowPct: 3, stealPenalty: true, markSec: 4,
   comeback: false, boss: true, missPenalty: true,
-  mode: 'classic', arcadeRoundSec: 30, items: true, waves: true, laser: true, sabotage: true, chaos: false,
+  mode: 'classic', arcadeRoundSec: 30, items: true, specialCircles: true, waves: true, laser: true, sabotage: true, chaos: false,
   eventPct: 10, themePct: 15, mapPct: 35, laserWidth: 22, laserFreq: 1, circleScale: 1, team: false, survival: false,
   coop: false, coopLevel: 'normal',
 };
@@ -500,7 +506,7 @@ export const DEFAULT_RULES: RoomRules = {
 /** 튜토리얼 방: 단계별 판만 (보스·아이템·무지개·웨이브·이벤트·레이저·패턴 없음) */
 export const TUTORIAL_RULES: RoomRules = {
   ...DEFAULT_RULES, mode: 'classic', roundSec: 60, boss: false, laser: false, sabotage: false, mapPct: 0, eventPct: 0, themePct: 0, team: false, survival: false, coop: false,
-  rainbowPct: 0, items: false, waves: false, chaos: false, comeback: false,
+  rainbowPct: 0, items: false, specialCircles: false, waves: false, chaos: false, comeback: false,
 };
 
 export const PRESETS = {
@@ -511,7 +517,7 @@ export const PRESETS = {
   },
   hardcore: {
     name: '하드코어', desc: '빠르고 많은 원, 짧은 피버',
-    rules: { ...DEFAULT_RULES, speed: 1.5, density: 1.3, feverMult: 2, feverSec: 4, feverGain: 0.7, rainbowPct: 0, items: false, mapPct: 50, laserWidth: 30 },
+    rules: { ...DEFAULT_RULES, speed: 1.5, density: 1.3, feverMult: 2, feverSec: 4, feverGain: 0.7, rainbowPct: 0, items: false, specialCircles: false, mapPct: 50, laserWidth: 30 },
   },
   chill: {
     name: '느긋하게', desc: '천천히, 처음 하는 친구와 함께',
@@ -549,7 +555,7 @@ export function sanitizeRules(base: RoomRules, input: Partial<RoomRules>): RoomR
     const v = input[k];
     if (typeof v === 'number' && choices.includes(v)) out[k] = v;
   }
-  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'waves', 'laser', 'sabotage', 'chaos', 'team', 'survival', 'coop'] as const) {
+  for (const k of ['stealPenalty', 'comeback', 'boss', 'missPenalty', 'items', 'specialCircles', 'waves', 'laser', 'sabotage', 'chaos', 'team', 'survival', 'coop'] as const) {
     if (typeof input[k] === 'boolean') out[k] = input[k]!;
   }
   if (typeof input.coopLevel === 'string' && COOP_LEVELS.includes(input.coopLevel)) out.coopLevel = input.coopLevel;
@@ -586,6 +592,8 @@ export interface GameRules {
   missPenalty: boolean;
   arcade: boolean;
   items: boolean;
+  /** 폭탄 원 등장 (협력전은 항상 꺼짐) */
+  specialCircles: boolean;
   waves: boolean;
   laser: boolean;
   sabotage: boolean;
@@ -635,6 +643,7 @@ function baseGameRules(r: RoomRules): GameRules {
     team: r.team,
     survival: r.survival && !r.team,
     items: r.items,
+    specialCircles: r.specialCircles !== false && !r.coop,
     waves: r.waves,
     laser: r.laser,
     sabotage: r.sabotage,
@@ -655,7 +664,7 @@ export type ColorIndex = 0 | 1 | 2 | 3;
 export type BossType = 'normal' | 'guard' | 'rage' | 'runner' | 'raid';
 /** 아케이드 라운드 테마 */
 export type ThemeId = 'goldRush' | 'bossRush' | 'reverse' | 'rainbowRain' | 'itemRush' | 'allYellow';
-export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold' | 'threat' | 'crystal';
+export type CircleKind = ColorIndex | 'y' | 'rainbow' | 'boss' | 'item' | 'gold' | 'threat' | 'crystal' | 'bomb';
 
 export interface Circle {
   id: number;
@@ -708,15 +717,15 @@ export interface PlayerStats {
   src: ScoreSrc;
 }
 
-/** 점수 출처: 원(직접·넓은 손·헛손질 보정·자동 획득), 콤보 보너스, 자석, 황금 원, 보스, 견제(견제·반격·강탈) */
-export type SrcKey = 'circle' | 'combo' | 'magnet' | 'gold' | 'boss' | 'steal' | 'threat';
-export const SRC_KEYS: readonly SrcKey[] = ['circle', 'combo', 'magnet', 'gold', 'boss', 'steal', 'threat'];
+/** 점수 출처: 원(직접·넓은 손·헛손질 보정·자동 획득), 콤보 보너스, 자석, 황금 원, 보스, 견제(견제·반격·강탈), 폭탄(십자에 걸린 원) */
+export type SrcKey = 'circle' | 'combo' | 'magnet' | 'gold' | 'boss' | 'steal' | 'threat' | 'bomb';
+export const SRC_KEYS: readonly SrcKey[] = ['circle', 'combo', 'magnet', 'gold', 'boss', 'steal', 'threat', 'bomb'];
 /** lost: 남에게 빼앗기거나 감점된 점수. fever·jackpot: 참고값(피버 중 얻은 점수, 잭팟으로 더 얻은 점수, 위 출처와 겹침) */
 export interface ScoreSrc extends Record<SrcKey, number> { lost: number; fever: number; jackpot: number }
 
 export const emptyStats = (): PlayerStats => ({
   hits: 0, misses: 0, steals: 0, counters: 0, fevers: 0, maxCombo: 0, bossHits: 0, bossKills: 0,
-  src: { circle: 0, combo: 0, magnet: 0, gold: 0, boss: 0, steal: 0, threat: 0, lost: 0, fever: 0, jackpot: 0 },
+  src: { circle: 0, combo: 0, magnet: 0, gold: 0, boss: 0, steal: 0, threat: 0, bomb: 0, lost: 0, fever: 0, jackpot: 0 },
 });
 
 /** 점수 출처 기록. fever: 피버 중이면 참고값에도, jackpot(>1): 잭팟으로 더 얻은 몫을 참고값에 */
@@ -940,8 +949,8 @@ export function itemMult(p: PlayerState, now: number, consume: boolean, gold = t
 
 export type ClaimType = 'own' | 'yellow' | 'rainbow' | 'steal' | 'feverSteal' | 'counter';
 /** 어떻게 잡았는지: 직접 클릭, 넓은 손 범위, 자석, 장판, 폭죽·필드 클리어 */
-/** save: 헛손질 보정으로 대신 잡음 */
-export type ClaimVia = 'click' | 'range' | 'magnet' | 'zone' | 'blast' | 'save';
+/** save: 헛손질 보정으로 대신 잡음, cross: 폭탄 원의 십자 폭발 */
+export type ClaimVia = 'click' | 'range' | 'magnet' | 'zone' | 'blast' | 'save' | 'cross';
 
 export interface ClaimResult {
   type: ClaimType;
@@ -1403,6 +1412,8 @@ export function spawnInterval(elapsedMs: number, G: GameRules) {
 /** 원 생성 옵션: 아이템 원 확률, 색 고정(내 색 비·전원 같은 색), 확률 덮어쓰기(라운드 테마) */
 export interface SpawnOpts {
   itemChance?: number;
+  /** 폭탄 원 확률 (아이템 원이 아닐 때, forceKind가 없을 때만 굴림) */
+  bombChance?: number;
   forceKind?: CircleKind;
   yellowChance?: number;
   rainbowChance?: number;
@@ -1413,10 +1424,12 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
   const prog = Math.min(1, elapsedMs / G.roundMs);
   const rush = elapsedMs > G.roundMs - RULES.finalRushMs ? 1.25 : 1;
   const item = rand() < (opts.itemChance ?? 0);
+  const bomb = !item && opts.forceKind === undefined && !!opts.bombChance && rand() < opts.bombChance;
   const rainbow = opts.rainbowChance ?? G.rainbowChance;
   const roll = rand();
   let kind: CircleKind;
   if (item) kind = 'item';
+  else if (bomb) kind = 'bomb';
   else if (opts.forceKind !== undefined) kind = opts.forceKind;
   else if (roll < rainbow) kind = 'rainbow';
   else if (roll < rainbow + (opts.yellowChance ?? RULES.yellowChance)) kind = 'y';
@@ -1430,6 +1443,7 @@ export function makeCircle(id: number, now: number, elapsedMs: number, kinds: Co
     born: now,
   };
   if (item) { c.r = RULES.items.r; c.itemTier = rollItemTier(rand); }
+  else if (bomb) c.r = RULES.specialCircles.bomb.r;
   else c.r *= G.circleScale ?? 1;
   return c;
 }
@@ -1619,6 +1633,8 @@ export function resolveClaim(
   const direct = via === 'click' && !opts.reflected;
   if (direct && kind !== claimer.color) claimer.previousOwnZone = null;
   const blast = via === 'blast';
+  // 폭죽(blast)·십자(cross): 남의 색도 견제 페널티·표적 없이 잡는다
+  const area = blast || via === 'cross';
   // 자석으로 끌어온 원: 점수만 (콤보·콤보 보너스·잭팟·피버 게이지 없음)
   const magnet = via === 'magnet';
   const fever = isFever(claimer, now);
@@ -1668,7 +1684,7 @@ export function resolveClaim(
     steal = true;
     const owner = players.find((p) => p.color === kind);
     const forcedCounter = via === 'click' && !!owner && !isMarked(owner, now) && claimer.counterReady && K.has('counterStance');
-    if (blast || owner?.outAt) {
+    if (area || owner?.outAt) {
       // 폭죽·필드 클리어, 서바이벌 탈락자 색의 남은 원: +1만, 견제 페널티·표적·반격·강탈·반사 없음
       res.type = 'feverSteal'; pts = P.stealCalm;
     } else if (owner && !forcedCounter && ((modsFor(owner).reflect > 0 && owner.reflectLeft > 0) || hasLegend(owner, 'reflect')) && !isMarked(owner, now)) {
@@ -1757,9 +1773,9 @@ export function resolveClaim(
   }
 
   // 견제왕 조합: 견제·반격 점수 ×3 (폭죽·필드 클리어 제외)
-  if (steal && !blast && K.has('stealKing')) pts *= COMBO.stealMult;
+  if (steal && !area && K.has('stealKing')) pts *= COMBO.stealMult;
   // 견제 시너지: 견제·반격 점수 + (폭죽·필드 클리어 제외)
-  if (steal && !blast && SY.has('견제')) pts += SYN.stealAdd;
+  if (steal && !area && SY.has('견제')) pts += SYN.stealAdd;
   res.zone = opts.zone ?? 0;
   if (!steal && !magnet) {
     // 찰나의 순간·중앙의 왕 레전드: 그 구역에서 잡으면 콤보 +1 더
@@ -1791,7 +1807,7 @@ export function resolveClaim(
   if (bonus > 0) { res.comboBonus = true; pts += bonus; }
   const st = claimer.stats;
   st.hits++;
-  if (!blast && (res.type === 'steal' || res.type === 'feverSteal')) st.steals++;
+  if (!area && (res.type === 'steal' || res.type === 'feverSteal')) st.steals++;
   if (res.type === 'counter') st.counters++;
   if (res.feverStarted) st.fevers++;
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
@@ -1800,7 +1816,7 @@ export function resolveClaim(
   const rebound = now < claimer.reboundUntil ? 1 + m.rebound / 100 : 1;
   const viaLegend = (via === 'range' && L.has('wideHand')) ? LEGEND.wideHandMult : (via === 'save' && L.has('missSave')) ? LEGEND.missSaveMult : 1;
   const feverMult = fever ? feverMultOf(claimer, G) : 1;
-  const mult = capMult((after ? afterMultOf(claimer) : feverMult) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && !magnet && pts > 0)
+  const mult = capMult((after ? afterMultOf(claimer) : feverMult) * scoreBoostOf(m) * itemMult(claimer, now, true, !area && !magnet && pts > 0)
     * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend * (precise ? 1 + m.precise : 1));
   // 잭팟은 맨 마지막에 곱한다 (블라스트·자석은 없음). 속사 레전드면 이번 잭팟 확정
   if (!blast && !magnet) {
@@ -1845,9 +1861,11 @@ export function resolveClaim(
   // 점수 출처: 콤보 보너스 몫은 기본 점수와의 비율대로 나눈다. 강탈은 견제
   const ref = { fever, jackpot: res.jackpot };
   const comboPart = bonus > 0 && pts > 0 ? Math.round(scored * bonus / pts) : 0;
-  addSrc(claimer, magnet ? 'magnet' : steal ? 'steal' : 'circle', scored - comboPart + generatorBonus, ref);
-  if (fixedBonus) addSrc(claimer, 'circle', fixedBonus);
-  addSrc(claimer, 'combo', comboPart, ref);
+  // 십자 폭발로 잡은 원은 원 점수·콤보 몫 모두 폭탄 출처로
+  const cross = via === 'cross';
+  addSrc(claimer, cross ? 'bomb' : magnet ? 'magnet' : steal ? 'steal' : 'circle', scored - comboPart + generatorBonus, ref);
+  if (fixedBonus) addSrc(claimer, cross ? 'bomb' : 'circle', fixedBonus);
+  addSrc(claimer, cross ? 'bomb' : 'combo', comboPart, ref);
   addSrc(claimer, 'steal', res.plundered);
   if (res.shieldBash) addSrc(claimer, 'steal', res.shieldBash, { fever });
   if (!magnet && !steal && m.harvest && !claimer.silenced && uniqueStacks(claimer, 'harvest') < UNIQUE.harvest.max) {

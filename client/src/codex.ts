@@ -1,5 +1,5 @@
 /** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, COMBOS, treasureEvery, CURSES, EVOLVE, SYNERGY, SOLO_SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, UNIQUES, DEFAULT_RULES, comboProgress, type AbilityCategory, type AbilityId, type Pick } from '@color-burst/shared';
+import { ABILITIES, ABILITY, BOMB_DESC, COMBOS, treasureEvery, CURSES, EVOLVE, SYNERGY, SOLO_SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, UNIQUES, DEFAULT_RULES, comboProgress, type AbilityCategory, type AbilityId, type Pick } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, comboIcon, icon, itemIcon } from './icons.ts';
 import { scoreTable } from './rulesUI.ts';
 
@@ -71,7 +71,7 @@ function specialTab() {
 }
 
 function itemTab() {
-  return `<p class="hint"><code>?</code> 아이템 원을 잡으면 그 자리에서 바로 발동. 테두리 색이 등급</p>${ITEM_TIERS.map((tier, t) => `<h3 class="it${t}">${tier.name}</h3><ul class="cx-list">${ITEM_IDS.filter((id) => ITEMS[id].tier === t).map((id) => `
+  return `<p class="hint"><code>?</code> 아이템 원을 잡으면 그 자리에서 바로 발동. 테두리 색이 등급</p><p class="hint">💣 폭탄 원(특수 원): ${esc(BOMB_DESC)}</p>${ITEM_TIERS.map((tier, t) => `<h3 class="it${t}">${tier.name}</h3><ul class="cx-list">${ITEM_IDS.filter((id) => ITEMS[id].tier === t).map((id) => `
     <li><span class="cx-ic it${t}">${itemIcon(id, 22)}</span><div><b>${esc(ITEMS[id].name)}</b>${ITEMS[id].sabotage ? '<em class="cx-sab">방해</em>' : ''}<p>${esc(ITEMS[id].desc)}</p></div></li>`).join('')}</ul>`).join('')}`;
 }
 

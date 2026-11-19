@@ -104,6 +104,8 @@ let lastClick = { x: 0, y: 0 };
 /** 판 중앙과 중앙에서 구석까지 거리 (화면 문구·폭죽 위치) */
 const CX = FIELD.w / 2, CY = FIELD.h / 2, CORNER = Math.hypot(CX, CY);
 let blast = { x: CX, y: CY, R: CORNER };
+/** 마지막 폭탄 원 십자 폭발 중심 (걸린 원을 거리 순으로 늦춰 터뜨린다) */
+let crossAt = { x: CX, y: CY };
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
 /** 지금 판(또는 대기실)의 방 규칙 */
 let rules: RoomRules = DEFAULT_RULES;
@@ -1116,9 +1118,11 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     return;
   }
   const mine = by === myId();
-  const blasted = result.via === 'blast';
-  // 폭죽·필드 클리어: 폭발 중심에서 가까운 원부터 충격파를 따라 차례로 터진다
-  if (blasted) renderer.burstDelayed(x, y, COLORS[who.color].hex, (Math.hypot(x - blast.x, y - blast.y) / blast.R) * 350);
+  const crossed = result.via === 'cross';
+  const blasted = result.via === 'blast' || crossed;
+  // 폭죽·필드 클리어: 폭발 중심에서 가까운 원부터 충격파를 따라 차례로 터진다. 십자 폭발도 중심에서 가까운 순
+  if (crossed) renderer.burstDelayed(x, y, COLORS[who.color].hex, (Math.hypot(x - crossAt.x, y - crossAt.y) / CORNER) * 350);
+  else if (blasted) renderer.burstDelayed(x, y, COLORS[who.color].hex, (Math.hypot(x - blast.x, y - blast.y) / blast.R) * 350);
   else renderer.burst(x, y, COLORS[who.color].hex, mine, isFever(who, serverNow()) ? FEVER_BURST : 1);
   if (mine && result.precise) renderer.preciseRing(x, y);
   if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
@@ -1195,6 +1199,12 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y, extra }) => {
   popOnChip($('scores'), by, itemIcon(item, 22));
   if (item === 'bomb') { blast = { x, y, R: RULES.items.bombR }; renderer.shockwave(x, y, RULES.items.bombR); sfx.bomb(); }
   if (item === 'fieldClear') { blast = { x: CX, y: CY, R: CORNER }; renderer.flash(); renderer.shockwave(CX, CY, CORNER); sfx.clear(); }
+});
+socket.on('bomb:blast', ({ circleId, x, y }) => {
+  circles.delete(circleId); pending.delete(circleId);
+  crossAt = { x, y };
+  renderer.crossBlast(x, y, RULES.specialCircles.bomb.halfWidth * 2);
+  sfx.cross();
 });
 socket.on('zone:add', (z) => { zones.push(z); if (z.by === myId()) sfx.zone(); });
 // ---------- 게임 커서: 레이저·스턴·자석 끌기 ----------
@@ -1423,7 +1433,7 @@ function onCanvasPress(e: PointerEvent) {
   } else {
     // 넓은 손·자석으로 잡힐 원이 있으면 빗나간 표시를 하지 않는다 (서버가 잡아서 알려 준다)
     // 넓은 손 범위로 같이 잡힐 원이 있으면 빗나간 게 아니다
-    const saved = !!m && (rangeTargets(circles.values(), (k) => ownsKind(k, m, players, !!room?.rules.team), x, y, now, reach, pending, RULES.lagWindowMs).length > 0 || missSaveNear(m, x, y, now));
+    const saved = !!m && (rangeTargets(circles.values(), (k) => k === 'bomb' || ownsKind(k, m, players, !!room?.rules.team), x, y, now, reach, pending, RULES.lagWindowMs).length > 0 || missSaveNear(m, x, y, now));
     // 빈 곳 페널티가 꺼져 있으면 흔들림·소리 없이 표시만
     // 보스가 막 터진 직후의 빈 곳 클릭은 서버도 페널티를 주지 않으므로 가볍게만 표시
     const grace = now - bossKilledAt < RULES.boss.killGraceMs;

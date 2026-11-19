@@ -1,10 +1,10 @@
 /** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 (점수표는 도감 '규칙' 탭) */
-import { ARCADE, COOP_LEVELS, MODE_KEYS, PRESETS, RULES, RULE_CHOICES, matchPreset, type CoopLevel, type PresetId, type RoomRules } from '@color-burst/shared';
+import { ARCADE, BOMB_DESC, COOP_LEVELS, MODE_KEYS, PRESETS, RULES, RULE_CHOICES, matchPreset, type CoopLevel, type PresetId, type RoomRules } from '@color-burst/shared';
 import { shapeSVG } from './render.ts';
 import { UI, icon } from './icons.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
-type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'waves' | 'laser' | 'sabotage';
+type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'specialCircles' | 'waves' | 'laser' | 'sabotage';
 const MAP_LABEL: Record<number, string> = { 0: '끄기', 20: '가끔', 35: '보통', 50: '자주', 80: '많이', 100: '항상' };
 const pct3 = (v: number) => (v === 0 ? '끄기' : v >= 30 ? `자주 (${v}%)` : `가끔 (${v}%)`);
 
@@ -33,12 +33,13 @@ const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
   { key: 'stealPenalty', label: '평상시 견제 페널티' },
   { key: 'comeback', label: '꼴찌 보정 (피버 빨리 참)' },
   { key: 'items', label: '아이템 원' },
+  { key: 'specialCircles', label: '특수 원' },
   { key: 'waves', label: '발사 패턴 (웨이브)' },
   { key: 'laser', label: '레이저 (맞으면 스턴)' },
   { key: 'sabotage', label: '방해 아이템 (감도·반대·시야·저격)' },
 ];
 /** 협력전에서 쓰지 않는 설정 (고급 설정에서 숨김) */
-const COOP_OFF = new Set<string>(['roundSec', 'markSec', 'mapPct', 'laserWidth', 'laserFreq', 'boss', 'stealPenalty', 'comeback', 'laser', 'sabotage']);
+const COOP_OFF = new Set<string>(['roundSec', 'markSec', 'mapPct', 'laserWidth', 'laserFreq', 'boss', 'stealPenalty', 'comeback', 'laser', 'sabotage', 'specialCircles']);
 const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string, keyof typeof UI]> = {
   easy: ['이지', '레이저가 얇고 공격이 느려요', 'chill'],
   normal: ['노말', '보통 세기의 공격', 'basic'],
@@ -163,5 +164,6 @@ export function scoreTable(r: RoomRules) {
       <td><ul class="tlist"><li><b>×${m}</b></li><li><small>콤보·피버 게이지도 참</small></li></ul></td></tr>` : ''}
     <tr><td>빈 공간</td>${r.missPenalty ? '<td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td>' : '<td>페널티 없음</td><td>페널티 없음</td>'}</tr>
     ${r.items ? '<tr><td>? 아이템 원</td><td colspan="2">잡으면 무작위 아이템이 바로 발동 (점수 없음)</td></tr>' : ''}
+    ${r.specialCircles && !r.coop ? `<tr><td>💣 폭탄 원</td><td colspan="2">${BOMB_DESC}</td></tr>` : ''}
   </table>`;
 }
