@@ -302,3 +302,33 @@ test('점수 출처: 내 파편으로 얻은 점수는 분열, 출처 합 = 총�
   assert.ok(SRC_KEYS.includes('split'));
   assert.equal(SRC_KEYS.reduce((a, k) => a + src[k], 0) - src.lost, me.score);
 });
+
+test('시간 정지 중 터진 분열 원의 파편은 정지가 끝날 때까지 멈춰 있다', (t) => {
+  const { room, r, me, now } = playing(t);
+  r.freezeUntil = now() + 1_000;
+  r.circles.set(1, at(1, 'split', CX + 300, CY, now()));
+  room.click(me.id, { circleId: 1, x: CX + 300, y: CY });
+  const pieces = of('circle:spawn') as Circle[];
+  assert.equal(pieces.length, S.count);
+  for (const c of pieces) assert.deepEqual(c.holds, [[now(), 1_000]]);
+});
+
+test('시간 정지 중 남의 파편을 눌러도 기절하지 않는다', (t) => {
+  const { room, r, me, other, now } = playing(t);
+  r.freezeUntil = now() + 1_000;
+  r.circles.set(5, piece(5, me, CX + 300, CY + 200, now()));
+  room.click(other.id, { circleId: 5, x: CX + 300, y: CY + 200 });
+  assert.equal(other.stunUntil, 0);
+  assert.ok(r.circles.has(5));
+  assert.equal(count('split:hit'), 0);
+});
+
+test('시간 정지 중 터진 얼음 원은 정지가 끝난 뒤부터 느려짐 1초를 센다', (t) => {
+  const { room, r, me, other, now } = playing(t);
+  r.freezeUntil = now() + 1_000;
+  r.circles.set(1, at(1, 'ice', CX + 300, CY, now()));
+  room.click(me.id, { circleId: 1, x: CX + 300, y: CY });
+  assert.equal(other.frostAt, now() + 1_000 + I.slowMs);
+  assert.equal(other.debuffs.frost, now() + 1_000 + I.slowMs);
+  assert.equal(of('ice:burst')[0].freezeAt, now() + 1_000 + I.slowMs);
+});

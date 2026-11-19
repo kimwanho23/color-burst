@@ -7,7 +7,7 @@ import {
   applyItem, itemDurationMult, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsFor, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
-  auraAt, inAura, inCross, isSpecialCircle, isFoe, addDebuff,
+  auraAt, inAura, inCross, isSpecialCircle, isFoe,
   WAVE_PATTERNS, makeWave, nextWaveIn,
   type BotLevel, type Circle, type ClaimResult, type CoopResult, type ClaimVia, type ClientToServer, type ColorIndex, type GameRules, type PlayerState, type PresetId, type RoomRules,
   type AbilityId, type ArcadeState, type Pick, type RoomSnapshot, type ServerToClient, type SpawnOpts, type Zone,
@@ -887,8 +887,8 @@ export class Room {
         else if (c.kind === 'item') this.claimItem(p, c, now);
         // 막 보호 구역에 들어가 터지지 않았으면 거절 (화면이 다시 누를 수 있게)
         else if (isSpecialCircle(c.kind)) { if (!this.popSpecial(p, c, now)) { got = false; this.rejectTo(id, c.id); } }
-        // 남의 분열 파편을 누르면 견제가 아니라 닿은 것과 같다 (기절)
-        else if (c.splitBy && !this.owns(c.kind, p)) this.hitPiece(p, c, now);
+        // 남의 분열 파편을 누르면 견제가 아니라 닿은 것과 같다 (기절). 시간 정지 중에는 거절
+        else if (c.splitBy && !this.owns(c.kind, p)) { if (now < this.freezeUntil) { got = false; this.rejectTo(id, c.id); } else this.hitPiece(p, c, now); }
         else if (c.kind === 'gold') this.claimGold(p, c, now);
         else {
           const precise = !p.bot && this.hitWithLag(c, now, d.x, d.y, c.r * (AUG.preciseR - 1));
@@ -1879,6 +1879,8 @@ export class Room {
     const I = RULES.specialCircles.ice;
     const q = circlePos(c, now);
     const targets: string[] = [];
+    // 시간 정지 중에 터지면 정지가 끝난 뒤부터 느려짐을 센다
+    const freezeAt = Math.max(now, this.freezeUntil) + I.slowMs;
     for (const o of this.players) {
       if (!isFoe(p, o, this.rules.team) || o.outAt) continue;
       // 기절을 막는 조건(철벽·위험 스턴 무적 시간)이면 느려짐도 건너뛴다
@@ -1886,10 +1888,10 @@ export class Room {
       targets.push(o.id);
       // 이미 얼어 가는 중이면 새로 시작하지 않는다
       if (o.frostAt) continue;
-      addDebuff(o, 'frost', I.slowMs, now);
-      o.frostAt = now + I.slowMs;
+      o.debuffs.frost = freezeAt;
+      o.frostAt = freezeAt;
     }
-    this.io.to(this.code).emit('ice:burst', { circleId: c.id, by: p.id, x: q.x, y: q.y, targets, freezeAt: now + I.slowMs });
+    this.io.to(this.code).emit('ice:burst', { circleId: c.id, by: p.id, x: q.x, y: q.y, targets, freezeAt });
     this.emitPlayers();
     return true;
   }
@@ -1907,6 +1909,8 @@ export class Room {
         id: this.nextCircleId++, kind: p.color, from: { x: q.x, y: q.y }, angle: a0 + (i * 2 * Math.PI) / S.count,
         speed: c.speed * S.speedMult, r: S.pieceR, born: now, splitBy: p.id,
       };
+      // 시간 정지 중에 생긴 파편도 정지가 끝날 때까지 멈춘다
+      if (now < this.freezeUntil) piece.holds = [[now, this.freezeUntil - now]];
       this.circles.set(piece.id, piece);
       this.io.to(this.code).emit('circle:spawn', piece);
     }
