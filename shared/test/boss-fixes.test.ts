@@ -28,20 +28,23 @@ const slowAt = (id: number, kind: Circle['kind'], x: number, y: number, now: num
   return { id, kind, angle: Math.atan2(y - CY, x - CX), speed: d / 100, r: 40, born: now - 100_000 };
 };
 
-test('연쇄 콤보: 보스 타격으로 10콤보 문턱을 넘어도 근처 내 원 자동 획득', (t) => {
+test('보물 상자: 보스 타격도 발동까지 콤보에 포함', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
   t.mock.method(Math, 'random', () => 0.99);
-  me.picks = [{ id: 'chainCombo', tier: 0 }];
+  me.picks = [{ id: 'treasure', tier: 0 }];
   me.combo = 9;
+  me.chestCount = 19;
+  sent.length = 0;
   const boss = { ...slowAt(90, 'boss', 1200, 450, now), boss: 'normal', r: 90, hp: 10, maxHp: 10 } as Circle;
   circles.set(90, boss);
   circles.set(91, slowAt(91, me.color, 1250, 480, now));
   const p0 = circlePos(boss, now);
   try {
     room.click(me.id, { circleId: 90, x: p0.x, y: p0.y });
-    assert.equal(me.combo, 11, '보스 타격 10콤보 + 연쇄로 잡은 원 1개');
-    assert.equal(circles.has(91), false, '문턱을 넘은 보스 타격으로 근처 내 원을 잡음');
+    assert.equal(me.combo, 10);
+    assert.equal(me.chestCount, 0);
+    assert.equal(sent.filter((e) => e === 'item:got').length, 1);
   } finally { room.destroy(); }
 });
 

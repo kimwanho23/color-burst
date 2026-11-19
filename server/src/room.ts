@@ -2,9 +2,9 @@ import type { Server } from 'socket.io';
 import { BEATS, enterStep as enterTutorialStep, freeDone, freeKinds as tutorialKinds, type Beat } from './tutorial.ts';
 import { randomUUID } from 'node:crypto';
 import {
-  ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosOf, goldGain, crossedCombo, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
+  ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, addBuff, autoEveryMs, buffOn, AUG, COMBO, LEGEND, SPECIAL, addFever, combosFor, goldGain, clearCombo, preventComboBreak, releaseSilence, onFeverStarted, pickMirror, hasLegendPick, rollItemTier, treasureEvery, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
   applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
-  applyItem, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsOf, reachOf, rollItem,
+  applyItem, itemDurationMult, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsFor, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
   auraAt, inAura,
@@ -113,6 +113,7 @@ export class Room {
   private bossKilledAt = 0;
   // ---------- 게임 커서 ----------
   /** 플레이어 id → 마지막 커서 위치와 받은 시각 */
+  private pendingItems: (Point & { p: PlayerState; tier: 0 | 1 | 2; now: number; circleId: number | null })[] = [];
   private cursors = new Map<string, { x: number; y: number; at: number }>();
   /** 예고·발사 중인 레이저 볼리들 (hit: 그 볼리에 맞은 플레이어) */
   private lasers: (LaserVolley & { hit: Set<string> })[] = [];
@@ -278,7 +279,7 @@ export class Room {
       return;
     }
     if (d.circleId !== null || [...this.circles.values()].some((c) => isHit(c, at, d.x, d.y))) return;
-    p.combo = 0;
+    clearCombo(p);
     this.emitPlayers();
     this.nextBeat();
   }
@@ -834,6 +835,7 @@ export class Room {
     if (this.phase !== 'play' || this.roundPhase !== 'play' || this.pausedAt || now < this.startAt) return;
     const p = this.players.find((x) => x.id === id);
     if (!p || p.outAt) return;
+    this.updateArcadeTimers(now);
     // 스턴 중이면 클릭 무시 (빈 곳 페널티도 없음)
     if (isStunned(p, now) || !this.allowClick(id, now)) {
       if (d.circleId !== null) this.rejectTo(id, d.circleId);
@@ -865,7 +867,7 @@ export class Room {
         else if (c.kind === 'boss') this.hitBoss(p, c, now);
         else if (c.kind === 'item') this.claimItem(p, c, now);
         else if (c.kind === 'gold') this.claimGold(p, c, now);
-        else this.claim(p, c, now, 'click');
+        else this.claim(p, c, now, 'click', false, !p.bot && this.hitWithLag(c, now, d.x, d.y, c.r * (AUG.preciseR - 1)));
       }
     }
     const reach = reachOf(p, now);
@@ -882,13 +884,13 @@ export class Room {
     // 보스가 터진 직후의 빈 곳 클릭도 페널티 없음
     // 헛손질 보정: 빈 곳이면 반경 안 가장 가까운 내 원을 대신 잡는다 (페널티 없음)
     if (!got && d.circleId === null) {
-      const save = this.nearestMine(p, d, modsOf(p.picks).missSave, now);
+      const save = this.nearestMine(p, d, modsFor(p).missSave, now);
       if (save) { this.claim(p, save, now, 'save'); got = true; }
     }
     if (!got && d.circleId === null) {
       // 이동형 보스 오오라를 눌렀으면 아무 일 없음 (헛클릭도 아님, 닿아 있는 동안의 벌은 updateAura)
       // 튜토리얼: 감점·피버 감소 없이 콤보만 끊는다
-      if (this.tutorial) { p.combo = 0; this.emitPlayers(); return; }
+      if (this.tutorial) { clearCombo(p); this.emitPlayers(); return; }
       // 협력전 탄은 누를 수 없고, 눌러도 헛클릭이 아니다
       if (!this.auraUnder(d, now) && now - this.bossKilledAt >= RULES.boss.killGraceMs && !this.coop?.onShot(d, now)) {
         resolveMiss(p, now, this.G, this.players);
@@ -977,8 +979,11 @@ export class Room {
       this.auraLast.set(p.id, now);
       addFever(p, -A.feverLoss, now, this.G, this.players);
       // 철옹성 조합이면 끊김처럼 80%는 남긴다 (더 많이 남는 쪽)
-      const iron = combosOf(p.picks).has('ironWall') ? Math.floor((p.combo * COMBO.ironKeepPct) / 100) : 0;
-      p.combo = Math.max(Math.floor((p.combo * A.comboKeepPct) / 100), iron);
+      const iron = combosFor(p).has('ironWall') ? Math.floor((p.combo * COMBO.ironKeepPct) / 100) : 0;
+      if (!preventComboBreak(p, modsFor(p), now)) {
+        p.combo = Math.max(Math.floor((p.combo * A.comboKeepPct) / 100), iron);
+        if (!p.combo) clearCombo(p);
+      }
       this.io.to(this.code).emit('aura:hit', { by: p.id, x: cur.x, y: cur.y });
       changed = true;
     }
@@ -1061,6 +1066,7 @@ export class Room {
     this.bossHits.set(c.id, hits);
     const comboBefore = p.combo;
     const r = strikeBoss(p, c, hits, this.players, now, this.G);
+    const comboGained = p.combo - comboBefore;
     // 방어형 보호막: 피해·점수 없음 (헛클릭도 아님) / 붉은 공격형: 감점
     if (r.blocked || r.enraged) {
       this.io.to(this.code).emit('boss:hit', { circleId: c.id, by: p.id, hp: c.hp ?? 0, gained: r.gained, jackpot: 1, ...(r.blocked ? { blocked: true } : { enraged: true }) });
@@ -1084,15 +1090,13 @@ export class Room {
       // 막타를 안 친 독식자도 보스 헌터 게이지로 피버가 터지면 점화
       for (const s of r.solos) {
         const q = this.players.find((o) => o.id === s.id);
-        const qm = q && modsOf(q.picks);
+        const qm = q && modsFor(q);
         if (q && q !== p && s.feverStarted && qm!.ignite > 0) this.autoClaim(q, { x, y }, Infinity, hasLegend(q, 'ignite') ? Infinity : qm!.ignite, now);
       }
     }
     // 점화: 보스 타격으로 피버가 터져도 화면의 내 원 자동 획득 (레전드는 전부)
-    const m = modsOf(p.picks);
-    // 연쇄 콤보: 보스 타격으로 콤보 문턱을 넘어도 근처 내 원 자동 획득
-    const every = hasLegend(p, 'chainCombo') ? LEGEND.chainEvery : AUG.chainEvery;
-    if (m.chainCombo > 0 && crossedCombo(comboBefore, p.combo, every)) this.autoClaim(p, { x, y }, AUG.chainR, m.chainCombo, now);
+    const m = modsFor(p);
+    this.chargeTreasure(p, comboGained, { x, y }, now);
     if (r.feverStarted && m.ignite > 0) this.autoClaim(p, { x, y }, Infinity, hasLegend(p, 'ignite') ? Infinity : m.ignite, now);
     this.emitPlayers();
   }
@@ -1159,7 +1163,12 @@ export class Room {
       if (at >= 0) this.pendingPattern = rollPattern(at);
     }
     // 서바이벌에서 탈락한 사람은 라운드를 시작하지 않는다 (시작 보너스·자동 시전 없음)
-    for (const p of this.players) if (!p.outAt) startRound(p, this.startAt, this.G, this.endAt);
+    const live = this.players.filter((p) => !p.outAt);
+    // 라운드 시작 점수 변화 전에 거울 대상을 고정한다.
+    for (const p of live) p.mirror = pickMirror(p, live, this.G.team);
+    for (const p of live) startRound(p, this.startAt, this.G, this.endAt);
+    const initialFevers = live.filter((p) => isFever(p, this.startAt));
+    for (const p of initialFevers) onFeverStarted(p, this.startAt, this.G, live);
     this.io.to(this.code).emit('game:start', this.playPayload());
   }
 
@@ -1170,6 +1179,7 @@ export class Room {
   private endRound() {
     // 끌려오던 원은 끄는 사람이 잡은 것으로 마무리한 뒤 판을 비운다
     this.resolvePulls(Date.now(), true);
+    this.clearRoundAugments();
     this.clearPattern();
     this.roundPhase = 'pick';
     this.circles.clear();
@@ -1177,6 +1187,15 @@ export class Room {
     this.spawnQueue = [];
     this.io.to(this.code).emit('round:end', { round: this.round });
     this.pickTimer = setTimeout(() => this.startPick(), RULES.roundEndMs);
+  }
+
+  private clearRoundAugments() {
+    for (const p of this.players) {
+      p.silenced = false;
+      p.silencedUntil = 0;
+      p.silenceCastAt = 0;
+      p.mirror = null;
+    }
   }
 
   /** 능력 선택 시작: 저주 정산 → 랜덤 이벤트 → 선택지 */
@@ -1264,12 +1283,14 @@ export class Room {
   private roll(p: PlayerState | undefined, o: Offer) {
     const k = this.round - 1, C = ARCADE.comeback;
     const curses = p ? p.picks.filter((x) => isCurse(x.id)).length : 0;
+    const ceiling = k === 2 && !o.firstDone && !!p && !hasLegendPick(p.picks);
     const opts = {
-      curses, allLegend: o.allLegend || (o.comeback && k === C.legendAt), forceCurse: o.extra.curse,
+      curses, allLegend: ceiling || o.allLegend || (o.comeback && k === C.legendAt), forceCurse: o.extra.curse,
+      unique: true,
       exclude: this.offPool(),
       minTier: (k >= ARCADE.noNormalFrom ? 1 : 0) as 0 | 1,
       guarantee: o.last && !o.firstDone ? ARCADE.lastGuarantee[Math.min(k, ARCADE.lastGuarantee.length - 1)] as 0 | 1 | 2 | 3 : undefined,
-      special: o.comeback && k === C.specialAt && !p?.picks.some((x) => isSpecial(x.id)),
+      special: !ceiling && o.comeback && k === C.specialAt && !p?.picks.some((x) => isSpecial(x.id)),
       owned: p?.picks,
     };
     return rollOptions(k, o.last, Math.random, opts, ARCADE.optionCount + (o.extra.gift ? 1 : 0));
@@ -1279,7 +1300,7 @@ export class Room {
   private offPool(): AbilityId[] {
     // 방해 내성: 레이저·방해 아이템·맵 패턴이 모두 꺼진 방에서만 뺀다
     const noHazard = !this.G.laser && !this.G.sabotage && this.G.mapChance <= 0;
-    return [...(noHazard ? ['laserProof' as const] : []), ...(this.G.items ? [] : ['collector' as const])];
+    return [...(noHazard ? ['laserProof' as const] : []), ...(this.G.items ? [] : ['treasure' as const, 'itemLover' as const])];
   }
 
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
@@ -1318,6 +1339,7 @@ export class Room {
     if (this.pausedAt || this.roundPhase === 'pick') return;
     const now = Date.now();
     if (now < this.startAt) return;
+    this.updateArcadeTimers(now);
     if (this.tutorial) return this.tickTutorial(now);
     // 서바이벌(클래식): 탈락 판정이 판 끝 판정보다 먼저 (마지막 탈락이 곧 판 끝)
     if (this.nextCutAt) { this.updateSurvival(now); if (this.phase !== 'play') return; }
@@ -1347,10 +1369,6 @@ export class Room {
     this.updatePattern(now);
     if (this.phase !== 'play') return;
     this.updateAuto(now);
-    // 과충전 레전드: 피버가 끝나면 남겨 둔 게이지를 채움
-    let settled = false;
-    for (const p of this.players) if (settleFever(p, now)) settled = true;
-    if (settled) this.emitPlayers();
     while (now >= this.freezeUntil && this.bossQueue.length && now - this.startAt >= this.bossQueue[0]) {
       this.bossQueue.shift();
       this.spawnBosses(now);
@@ -1490,7 +1508,6 @@ export class Room {
     if (stunned) this.emitPlayers();
   }
 
-  /** 자동 시전 증강: 때가 된 것을 발동하고 다음 시각을 정한다 (자기장은 봇에게 없음) */
   /** 원 색: 탈락하지 않은 사람의 색 */
   private spawnKinds() { return this.players.filter((p) => !p.outAt).map((p) => p.color); }
 
@@ -1621,10 +1638,24 @@ export class Room {
     this.emitPlayers();
   }
 
+  private updateArcadeTimers(now: number) {
+    let changed = false;
+    for (const p of this.players) {
+      // 두 종료 시각이 같은 틱 사이에 오면 서버 시각 순서대로 정산한다.
+      if (p.silenced && p.feverUntil > 0 && p.feverUntil < p.silencedUntil) {
+        changed = settleFever(p, now) || changed;
+      }
+      changed = releaseSilence(p, now) || changed;
+      changed = settleFever(p, now) || changed;
+    }
+    if (changed) this.emitPlayers();
+  }
+
+  /** 발동 시각이 지난 자동 시전 증강을 처리한다. */
   private updateAuto(now: number) {
     let changed = false;
     for (const p of this.players) {
-      if (p.outAt) continue;
+      if (p.outAt || p.silenced) continue;
       for (const id of AUTO_IDS) {
         const at = p.autoAt[id];
         if (at === undefined || now < at) continue;
@@ -1632,8 +1663,8 @@ export class Room {
         p.autoAt[id] = Number.isFinite(every) ? Math.max(at + every, now + 1) : undefined;
         if (id === 'autoMagnet' && p.bot) continue;
         const L = hasLegend(p, id);
-        if (id === 'autoMagnet') addBuff(p, 'magnet', GROWTH.autoMs.autoMagnet, now);
-        else if (id === 'autoGuard') addBuff(p, 'guard', L ? LEGEND.autoGuardMs : GROWTH.autoMs.autoGuard, now);
+        if (id === 'autoMagnet') addBuff(p, 'magnet', GROWTH.autoMs.autoMagnet, now, 'auto');
+        else if (id === 'autoGuard') addBuff(p, 'guard', L ? LEGEND.autoGuardMs : GROWTH.autoMs.autoGuard, now, 'auto');
         else addFever(p, L ? LEGEND.autoCharge : GROWTH.autoCharge, now, this.G, this.players, true);
         this.io.to(this.code).emit('auto:fire', { playerId: p.id, id });
         changed = true;
@@ -1675,9 +1706,15 @@ export class Room {
   private resolvePulls(now: number, all = false) {
     let claimed = false;
     for (const [id, pl] of [...this.pulls]) {
+      const p = this.players.find((x) => x.id === pl.by);
+      if (p?.silenced && magnetOf(p, now) <= 0) {
+        this.pulls.delete(id);
+        this.io.to(this.code).emit('circle:unpull', { circleId: id });
+        continue;
+      }
       if (!all && pl.at + pl.ms > now) continue;
       this.pulls.delete(id);
-      const c = this.circles.get(id), p = this.players.find((x) => x.id === pl.by);
+      const c = this.circles.get(id);
       if (c && p) { this.claim(p, c, now, 'magnet', true); claimed = true; }
     }
     if (claimed) this.emitPlayers();
@@ -1702,7 +1739,7 @@ export class Room {
   }
 
   /** quiet: 여러 원을 한꺼번에 잡을 때는 플레이어 상태를 부르는 쪽에서 한 번만 보낸다 */
-  private claim(p: PlayerState, c: Circle, now: number, via: ClaimVia, quiet = false) {
+  private claim(p: PlayerState, c: Circle, now: number, via: ClaimVia, quiet = false, precise = false) {
     // 같은 틱에 다른 경로(장판·범위·다른 사람)로 이미 가져간 원이면 무시
     if (!this.circles.has(c.id)) return;
     // 남의 자석에 끌려가는 원은 그 사람만 잡는다
@@ -1712,7 +1749,9 @@ export class Room {
     // 잡는 순간 원이 있던 자리로 점수 구역을 정한다 (잡는 방법과 상관없이)
     const { x, y } = circlePos(c, now);
     const comboBefore = p.combo;
-    const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }) });
+    const owner = this.players.find((q) => q !== p && q.color === c.kind);
+    const ownerCombo = owner?.combo ?? 0;
+    const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }), precise });
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, x, y });
     // 하이에나: 1등이 잡으면 하이에나를 가진 사람이 확률로 점수를 얻는다
     for (const g of hyenaGains(p, this.players.filter((x) => !x.outAt), result.gained)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });
@@ -1720,15 +1759,14 @@ export class Room {
     // 점수가 바뀌었으니 꼴찌를 벗어난 역전 기회는 바로 끈다 (조용한 연속 획득 사이에도)
     sweepComeback(this.players);
     if (this.tutorial) this.tutorialClaimed(p, zoneOf({ x, y }));
+    this.chargeTreasure(p, p.combo - comboBefore, { x, y }, now);
+    if (owner && result.reflectedTo === owner.id) this.chargeTreasure(owner, owner.combo - ownerCombo, { x, y }, now);
     if (via !== 'blast') {
-      const m = modsOf(p.picks);
-      // 연쇄 콤보: 10콤보(레전드 5)를 넘을 때마다 근처 내 원 자동 획득 (콤보가 오른 획득만)
-      const every = hasLegend(p, 'chainCombo') ? LEGEND.chainEvery : AUG.chainEvery;
-      if (m.chainCombo > 0 && crossedCombo(comboBefore, p.combo, every)) this.autoClaim(p, { x, y }, AUG.chainR, m.chainCombo, now);
+      const m = modsFor(p);
       // 점화: 피버가 터지면 화면의 내 원 자동 획득 (레전드는 전부)
       if (m.ignite > 0 && result.feverStarted) this.autoClaim(p, { x, y }, Infinity, hasLegend(p, 'ignite') ? Infinity : m.ignite, now);
     }
-    if (via !== 'blast' && modsOf(p.picks).chainBlast && Math.random() < SPECIAL.chainChance) {
+    if (via !== 'blast' && modsFor(p).chainBlast && Math.random() < SPECIAL.chainChance) {
       for (const o of [...this.circles.values()]) {
         if (!this.owns(o.kind, p) || isGuarded(o, now)) continue;
         const q = circlePos(o, now);
@@ -1783,17 +1821,59 @@ export class Room {
     if (!this.circles.has(c.id)) return;
     this.circles.delete(c.id);
     // 아이템 사냥꾼: 한 등급 위 아이템
-    const up = (modsOf(p.picks).itemHunter ? 1 : 0) + (hasLegend(p, 'collector') && Math.random() < LEGEND.collectorUp ? 1 : 0);
+    const up = modsFor(p).itemHunter ? 1 : 0;
     const tier = Math.min(2, (c.itemTier ?? 0) + up) as 0 | 1 | 2;
-    const item = rollItem(tier, this.G);
     const { x, y } = circlePos(c, now);
+    this.activateItem(p, tier, x, y, now, c.id);
+    this.emitPlayers();
+  }
+
+  private chargeTreasure(p: PlayerState, gained: number, fallback: Point, now: number) {
+    if (!this.G.items || gained <= 0 || !modsFor(p).treasure) return;
+    p.chestCount += gained;
+    const { x, y } = this.cursors.get(p.id) ?? fallback;
+    while (true) {
+      const rate = modsFor(p).treasure;
+      if (!rate) break;
+      const every = treasureEvery(rate);
+      if (p.chestCount < every) break;
+      p.chestCount -= every;
+      const rolled = rollItemTier();
+      this.activateItem(p, hasLegend(p, 'treasure') && rolled === 0 ? 1 : rolled, x, y, now, null);
+    }
+  }
+
+  private activateItem(p: PlayerState, tier: 0 | 1 | 2, x: number, y: number, now: number, circleId: number | null) {
+    const queue = this.pendingItems;
+    queue.push({ p, tier, x, y, now, circleId });
+    // 아이템 폭발로 얻은 콤보가 상자를 열어도 현재 아이템과 추가 발동을 먼저 끝낸다.
+    if (queue.length > 1) return;
+    try {
+      for (const entry of queue) {
+        const { p, tier, x, y, now, circleId } = entry;
+        this.fireItem(p, tier, x, y, now, circleId);
+        const max = hasLegend(p, 'itemLover') ? LEGEND.itemLoverExtra : 1;
+        for (let i = 0; i < max; i++) {
+          const chance = modsFor(p).itemLover;
+          if (!chance || Math.random() * 100 >= chance) break;
+          this.fireItem(p, rollItemTier(), x, y, now, null, true);
+        }
+      }
+    } finally {
+      queue.length = 0;
+    }
+  }
+
+  private fireItem(p: PlayerState, tier: 0 | 1 | 2, x: number, y: number, now: number, circleId: number | null, extra = false) {
+    const item = rollItem(tier, this.G);
     const action = applyItem(p, item, now, this.G, this.players);
     // 블라스트의 circle:claimed보다 먼저 보내서 화면이 폭발 중심을 알게 한다
-    this.io.to(this.code).emit('item:got', { circleId: c.id, by: p.id, item, tier, x, y });
+    this.io.to(this.code).emit('item:got', { circleId, by: p.id, item, tier, x, y, ...(extra ? { extra: true } : {}) });
     const I = RULES.items;
+    const duration = itemDurationMult(p);
     switch (action?.kind) {
       case 'zone': {
-        const z: Zone = { id: this.nextZoneId++, by: p.id, x, y, r: I.zoneR, until: now + I.zoneMs };
+        const z: Zone = { id: this.nextZoneId++, by: p.id, x, y, r: I.zoneR, until: now + I.zoneMs * duration };
         this.zones.push(z);
         this.io.to(this.code).emit('zone:add', z);
         break;
@@ -1807,17 +1887,18 @@ export class Room {
         }
         break;
       case 'timeStop': {
-        const ids = holdCircles(this.circles.values(), now, I.freezeMs);
-        this.freezeUntil = now + I.freezeMs;
+        const ms = I.freezeMs * duration;
+        const ids = holdCircles(this.circles.values(), now, ms);
+        this.freezeUntil = now + ms;
         // 예고 중인 레이저도 멈춘 시간만큼 늦게 쏜다 (시간 정지 중에는 쏘지 않음)
-        holdLasers(this.lasers, now, I.freezeMs);
+        holdLasers(this.lasers, now, ms);
         // 예약된 웨이브 원도 정지가 끝난 뒤로 미룬다 (나선 간격은 유지)
-        for (const q of this.spawnQueue) q.born += I.freezeMs;
-        this.io.to(this.code).emit('circles:hold', { ids, at: now, ms: I.freezeMs });
+        for (const q of this.spawnQueue) q.born += ms;
+        this.io.to(this.code).emit('circles:hold', { ids, at: now, ms });
         break;
       }
       case 'rain':
-        this.rain = { color: p.color, until: now + I.ms.rain };
+        this.rain = { color: p.color, until: now + I.ms.rain * duration };
         break;
       case 'snipe': {
         // 1등 저격: 대상은 applyItem이 스턴했다. 모두에게 알린다
@@ -1826,7 +1907,8 @@ export class Room {
         break;
       }
     }
-    this.emitPlayers();
+    if (combosFor(p).has('bazaar') && addFever(p, COMBO.bazaarFever, now, this.G, this.players, true)) p.stats.fevers++;
+
   }
 
   private hitWithLag(c: Circle, now: number, x: number, y: number, pad: number = RULES.hitPad) {
@@ -1838,6 +1920,7 @@ export class Room {
     this.coop?.dispose();
     this.coop = null;
     this.resolvePulls(Date.now(), true);
+    this.clearRoundAugments();
     this.clearPattern();
     this.stop();
     this.clearPickTimers();

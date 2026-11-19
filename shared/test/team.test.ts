@@ -103,7 +103,7 @@ test('팀전 방: 게임이 끝나면 이긴 팀 사람에게 1승, game:over에
 // ---------- 최종 리뷰 수정 ----------
 import { applyItem } from '../src/items.ts';
 import { addFever } from '../src/index.ts';
-test('팀전: 방해 아이템·1등 저격·방해 전파는 같은 팀에게 걸리지 않음', () => {
+test('팀전: 방해 아이템·1등 저격·무의 시간는 같은 팀에게 걸리지 않음', () => {
   const { a, b, c, d, players } = four();
   c.score = 100; b.score = 50; d.score = 10;
   applyItem(a, 'blind', 1000, TG, players);
@@ -111,10 +111,11 @@ test('팀전: 방해 아이템·1등 저격·방해 전파는 같은 팀에게 �
   assert.ok((b.debuffs.blind ?? 0) > 1000 && (d.debuffs.blind ?? 0) > 1000);
   const r = applyItem(a, 'snipe', 1000, TG, players) as { target: string | null };
   assert.equal(r.target, 'b', '1등(팀원 c)이 아니라 상대 팀 1등');
-  a.picks = [{ id: 'jammer', tier: 3 }];
+  a.picks = [{ id: 'silence', tier: 0 }];
   addFever(a, 200, 2000, TG, players, true);
-  assert.equal(c.blurUntil, 0, '팀원은 흐려지지 않음');
-  assert.ok(b.blurUntil > 2000);
+  assert.equal(c.silenced, false, '팀원 증강은 유지');
+  assert.equal(b.silencedUntil, 4000);
+  assert.equal(d.silencedUntil, 4000);
 });
 
 test('팀전: 팀 점수·최고 점수까지 같으면 무승부 (두 팀 모두 1승)', () => {

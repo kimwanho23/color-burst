@@ -1,6 +1,6 @@
 /** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, COMBOS, CURSES, EVOLVE, SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, DEFAULT_RULES, comboProgress, type AbilityCategory, type Pick } from '@color-burst/shared';
-import { UI, abilityIcon, categoryIcon, icon, itemIcon } from './icons.ts';
+import { ABILITIES, ABILITY, COMBOS, treasureEvery, CURSES, EVOLVE, SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, UNIQUES, DEFAULT_RULES, comboProgress, type AbilityCategory, type AbilityId, type Pick } from '@color-burst/shared';
+import { UI, abilityIcon, categoryIcon, comboIcon, icon, itemIcon } from './icons.ts';
 import { scoreTable } from './rulesUI.ts';
 
 /** 도감을 여는 곳의 상태: 내 증강(조합 진행도) */
@@ -8,8 +8,8 @@ export interface CodexCtx { picks?: readonly Pick[] }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-type Tab = 'ability' | 'combo' | 'curse' | 'special' | 'item' | 'boss' | 'rules';
-const TABS: [Tab, string][] = [['ability', '증강'], ['combo', '조합'], ['curse', '저주'], ['special', '특별'], ['item', '아이템'], ['boss', '보스'], ['rules', '규칙']];
+type Tab = 'ability' | 'unique' | 'combo' | 'curse' | 'special' | 'item' | 'boss' | 'rules';
+const TABS: [Tab, string][] = [['ability', '증강'], ['unique', '유니크'], ['combo', '조합'], ['curse', '저주'], ['special', '특별'], ['item', '아이템'], ['boss', '보스'], ['rules', '규칙']];
 
 /** 보스 종류 설명 (README '보스 종류'와 같은 내용) */
 const BOSSES: [string, string][] = [
@@ -26,15 +26,25 @@ const BOSSES: [string, string][] = [
   ['황금 원 (보스 아님)', `작고 아주 빠르게 벽에서 튕기는 금빛 원. 한 판에 1~3번, 5초 뒤 사라짐. 직접 클릭으로 잡으면 +${RULES.gold.points}에 일반 원과 같은 배율(피버·점수 구역·아이템·잭팟 등)`],
 ];
 
-function abilityTab() {
+function capText(id: AbilityId, cap: number) {
+  if (id === 'treasure') return `최소 ${treasureEvery(cap)}콤보 간격`;
+  return `중첩 상한 ${id === 'precise' ? `×${1 + cap}` : cap}`;
+}
+
+export function abilityTab() {
   const cats = [...new Set(ABILITIES.map((a) => a.cat))] as AbilityCategory[];
   const syn = (Object.keys(SYNERGY) as (keyof typeof SYNERGY)[]).map((c) => `<li><b>${c} ${SYNERGY[c].need}종</b> · ${esc(SYNERGY[c].text)}</li>`).join('');
   const rules = `<p class="hint">같은 증강을 ${EVOLVE.count}번 고르면 <b>진화</b>: 레전드 효과를 얻고 중첩 상한이 ${EVOLVE.capMult}배가 돼요. 성장 증강은 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 남아요.</p>
     <h3>시너지 (같은 분류의 서로 다른 증강)</h3><ul class="cx-syn">${syn}</ul>`;
   return rules + cats.map((cat) => `<h3>${categoryIcon(cat, 16)} ${cat}</h3><ul class="cx-list">${ABILITIES.filter((a) => a.cat === cat).map((a) => `
-    <li><span class="cx-ic">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b>${a.cap !== undefined ? `<em class="cx-cap">중첩 상한 ${a.cap}</em>` : ''}
+    <li><span class="cx-ic">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b>${a.cap !== undefined ? `<em class="cx-cap">${capText(a.id, a.cap)}</em>` : ''}
       <ol class="cx-tiers">${a.values.map((v, t) => `<li class="t${t}"><span>${TIERS[t].name}</span>${esc(a.desc(v))}</li>`).join('')}</ol>
       ${LEGEND_TEXT[a.id] ? `<p class="cx-legend">레전드 효과: ${esc(LEGEND_TEXT[a.id]!)}</p>` : ''}</div></li>`).join('')}</ul>`).join('');
+}
+
+export function uniqueTab() {
+  return `<p class="hint">플레이어마다 한 게임에 한 장을 고를 수 있어요.</p><ul class="cx-list">${UNIQUES.map((a) => `
+    <li><span class="cx-ic unique">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b><p>${esc(a.desc(1))}</p></div></li>`).join('')}</ul>`;
 }
 
 function curseTab() {
@@ -42,7 +52,7 @@ function curseTab() {
     <li><span class="cx-ic">${abilityIcon(c.id, 22)}</span><div><b>${esc(c.name)}</b><p class="cx-gain">${esc(c.curse!.gain)}</p><p class="cx-cost">대가: ${esc(c.curse!.cost)}</p></div></li>`).join('')}</ul>`;
 }
 
-function comboTab(ctx: CodexCtx) {
+export function comboTab(ctx: CodexCtx) {
   // 게임 중에 열면 내 진행도: 완성 / 2/3
   const prog = new Map(comboProgress(ctx.picks).map((c) => [c.id, c]));
   const tag = (id: string) => {
@@ -51,7 +61,7 @@ function comboTab(ctx: CodexCtx) {
     return p.have >= p.need ? '<em class="cx-done">완성</em>' : `<em class="cx-prog">${p.have}/${p.need}</em>`;
   };
   return `<p class="hint">조합의 증강을 모두 가지면(등급 무관) 보너스가 붙어요. 가진 증강과 같은 분류·조합 조각은 선택지에 더 자주 나와요</p><ul class="cx-list">${COMBOS.map((c) => `
-    <li class="${prog.get(c.id)?.have === c.needs.length ? 'cx-mine' : ''}"><div><b>${esc(c.name)}</b>${tag(c.id)}<p>${c.needs.map((n) => `${abilityIcon(n, 14)} ${esc(ABILITY[n].name)}`).join(' + ')}</p><p class="cx-legend">${esc(c.text)}</p></div></li>`).join('')}</ul>`;
+    <li class="${prog.get(c.id)?.have === c.needs.length ? 'cx-mine' : ''}"><span class="cx-ic">${comboIcon(c.id, 22)}</span><div><b>${esc(c.name)}</b>${tag(c.id)}<p>${c.needs.map((n) => `${abilityIcon(n, 14)} ${esc(ABILITY[n].name)}`).join(' + ')}</p><p class="cx-legend">${esc(c.text)}</p></div></li>`).join('')}</ul>`;
 }
 
 function specialTab() {
@@ -74,7 +84,7 @@ export function rulesTabHTML() {
   return `<p class="hint">기본 규칙 기준이에요. 방 규칙과 증강에 따라 달라질 수 있어요. 이 방의 점수는 대기실에서 볼 수 있어요. 점수 구역(중앙 ×1 · 사이 ×2 · 가장자리 ×3)·잭팟 등은 이 위에 곱해져요</p>${scoreTable(DEFAULT_RULES)}`;
 }
 
-const BODY: Record<Tab, (ctx: CodexCtx) => string> = { ability: abilityTab, combo: comboTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTabHTML, rules: rulesTabHTML };
+const BODY: Record<Tab, (ctx: CodexCtx) => string> = { ability: abilityTab, unique: uniqueTab, combo: comboTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTabHTML, rules: rulesTabHTML };
 
 /** 열려 있는 도감을 닫는 함수 */
 let closeCurrent: (() => void) | null = null;

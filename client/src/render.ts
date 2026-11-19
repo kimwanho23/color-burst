@@ -97,7 +97,6 @@ export interface DrawState {
   /** 폭딜 반격 예고 중 (보스가 붉게 맥동) */
   counterWarn?: boolean;
   /** 방해 전파를 맞아 원이 흐려 보이는 중 */
-  blurred?: boolean;
   /** 장판 (color: 주인 색) */
   zones?: { x: number; y: number; r: number; until: number; color: ColorIndex }[];
   /** 시간 정지 중 */
@@ -229,6 +228,11 @@ export class Renderer {
     this.delayed.push({ at: performance.now() + delayMs, x, y, col });
   }
   /** 넓은 손: 클릭 지점에서 범위만큼 하늘색 링 */
+  preciseRing(x: number, y: number) {
+    this.add({ type: 'ring', x, y, col: '#fff', t: 0, life: 0.3, r0: 7, r1: 17, w: 2 });
+    this.add({ type: 'ring', x, y, col: SKY, t: 0, life: 0.3, r0: 15, r1: 29, w: 2 });
+  }
+
   reachRing(x: number, y: number, r: number) { this.add({ type: 'ring', x, y, col: SKY, t: 0, life: 0.25, r0: 4, r1: r + 12, w: 3 }); }
   /** 자석: 클릭 지점 → 잡힌 원 */
   pullLine(x0: number, y0: number, x1: number, y1: number) { this.add({ type: 'line', x: x0, y: y0, x1, y1, col: SKY, t: 0, life: 0.22 }); }
@@ -326,9 +330,8 @@ export class Renderer {
 
 
     // 방해 전파: 원을 흐리고 옅게 / 시간 정지: 채도를 낮춘다
-    const filters = [s.blurred ? 'blur(7px)' : '', s.frozen ? 'saturate(0.25)' : ''].filter(Boolean);
+    const filters = s.frozen ? ['saturate(0.25)'] : [];
     if (filters.length) ctx.filter = filters.join(' ');
-    if (s.blurred) ctx.globalAlpha = 0.55;
     // 보스를 먼저 그려서 작은 원이 위에 보이게
     const list = [...s.circles].filter((c) => !s.hidden.has(c.id));
     for (const l of s.lasers ?? []) this.drawLaser(l, s.now, now);

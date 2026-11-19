@@ -48,19 +48,21 @@ test('행운아: 잭팟 확률 +10 / 변두리: 가장자리 커서면 자석 ×
   assert.equal(magnetOf(m, 0, { x: 30, y: 450 }), 67.5);
 });
 
-test('철옹성: 끊길 때마다 80% 유지 (보험 20%보다 많이), 기세면 안 줄어듦', () => {
+test('철옹성: 방패를 먼저 소모하고 이후 80% 유지, 기세는 방패보다 먼저', () => {
   const p = pl(0, 'shield', 'insurance', 'rebound');
   startRound(p, 0, G);
   p.combo = 10;
   resolveMiss(p, 100, G, [p]);
-  assert.equal(p.combo, 8);
+  assert.deepEqual([p.combo, p.shieldLeft], [10, 0]);
   resolveMiss(p, 200, G, [p]);
+  assert.equal(p.combo, 8);
+  resolveMiss(p, 300, G, [p]);
   assert.equal(p.combo, 6);
   const q = pl(0, 'shield', 'insurance', 'rebound', 'momentum');
   startRound(q, 0, G);
   q.combo = 5;
   resolveMiss(q, 100, G, [q]);
-  assert.equal(q.combo, 5);
+  assert.deepEqual([q.combo, q.shieldLeft], [5, 1]);
 });
 
 test('빌드 가중치: 같은 분류가 더 자주, 다른 분류도 나오고 3장은 서로 다름', () => {

@@ -19,7 +19,7 @@ test('legendOf: 레전드로 고른 능력만, 저주·특별 카드 제외', ()
 });
 
 test('레전드 수치 = 에픽 × 2 (상한 안에서)', () => {
-  for (const id of ['picky', 'rainbowHunt', 'jackpot', 'overcharge', 'hunter', 'counterPro', 'jammer', 'wideHand', 'magnet'] as AbilityId[]) {
+  for (const id of ['picky', 'rainbowHunt', 'jackpot', 'overcharge', 'hunter', 'counterPro', 'wideHand', 'magnet'] as AbilityId[]) {
     const a = ABILITY[id];
     assert.equal(a.values[3], Math.min(a.cap ?? Infinity, a.values[2] * 2), id);
   }
@@ -139,15 +139,6 @@ test('견제 반사 레전드: 횟수 제한 없음', () => {
   }
 });
 
-test('방해 전파 레전드: 피버가 터지면 상대 감도 감소 (철벽 제외)', () => {
-  const a = pl('a', 0, 'jammer'), b = newPlayer('b', 'B', 1), c = newPlayer('c', 'C', 2);
-  c.picks = [{ id: 'fortress', tier: 0 }];
-  a.fever = 99;
-  resolveClaim(a, 0, [a, b, c], 100, G);
-  assert.ok((b.debuffs.slow ?? 0) > 100);
-  assert.equal(c.debuffs.slow, undefined);
-});
-
 test('넓은 손·헛손질 보정 레전드: 그 방법으로 잡은 원 ×1.5', () => {
   const w = pl('a', 0, 'wideHand'), s = pl('b', 0, 'missSave');
   assert.equal(resolveClaim(w, 0, [w], 100, G, { via: 'range' }).gained, 5);
@@ -186,11 +177,7 @@ test('속사: 0.4초 안 연달아 두 번째부터 +v, 레전드는 5연속에 
   assert.equal(q.rapidJackpot, false);
 });
 
-test('수집가·중앙의 왕·도발', () => {
-  const p = newPlayer('a', 'A', 0);
-  p.picks = [{ id: 'collector', tier: 0 }];
-  applyItem(p, 'wideHand', 0, G, [p]);
-  assert.equal(p.buffs.wideHand, 5000 * 1.2);
+test('중앙의 왕·도발', () => {
   assert.ok(Math.abs(zoneMult(0, modsOf([{ id: 'centerKing', tier: 0 }])) - 1.3) < 1e-9);
   const t = newPlayer('t', 'T', 0), o = newPlayer('o', 'O', 1);
   t.picks = [{ id: 'taunt', tier: 0 }]; o.fever = 40;

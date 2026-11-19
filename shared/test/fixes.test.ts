@@ -35,12 +35,12 @@ test('콤보 보너스: 중앙의 왕 레전드로 9 → 11이 돼도 10콤보 �
   assert.equal(r.comboBonus, true);
 });
 
-test('무지개 사냥 레전드로 게이지가 차서 터진 피버도 방해 전파가 걸림', () => {
-  const p = pl('p', 0, L('rainbowHunt'), N('jammer')), o = pl('o', 1);
+test('무지개 사냥 레전드로 게이지가 차서 터진 피버도 무의 시간이 걸림', () => {
+  const p = pl('p', 0, L('rainbowHunt'), N('silence')), o = pl('o', 1);
   p.fever = 60;
   const r = resolveClaim(p, 'rainbow', [p, o], 100, G);
   assert.equal(r.feverStarted, true);
-  assert.ok(o.blurUntil > 100);
+  assert.equal(o.silencedUntil, 2100);
 });
 
 test('출발 신호 레전드: 일시정지한 만큼 창이 늦게 끝남', () => {
@@ -74,11 +74,13 @@ test('철옹성: 보험 100%면 보험 쪽(그대로), 아니면 80% 유지', ()
   startRound(p, 0, G);
   p.combo = 5;
   resolveMiss(p, 100, G, [p]);
+  resolveMiss(p, 200, G, [p]);
   assert.equal(p.combo, 5);
   const q = pl('q', 0, N('shield'), N('insurance'), N('rebound'));
   startRound(q, 0, G);
   q.combo = 10;
   resolveMiss(q, 100, G, [q]);
+  resolveMiss(q, 200, G, [q]);
   assert.equal(q.combo, 8);
 });
 
@@ -105,16 +107,16 @@ test('철벽: 견제한 사람의 흡혈을 막고, 자기 흡혈 저주 대가�
   assert.equal(resolveClaim(a, 1, [a, self], 100, G).plundered, CURSE.vampire.drain);
 });
 
-test('카드 풀: 레이저·방해 아이템·맵 패턴이 모두 꺼지면 방해 내성 없음, 아이템이 꺼지면 수집가 없음', () => {
+test('카드 풀: 레이저·방해 아이템·맵 패턴이 모두 꺼지면 방해 내성 없음, 아이템이 꺼지면 아이템 증강 없음', () => {
   const io = { to: () => ({ emit() {} }), sockets: { sockets: new Map() } } as never;
   const room = new Room(io, 'POOL', () => {});
   const r = room as unknown as { G: GameRules; offPool(): AbilityId[] };
   r.G = { ...G, laser: true, items: true };
   assert.deepEqual(r.offPool(), []);
   r.G = { ...G, laser: false, items: false };
-  assert.deepEqual(r.offPool(), ['collector'], '방해 아이템·맵 패턴이 켜져 있으면 방해 내성은 남음');
+  assert.deepEqual(r.offPool(), ['treasure', 'itemLover'], '방해 아이템·맵 패턴이 켜져 있으면 방해 내성은 남음');
   r.G = { ...G, laser: false, sabotage: false, mapChance: 0, items: false };
-  assert.deepEqual(r.offPool(), ['laserProof', 'collector']);
+  assert.deepEqual(r.offPool(), ['laserProof', 'treasure', 'itemLover']);
   room.destroy();
 });
 

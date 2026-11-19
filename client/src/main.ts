@@ -1,8 +1,8 @@
 import { io, type Socket } from 'socket.io-client';
 import {
-  ABILITY, ARCADE, STACK_IDS, COMBOS, COLORS, COOP_ITEMS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosOf, holdLasers, isLast, ownsKind, isGuarded, modsOf, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
+  ABILITY, ARCADE, STACK_IDS, UNIQUE_STACK_MAX, combosOf, COMBOS, COLORS, COOP_ITEMS, DEFAULT_RULES, FIELD, ITEMS, RULES, THEMES, auraAt, combosFor, holdLasers, isLast, ownsKind, isGuarded, modsFor, bossState, cursorActive, cursorModeOf, holdCircles, inAura, isStunned, magnetOf,
   type CursorMode, rangeTargets, circlePos, feverMultOf, feverMsOf, isFever, toGameRules, isHit, isMarked, isOut, reachOf,
-  type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Seal, type Beam, type Homing, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
+  type UniqueStackId, type Zone, type LaserVolley, type Pull, type Pick, type ArcadeOffer, type MapPattern, PATTERNS, moverAt, patternActive, vortexWarned, type ArcadeState, type RoundEffect, type BotLevel, type Circle, type PlayPayload, type RoomRules, type CoopState, type Slam, type SafeZones, type Seal, type Beam, type Homing, type Volley, hitShot, volleyDone, type ClientToServer, type ColorIndex, type PlayerState, type RoomSnapshot, type ServerToClient,
 } from '@color-burst/shared';
 import { closeCodex, openCodex } from './codex.ts';
 import { closeConfirm, confirmDialog } from './confirm.ts';
@@ -951,7 +951,7 @@ function renderCombo(n: number) {
 }
 /** 헛손질 보정: 빈 곳 클릭 반경 안에 내 일반 원이 있으면 서버가 대신 잡아 준다 (빗나감 표시 안 함) */
 function missSaveNear(m: PlayerState, x: number, y: number, now: number) {
-  const r = modsOf(m.picks).missSave;
+  const r = modsFor(m).missSave;
   if (r <= 0) return false;
   for (const c of circles.values()) {
     if (!ownsKind(c.kind, m, players, !!room?.rules.team) || isGuarded(c, now) || pending.has(c.id) || pulls.has(c.id)) continue;
@@ -1037,11 +1037,11 @@ socket.on('players', (p) => {
   if (fxBefore && playing && rules.coop && !pausedView && barrierNow > barrierBefore && barrierBefore <= serverNow()) sfx.barrierOn();
   renderBarrier();
   // 스택형 증강: 내 칸이 오르면 한 줄 알림
-  for (const id of STACK_IDS) {
+  for (const id of [...STACK_IDS, ...Object.keys(UNIQUE_STACK_MAX) as UniqueStackId[]]) {
     const n = m?.stacks?.[id] ?? 0;
-    if (m && n > (before[id] ?? 0)) pushFeed($('feed'), abilityIcon(id, 18), `${ABILITY[id].name} ${n}/${modsOf(m.picks)[id]}`, '#51cf66');
+    if (m && n > (before[id] ?? 0)) pushFeed($('feed'), abilityIcon(id, 18), `${ABILITY[id].name} ${n}/${UNIQUE_STACK_MAX[id as UniqueStackId] ?? modsFor(m)[id]}`, '#51cf66');
   }
-  const now = combosOf(m?.picks);
+  const now = combosOf(m?.picks); // raw-picks
   for (const id of now) if (!myCombos.has(id)) {
     const c = COMBOS.find((x) => x.id === id)!;
     if (combosReady) { sfx.legend(); pushFeed($('feed'), icon(UI.up, 18), `조합 완성! ${c.name} · ${c.text}`, '#ffd43b'); }
@@ -1050,7 +1050,7 @@ socket.on('players', (p) => {
   combosReady = !!m;
   // 철옹성 조합: 콤보가 끊길 때 0이 아니라 일부만 줄었으면 (라운드 시작의 0은 제외)
   // (오오라처럼 계속 줄어들 때 1.5초에 한 번만)
-  if (m && lastCombo !== null && m.combo < lastCombo && m.combo > 0 && now.has('ironWall') && performance.now() - ironNoticeAt > 1500) {
+  if (m && lastCombo !== null && m.combo < lastCombo && m.combo > 0 && combosFor(m).has('ironWall') && performance.now() - ironNoticeAt > 1500) {
     ironNoticeAt = performance.now();
     sfx.bossBlock(); renderer.text(CX, CY + -120, '철옹성! 콤보 유지', '#ffd43b', 1.1);
     flashCombo($('comboBar'), 'ironWall');
@@ -1068,7 +1068,11 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
     if (owner) renderer.burst(x, y, COLORS[owner.color].hex, true);
     renderer.shockwave(x, y, 70);
     if (result.reflectedTo === myId()) { sfx.own(); renderer.text(x, y, `반사! +${result.reflected.gained}`, '#4d9bff', 1.1); }
-    else if (by === myId()) { sfx.comboBroken(); renderer.text(x, y, '반사당함! 콤보 끊김', '#ff5d73', 1); if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9); }
+    else if (by === myId()) {
+      if (result.brokeComboOf) sfx.comboBroken();
+      renderer.text(x, y, result.shielded ? '방패!' : result.brokeComboOf ? '반사당함! 콤보 끊김' : '반사당함!', '#ff5d73', 1);
+      if (result.marked) renderer.text(x, y + 45, `${rules.markSec}초간 표적!`, '#ff5d73', 0.9);
+    }
     else if (owner) renderer.text(x, y, `${owner.name} 반사!`, COLORS[owner.color].hex, 0.75);
     return;
   }
@@ -1077,6 +1081,7 @@ socket.on('circle:claimed', ({ circleId, by, result, x, y }) => {
   // 폭죽·필드 클리어: 폭발 중심에서 가까운 원부터 충격파를 따라 차례로 터진다
   if (blasted) renderer.burstDelayed(x, y, COLORS[who.color].hex, (Math.hypot(x - blast.x, y - blast.y) / blast.R) * 350);
   else renderer.burst(x, y, COLORS[who.color].hex, mine, isFever(who, serverNow()) ? FEVER_BURST : 1);
+  if (mine && result.precise) renderer.preciseRing(x, y);
   if (result.jackpot > 1) { renderer.jackpot(x, y, result.jackpot, false); if (mine) sfx.jackpot(result.jackpot); }
   if (mine) {
     const label = blasted ? '' : (result.type === 'counter' ? ' 반격' : result.type === 'feverSteal' ? ' 견제' : '') + (result.plundered ? ' 강탈' : '');
@@ -1127,8 +1132,9 @@ socket.on('gold:got', ({ circleId, by, gained, x, y, jackpot }) => {
   }
   popOnChip($('scores'), by, icon(UI.gold, 22));
 });
-socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
-  circles.delete(circleId); pending.delete(circleId);
+let extraItemPop = 0;
+socket.on('item:got', ({ circleId, by, item, tier, x, y, extra }) => {
+  if (circleId !== null) { circles.delete(circleId); pending.delete(circleId); }
   const who = nameOf(by);
   // 방해 아이템: 잡은 사람 뺀 모두에게 걸림 (저격은 stun 알림에서)
   if (ITEMS[item].sabotage && item !== 'snipe' && by !== myId() && who) {
@@ -1137,7 +1143,9 @@ socket.on('item:got', ({ circleId, by, item, tier, x, y }) => {
   }
   if (by === myId()) {
     const sp = renderer.toScreen(x, y);
-    showItemPop($('itemPops'), sp.x, sp.y, item, tier, !fxOn());
+    extraItemPop = extra ? extraItemPop + 1 : 0;
+    const offset = extraItemPop ? (extraItemPop % 2 ? 64 : -64) : 0;
+    showItemPop($('itemPops'), sp.x + offset, sp.y - (extra ? 32 : 0), item, tier, !fxOn());
     sfx.item(tier);
   } else if (who) {
     renderer.text(x, y, `${who.name} ${ITEMS[item].name}`, COLORS[who.color].hex, 0.75);
@@ -1200,6 +1208,7 @@ socket.on('aura:hit', ({ by, x, y }) => {
   renderer.text(x, y, `오오라 · 피버 −${RULES.aura.feverLoss} · 콤보 −${100 - RULES.aura.comboKeepPct}%`, '#c39bff', 0.9);
 });
 socket.on('circle:pull', (pl) => { pulls.set(pl.circleId, pl); if (pl.by === myId()) sfx.pull(); });
+socket.on('circle:unpull', ({ circleId }) => { pulls.delete(circleId); });
 // 커서 위치는 게임 중에만 보낸다 (캔버스 밖·탭 전환이면 서버가 판정에서 뺀다)
 const cursorOn = () => cursorActive({ playing, picking: picking(), roundOver, paused: !!pausedView, hidden: document.hidden, focused: document.hasFocus() });
 startCursorSync(() => (cursorOn() ? gameCursor.pos : null), (p) => socket.emit('cursor:move', p));
@@ -1429,7 +1438,7 @@ function renderScores() {
   const list = team ? [...players].sort((a, b) => a.team - b.team) : players;
   const sums = team ? ([0, 1] as const).map((t) => `<div class="teamsum t${t}"><b>${t === 0 ? '팀 A' : '팀 B'}</b><span>${players.filter((p) => p.team === t).reduce((a, p) => a + p.score, 0)}</span></div>`).join('') : '';
   const warnId = outWarn && serverNow() < outWarn.at ? outWarn.id : null;
-  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}${p.outAt ? ' out' : ''}${p.id === warnId ? ' danger' : ''}" data-id="${p.id}"${p.outAt ? ` data-rank="${p.outRank}등"` : ''}>${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${playing && rules.coop ? hpBarHtml(p) : ''}${pickChips(p.picks ?? [], 16, p.stacks)}${buffChips(p, serverNow())}</div>`).join('');
+  $('scores').innerHTML = sums + list.map((p) => `<div class="chip${p.id === myId() ? ' me' : ''}${p.connected ? '' : ' off'}${p.id === popFor ? ' open' : ''}${team ? ` tm t${p.team}` : ''}${p.outAt ? ' out' : ''}${p.id === warnId ? ' danger' : ''}${p.silenced ? ' silenced' : ''}" data-id="${p.id}"${p.outAt ? ` data-rank="${p.outRank}등"` : ''}>${shapeSVG(p.color, 26)}<div class="meta"><span class="nm">${esc(p.name)}${p.id === myId() ? ' (나)' : ''}${room?.wins[p.id] ? ` · ${room.wins[p.id]}승` : ''}</span><span class="sc">${p.score}</span></div><span class="cb">${p.combo ? p.combo + '콤보' : ''}</span>${playing && rules.coop ? hpBarHtml(p) : ''}${p.silenced ? '<span class="silence-chip" title="무의 시간" aria-label="무의 시간">' + abilityIcon('silence', 13) + '</span>' : ''}${pickChips(p.picks ?? [], 16, p.stacks, p.mirror)}${buffChips(p, serverNow())}</div>`).join('');
   renderChipPop();
 }
 
@@ -1479,6 +1488,7 @@ function renderMyHp(hit = false) {
   if (hit) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 }
 let lastCoopHud = 0;
+let lastSilenceWave = 0;
 function updateHud(now: number) {
   const m = me();
   const fever = !!m && isFever(m, now);
@@ -1540,6 +1550,14 @@ function frame() {
   const out = playing && !!me()?.outAt;
   $('stage').classList.toggle('gamecursor', playing && !picking() && !roundOver && !pausedView && !out);
   $('outBanner').hidden = !out;
+  const local = me();
+  const active = playing && !picking() && !roundOver && now >= startAt && !out;
+  $('silenceBanner').hidden = !active || !local?.silenced;
+  const castAt = local?.silenceCastAt ?? 0;
+  if (active && !pausedView && castAt > lastSilenceWave && now >= castAt) {
+    lastSilenceWave = castAt;
+    if (now - castAt < 450 && fxOn()) renderer.shockwave(CX, CY, CORNER);
+  }
   if (out) {
     const left = rules.coop ? players.filter((p) => !p.bot && !p.outAt).length : 0;
     const txt = rules.coop ? `탈락 · 구경 중 · 남은 사람 ${left}명` : '탈락 · 구경 중';
@@ -1582,7 +1600,6 @@ function frame() {
     myFever: !!m && isFever(m, now),
     markedColors: new Set(players.filter((p) => isMarked(p, now)).map((p) => p.color)),
     now,
-    blurred: !!m && now < m.blurUntil,
     zones: zones.filter((z) => z.until > now).map((z) => ({ ...z, color: nameOf(z.by)?.color ?? 0 })),
     frozen: now < frozenUntil,
     cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView && !blink && !out

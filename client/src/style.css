@@ -883,3 +883,16 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .coophud .ch-rage-gauge span { position: absolute; inset: 0; font-size: 10px; line-height: 12px; text-align: center; color: #fff; }
 @keyframes chRagePulse { from { filter: brightness(1); } to { filter: brightness(1.6); } }
 @media (prefers-reduced-motion: reduce) { .coophud .ch-rage-gauge.firing i { animation: none; } }
+
+/* 아케이드 유니크 */
+:root { --unique: #ffad40; }
+.acard.unique { border-color: var(--unique); }
+.acard.unique .tier, .acard.unique .aicon, .tip-h.unique, .cx-ic.unique { color: var(--unique); }
+.acard.unique .aicon { border-color: var(--unique); background: #ffad4020; }
+.tiles li.unique, .picks-mini .pk.unique { color: var(--unique); border-color: var(--unique); }
+.silenced .tiles li:not(.curse, .special), .silenced .picks-mini .pk:not(.curse, .special, .sp) {
+  filter: grayscale(1);
+  opacity: .55;
+}
+.silence-banner { bottom: auto; top: 14%; color: #eee; border-color: #9296a5; background: #171922eb; }
+.silence-chip { display: inline-flex; color: #c8cbd6; }

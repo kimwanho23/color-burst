@@ -4,10 +4,10 @@
  */
 import { AUG } from './arcade.ts';
 import {
-  RULES, BLIND_KINDS, addBuff, addDebuff, addFever, isFever, isFoe, isLast, startFever,
+  RULES, BLIND_KINDS, addBuff, addDebuff, addFever, isFever, isFoe, isLast, burstFever, settleFever, clearCombo, preventComboBreak,
   type BuffId, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
-import { SPECIAL, SYN, modsOf, synergiesOf } from './arcade.ts';
+import { COMBO, SPECIAL, SYN, combosFor, modsFor, synergiesFor } from './arcade.ts';
 
 export type ItemId =
   | 'wideHand' | 'magnet' | 'missGuard' | 'comboLock' | 'guard' | 'markClear' | 'feverCharge'
@@ -72,21 +72,23 @@ export type RoomAction = null | { kind: RoomActionKind } | { kind: 'snipe'; targ
 /** 1등 저격 대상: 점수 1등(동점은 앞 순번), 잡은 사람이 1등이면 2등, 없으면 null */
 export function snipeTarget(p: PlayerState, players: PlayerState[], team = false): PlayerState | null {
   const order = [...players].sort((a, b) => b.score - a.score);
-  return order.find((x) => isFoe(p, x, team) && !modsOf(x.picks).fortress) ?? null;
+  return order.find((x) => isFoe(p, x, team) && !modsFor(x).fortress) ?? null;
 }
 
 /** 아이템 발동: 플레이어 효과를 적용하고, 방 단위 효과면 그 종류를 돌려준다 */
+export const itemDurationMult = (p: PlayerState) => combosFor(p).has('bazaar') ? COMBO.bazaarDur : 1;
+
 export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules, players: PlayerState[], rand = Math.random): RoomAction {
   const def = ITEMS[id];
   if (def.buff) {
     // 꼴찌 보정 ×1.5, 아이템 사냥꾼 ×2
-    // 수집가 +v%
-    const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1) * (modsOf(p.picks).itemHunter ? SPECIAL.hunterDur : 1) * (1 + modsOf(p.picks).collector / 100);
+    // 잡화점 시간 배율
+    const ms = M[def.buff] * (G.comeback && isLast(p, players) ? RULES.items.comebackDur : 1) * (modsFor(p).itemHunter ? SPECIAL.hunterDur : 1) * itemDurationMult(p);
     // 보조 시너지: +1초
-    addBuff(p, def.buff, ms + (synergiesOf(p.picks).has('보조') ? SYN.buffAddMs : 0), now);
+    addBuff(p, def.buff, ms + (synergiesFor(p).has('보조') ? SYN.buffAddMs : 0), now);
     return null;
   }
-  const m = modsOf(p.picks);
+  const m = modsFor(p);
   switch (id) {
     case 'markClear':
       // 표적 자처(저주)의 대가는 풀리지 않는다
@@ -97,7 +99,7 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
       return null;
     case 'instantFever':
       if (isFever(p, now)) p.feverUntil += RULES.items.feverExtendMs;
-      else { startFever(p, now, G, m); p.stats.fevers++; }
+      else { settleFever(p, now); burstFever(p, now, G, players, m); p.stats.fevers++; }
       return null;
     case 'goldHand':
       p.goldLeft += RULES.items.goldCount;
@@ -109,9 +111,9 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
       const debuff = id === 'slowCursor' ? 'slow' : id === 'invertCursor' ? 'invert' : 'blind';
       for (const o of players) {
         // 철벽은 방해에 걸리지 않는다. 방해 내성만큼 시간이 줄고 100%면 안 걸림
-        if (!isFoe(p, o, G.team) || modsOf(o.picks).fortress) continue;
+        if (!isFoe(p, o, G.team) || modsFor(o).fortress) continue;
         const base = debuff === 'slow' ? RULES.sabotage.slowMs : debuff === 'invert' ? RULES.sabotage.invertMs : RULES.sabotage.blindMs;
-        const ms = base * (1 - modsOf(o.picks).laserProof / 100);
+        const ms = base * itemDurationMult(p) * (1 - modsFor(o).laserProof / 100);
         if (ms <= 0) continue;
         addDebuff(o, debuff, ms, now);
         if (debuff === 'blind') o.blind = { kind: BLIND_KINDS[Math.floor(rand() * BLIND_KINDS.length)], seed: Math.floor(rand() * 1e9) };
@@ -120,7 +122,10 @@ export function applyItem(p: PlayerState, id: ItemId, now: number, G: GameRules,
     }
     case 'snipe': {
       const t = snipeTarget(p, players, G.team);
-      if (t) { t.stunUntil = Math.max(t.stunUntil, now + RULES.sabotage.snipeStunMs); t.combo = 0; }
+      if (t) {
+        t.stunUntil = Math.max(t.stunUntil, now + RULES.sabotage.snipeStunMs * itemDurationMult(p));
+        if (!preventComboBreak(t, modsFor(t), now)) clearCombo(t);
+      }
       return { kind: 'snipe', target: t?.id ?? null };
     }
     default:

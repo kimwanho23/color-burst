@@ -1,9 +1,9 @@
 /** 캔버스 위 DOM 연출: 아이템 룰렛 팝업, 내 버프 바, 점수판 버프 아이콘 */
 import {
-  COMBOS, COOP_ITEMS, COOP_ITEM_IDS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, RULES, SYNERGY, combosOf, synergiesOf,
+  COMBOS, COOP_ITEMS, COOP_ITEM_IDS, EVENTS, EVENT_IDS, ITEMS, ITEM_IDS, PATTERNS, RULES, SYNERGY, buffUntil, combosFor, synergiesFor,
   type BuffId, type CoopItemId, type PatternId, type ComboId, type DebuffId, type EventResult, type ItemId, type ItemTier, type PlayerState,
 } from '@color-burst/shared';
-import { UI, categoryIcon, coopItemIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
+import { UI, comboIcon, categoryIcon, coopItemIcon, eventIcon, icon, itemIcon, patternIcon } from './icons.ts';
 import { comboTip } from './arcadeUI.ts';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -13,14 +13,14 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
  * 원 클릭을 가리지 않게 마우스 반응이 없어서 설명을 칩 안에 글자로 쓴다. 바뀔 때만 다시 그린다
  */
 export function renderComboBar(el: HTMLElement, p: PlayerState | undefined) {
-  const ids = p ? [...combosOf(p.picks)] : [];
-  const syn = p ? [...synergiesOf(p.picks)] : [];
+  const ids = p ? [...combosFor(p)] : [];
+  const syn = p ? [...synergiesFor(p)] : [];
   const sig = [...ids, ...syn].join(',');
   if (el.dataset.sig === sig) return;
   el.dataset.sig = sig;
   el.innerHTML = ids.map((id) => {
     const c = COMBOS.find((x) => x.id === id)!;
-    return `<span class="cbchip" data-c="${id}" data-tip="${esc(comboTip(id, p!.picks))}">${icon(UI.combo, 13)}<b>${esc(c.name)}</b><span>${esc(c.text)}</span></span>`;
+    return `<span class="cbchip" data-c="${id}" data-tip="${esc(comboTip(id, p!.picks))}">${comboIcon(id, 13)}<b>${esc(c.name)}</b><span>${esc(c.text)}</span></span>`;
   }).join('') + syn.map((cat) => `<span class="cbchip syn" data-tip="${esc(`<div class="tip-h"><b>${cat} 시너지</b></div><p>${SYNERGY[cat].text}</p>`)}">${categoryIcon(cat, 13)}<b>${cat}</b><span>${esc(SYNERGY[cat].text)}</span></span>`).join('');
 }
 
@@ -145,7 +145,7 @@ export function renderBuffBar(el: HTMLElement, p: PlayerState | undefined, now: 
     items.push(`<span class="buff debuff${left < 1000 ? ' blink' : ''}" style="--f:${Math.min(1, left / debuffMs(id))}" title="${ITEMS[it].name}">${itemIcon(it, 18)}</span>`);
   }
   for (const id of BUFF_IDS) {
-    const left = (p.buffs[id] ?? 0) - now;
+    const left = buffUntil(p, id) - now;
     if (left <= 0) continue;
     const frac = Math.min(1, left / durOf(id));
     items.push(`<span class="buff it${ITEMS[id].tier}${left < 1000 ? ' blink' : ''}" style="--f:${frac}" title="${ITEMS[id].name}">${itemIcon(id, 18)}</span>`);
@@ -174,7 +174,7 @@ function coopBuffs(p: PlayerState, now: number): string[] {
 
 /** 점수판 칩용 작은 버프 아이콘 */
 export function buffChips(p: PlayerState, now: number, size = 12) {
-  const ids: ItemId[] = BUFF_IDS.filter((id) => (p.buffs[id] ?? 0) > now);
+  const ids: ItemId[] = BUFF_IDS.filter((id) => buffUntil(p, id) > now);
   if (p.goldLeft > 0) ids.push('goldHand');
   if (!ids.length) return '';
   return `<span class="buffs-mini">${ids.map((id) => `<span class="bm it${ITEMS[id].tier}" title="${ITEMS[id].name}">${itemIcon(id, size)}</span>`).join('')}</span>`;

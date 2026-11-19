@@ -2,10 +2,10 @@
  * 보스 한 번 타격: 피해·점수·콤보·피버 게이지·막타·독식·MVP를 계산해 바로 반영한다 (서버가 부른다).
  * 원 삭제·알림·자동 획득(사냥꾼 레전드·점화)은 부르는 쪽이 한다.
  */
-import { AUG, COMBO, LEGEND, combosOf, hasLegend, modsOf } from './arcade.ts';
+import { AUG, COMBO, LEGEND, UNIQUE, combosFor, hasLegend, modsFor } from './arcade.ts';
 import {
   RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
-  addStack, drillCheck, ragePenalty, rollJackpot, settleFever, type Circle, type GameRules, type PlayerState,
+  addStack, addUniqueStack, growthScoreMult, uniqueStacks, drillCheck, ragePenalty, rollJackpot, settleFever, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 
 export interface BossStrike {
@@ -42,6 +42,8 @@ export interface BossStrike {
 /** 보스 점수의 피버 배율: 방 규칙 피버 배율까지만 (증강으로 올린 몫은 일반 원에만) */
 export const bossFeverMult = (p: PlayerState, G: GameRules) => Math.min(feverMultOf(p, G), G.feverMult);
 
+const huntMult = (p: PlayerState) => 1 + uniqueStacks(p, 'huntInstinct') * UNIQUE.hunt.pct / 100;
+
 export function strikeBoss(
   p: PlayerState, c: Circle, hits: Map<string, number>, players: PlayerState[], now: number, G: GameRules, rand: () => number = Math.random,
 ): BossStrike {
@@ -51,7 +53,7 @@ export function strikeBoss(
   };
   const B = RULES.boss;
   const st = bossState(c, now);
-  const K = combosOf(p.picks);
+  const K = combosFor(p);
   if (st.shielded && !hasLegend(p, 'crusher')) { out.blocked = true; return out; }
   if (st.enraged && !K.has('bossHunter')) {
     const lose = Math.min(p.score, ragePenalty(p));
@@ -61,7 +63,7 @@ export function strikeBoss(
     return out;
   }
   settleFever(p, now);
-  const m = modsOf(p.picks);
+  const m = modsFor(p);
   const info = bossHitInfo(p, rand);
   // 선봉 레전드: 등장 3초 안 피해 2배
   const early = hasLegend(p, 'vanguard') && now - c.born <= AUG.vanguardMs ? LEGEND.vanguardMult : 1;
@@ -81,11 +83,12 @@ export function strikeBoss(
   p.roundMaxCombo = Math.max(p.roundMaxCombo, p.combo);
   let bonus = comboBonusOf(p, before, fever);
   bonus += drillCheck(p, before, bonus);
+  p.comboPaidTo = Math.max(p.comboPaidTo ?? 0, p.combo);
   out.comboBonus = bonus > 0;
   if (addFever(p, B.feverGain, now, G, players)) out.feverStarted = true;
 
   const mult = capMult((fever ? bossFeverMult(p, G) : after ? afterMultOf(p) : 1) * info.boost * itemMult(p, now, true)
-    * extraMult(p, now, players)); // 점수 구역 배율은 보스에 곱하지 않는다 (큰 보스가 가장자리 ×3을 너무 쉽게 받음)
+    * extraMult(p, now, players) * huntMult(p)); // 점수 구역 배율은 보스에 곱하지 않는다 (큰 보스가 가장자리 ×3을 너무 쉽게 받음)
   out.jackpot = rollJackpot(p, m, rand);
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
   // 타격 점수는 클릭 한 번당 (피해와 곱하지 않음: 파쇄·막타 독식의 피해는 처치·막타·독식 경쟁에만)
@@ -112,11 +115,11 @@ export function strikeBoss(
       if (!q || q.outAt || !isSolo(id)) continue;
       const qFever = isFever(q, now);
       const qMult = q === p ? mult : capMult((qFever ? bossFeverMult(q, G) : now < q.afterUntil ? afterMultOf(q) : 1)
-        * scoreBoostOf(modsOf(q.picks)) * itemMult(q, now, false) * extraMult(q, now, players));
+        * scoreBoostOf(modsFor(q)) * itemMult(q, now, false) * extraMult(q, now, players) * huntMult(q));
       const gained = Math.round(S.points * qMult);
       q.score += gained;
       addSrc(q, 'boss', gained, { fever: q === p ? fever : qFever });
-      const started = combosOf(q.picks).has('bossHunter') && addFever(q, COMBO.bossSoloFever, now, G, players, true);
+      const started = combosFor(q).has('bossHunter') && addFever(q, COMBO.bossSoloFever, now, G, players, true);
       if (started && q === p) out.feverStarted = true;
       else if (started) q.stats.fevers++;
       out.solos.push({ id, gained, feverStarted: started });
@@ -129,7 +132,16 @@ export function strikeBoss(
       if (n > best || (n === best && pid === p.id)) { best = n; out.mvp = pid; }
     }
     const mvpP = players.find((x) => x.id === out.mvp);
-    if (mvpP) { mvpP.score += B.mvp; out.mvpGained = B.mvp; addSrc(mvpP, 'boss', B.mvp); }
+    if (mvpP) {
+      out.mvpGained = Math.round(B.mvp * capMult(huntMult(mvpP) * growthScoreMult(mvpP)));
+      mvpP.score += out.mvpGained;
+      addSrc(mvpP, 'boss', out.mvpGained);
+    }
+    for (const q of players) {
+      if (q.outAt || (hits.get(q.id) ?? 0) < 1) continue;
+      const amount = isSolo(q.id) ? UNIQUE.hunt.solo : UNIQUE.hunt.assist;
+      addUniqueStack(q, 'huntInstinct', amount * (G.roundMs < UNIQUE.hunt.shortRoundMs ? 2 : 1));
+    }
   }
   if (out.feverStarted) p.stats.fevers++;
   return out;

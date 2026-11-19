@@ -2,17 +2,17 @@
 import {
   createElement, type IconNode, CircleHelp, Plus, Copy, LockKeyhole,
   UtensilsCrossed, Citrus, Rainbow, Link2, Flag, Thermometer, Hourglass, BatteryCharging, Flame, Sunset,
-  Hammer, Crosshair, Pickaxe, Umbrella, Wind, Shield, EyeOff, HandCoins, Swords, RadioTower,
+  Hammer, Crosshair, Pickaxe, Umbrella, Wind, Shield, EyeOff, HandCoins, Swords,
   GlassWater, Dices, Axe, MoveUp, Droplet, Bomb, Target, Skull,
   Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
   Rocket, FlipVertical2, Siren, Dog, Footprints, Activity, HandMetal, Castle, Radiation, Medal, Sunrise, PackageSearch, Gem,
-  Heart, HandHelping, RotateCcw, FastForward, ShieldOff, Archive, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
+  Heart, HandHelping, RotateCcw, FastForward, ShieldOff, Link, Focus, FlameKindling, Sword, Megaphone, Scale, BookOpen, LogOut, X, Construction, SlidersHorizontal, BrickWall, RotateCw, Snowflake, CircleDashed, CloudFog,
   ChevronLeft, ChevronRight, User, Users, HeartPulse, Dumbbell, Clover, Orbit, BatteryFull, ShieldPlus, Sprout,
 } from 'lucide';
-import type { AbilityCategory, AbilityId, CoopItemId, CoopSpecialId, EventId, ItemId, PatternId } from '@color-burst/shared';
+import type { AbilityCategory, AbilityId, ComboId, CoopItemId, CoopSpecialId, EventId, ItemId, PatternId } from '@color-burst/shared';
 
 /** 스페셜 어택 전용 도형. 대기실과 전투 게이지에서 같은 아이콘을 쓴다. */
 const SPECIAL_PATH: Record<CoopSpecialId, string> = {
@@ -27,19 +27,22 @@ const ABILITY_ICON: Record<AbilityId, IconNode> = {
   preheat: Thermometer, overtime: Hourglass, overcharge: BatteryCharging, frenzy: Flame, afterglow: Sunset,
   hammer: Hammer, hunter: Crosshair, crusher: Pickaxe,
   insurance: Umbrella, shield: Shield,
-  missSave: HandHelping, rebound: RotateCcw, rapid: FastForward, laserProof: ShieldOff, collector: Archive,
-  chainCombo: Link, centerKing: Focus, ignite: FlameKindling, vanguard: Sword, taunt: Megaphone,
-  thickSkin: EyeOff, plunder: HandCoins, counterPro: Swords, jammer: RadioTower,
+  missSave: HandHelping, rebound: RotateCcw, rapid: FastForward, laserProof: ShieldOff,
+  centerKing: Focus, ignite: FlameKindling, vanguard: Sword, taunt: Megaphone,
+  thickSkin: EyeOff, plunder: HandCoins, counterPro: Swords,
   jackpot: Coins, wideHand: Hand, magnet: Magnet, reflect: Undo2, edge: Maximize2,
   glassCannon: GlassWater, gambler: Dices, berserker: Axe, oneWay: MoveUp,
   vampire: Droplet, timeBomb: Bomb, selfTarget: Target, devilPact: Skull,
   comebackBoost: Rocket, flip: FlipVertical2, focusFire: Siren, hyena: Dog, chaser: Footprints, momentum: Activity,
   allHands: HandMetal, fortress: Castle, chainBlast: Radiation, bossFeast: Medal, lastFlame: Sunrise, itemHunter: PackageSearch,
+  precise: Target, treasure: Gift, itemLover: PackageSearch,
+  silence: CircleOff, mirror: Copy, resonance: Activity, huntInstinct: Footprints,
+  harvest: Sprout, ember: FlameKindling, goldCollector: CircleDollarSign,
   drill: Dumbbell, crownMark: Crown, luckStack: Clover, autoMagnet: Orbit, autoCharge: BatteryFull, autoGuard: ShieldPlus,
 };
 
 const CATEGORY_ICON: Record<AbilityCategory, IconNode> = {
-  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 성장: Sprout, 저주: Skull, 특별: Gem,
+  점수: Sparkles, 피버: Flame, 보스: Crown, 유지: Shield, 견제: Swords, 보조: LifeBuoy, 성장: Sprout, 저주: Skull, 특별: Gem, 유니크: Sparkles,
 };
 
 export const ITEM_ICON: Record<ItemId, IconNode> = {
@@ -81,7 +84,8 @@ export function icon(node: IconNode, size = 18, cls = '') {
   return el.outerHTML;
 }
 
-export const abilityIcon = (id: AbilityId, size = 18, cls = '') => icon(ABILITY_ICON[id], size, cls);
+export const comboIcon = (id: ComboId, size = 18) => icon(id === 'bazaar' ? Gift : UI.combo, size);
+export const abilityIcon = (id: AbilityId, size = 18, cls = '') => icon(ABILITY_ICON[id] ?? CircleHelp, size, cls);
 export const categoryIcon = (c: AbilityCategory, size = 14) => icon(CATEGORY_ICON[c], size);
 export const itemIcon = (id: ItemId, size = 18, cls = '') => icon(ITEM_ICON[id], size, cls);
 export const coopItemIcon = (id: CoopItemId, size = 18, cls = '') => icon(COOP_ITEM_ICON[id], size, cls);

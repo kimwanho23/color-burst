@@ -40,8 +40,8 @@ export const ARCADE = {
 export const LEGEND = {
   hammerChance: 0.15, hammerDmg: 3, comboBonusAdd: 10, headStartMs: 10_000, headStartMult: 1.5, jackpotMults: [2, 3, 5],
   preheatMult: 2, overtimeMs: 100, overchargeKeep: 50, afterglowMult: 2, shieldDrain: 3, plunderTopMult: 2,
-  jammerSlowMs: 2_000, wideHandMult: 1.5, magnetPerSec: 2, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
-  collectorUp: 0.5, chainEvery: 5, tauntMs: 1_000, zoneComboAdd: 1, counterFever: 20,
+  wideHandMult: 1.5, magnetPerSec: 2, missSaveMult: 1.5, rapidStreak: 5, laserFever: 20,
+  tauntMs: 1_000, zoneComboAdd: 1, preciseComboAdd: 1, itemLoverExtra: 2, counterFever: 20,
   pickyFeverMult: 2, frenzyComboMult: 2, vanguardMult: 2, rainbowFeverMult: 2,
   autoCharge: 15, autoGuardMs: 3_000, autoMagnetAdd: 1, luckHighMult: 2,
 } as const;
@@ -55,7 +55,7 @@ export const GROWTH = { drillEvery: 10, drillPts: 1, crownFever: 0.2, luckPct: 1
 /** 증강 조합 보너스 수치 */
 export const COMBO = {
   feverAdd: 1, comboBonusMult: 2, bossDmgAdd: 1, bossHitMult: 1.5, bossKillMult: 2, stealMult: 3, stealMarkCutMs: 1_000,
-  jackpotAdd: 10, outskirtsMult: 1.5, ironKeepPct: 80, bossSoloFever: 25,
+  jackpotAdd: 10, outskirtsMult: 1.5, ironKeepPct: 80, bossSoloFever: 25, bazaarDur: 1.5, bazaarFever: 50,
 } as const;
 /** 빌드 가중치: 가진 증강과 같은 분류 ×sameCat, 가진 조합의 나머지 ×comboPart (곱함) */
 export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
@@ -65,7 +65,7 @@ export const WEIGHT = { sameCat: 2, comboPart: 3 } as const;
  * magnetPointPct: 자석으로 끌어온 원 점수(%, 콤보·콤보 보너스·잭팟·피버 게이지 없음).
  * plunderMax: 강탈 한 번에 빼앗는 최대 점수. headStartMult: 출발 신호 배율
  */
-export const AUG = { reboundMs: 3_000, rapidMs: 400, chainEvery: 10, chainR: 150, vanguardMs: 3_000, afterglowMult: 1.5, magnetPointPct: 70, plunderMax: 30, headStartMult: 1.3 } as const;
+export const AUG = { reboundMs: 3_000, rapidMs: 400, preciseR: 0.4, treasureFloor: 6, treasureRate: 1000, vanguardMs: 3_000, afterglowMult: 1.5, magnetPointPct: 70, plunderMax: 30, headStartMult: 1.3 } as const;
 
 /** 특별 카드 수치 */
 export const SPECIAL = {
@@ -100,9 +100,10 @@ export type AbilityId =
   | 'preheat' | 'overtime' | 'overcharge' | 'frenzy' | 'afterglow'
   | 'hammer' | 'hunter' | 'crusher'
   | 'insurance' | 'shield'
-  | 'thickSkin' | 'plunder' | 'counterPro' | 'jammer'
+  | 'thickSkin' | 'plunder' | 'counterPro'
+  | 'precise' | 'treasure' | 'itemLover' | UniqueId
   | 'jackpot' | 'wideHand' | 'magnet' | 'reflect' | 'edge'
-  | 'missSave' | 'rebound' | 'rapid' | 'laserProof' | 'collector' | 'chainCombo' | 'centerKing' | 'ignite' | 'vanguard' | 'taunt'
+  | 'missSave' | 'rebound' | 'rapid' | 'laserProof' | 'centerKing' | 'ignite' | 'vanguard' | 'taunt'
   | StackId | AutoId
   | CurseId | SpecialId;
 
@@ -119,7 +120,7 @@ export const AUTO_IDS: readonly AutoId[] = ['autoMagnet', 'autoCharge', 'autoGua
 
 export type CurseId = 'glassCannon' | 'gambler' | 'berserker' | 'oneWay' | 'vampire' | 'timeBomb' | 'selfTarget' | 'devilPact';
 
-export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '보조' | '성장' | '저주' | '특별';
+export type AbilityCategory = '점수' | '피버' | '보스' | '유지' | '견제' | '보조' | '성장' | '저주' | '특별' | '유니크';
 
 export interface AbilityDef {
   id: AbilityId;
@@ -137,12 +138,17 @@ export interface AbilityDef {
   curse?: { gain: string; cost: string };
   /** 특별 카드: 역전 기회인 꼴찌만 받는 카드 (등급 없음, 게임 끝까지) */
   special?: true;
+  unique?: true;
+  aim?: AbilityCategory;
 }
 
 const sec = (ms: number) => `${+(ms / 1000).toFixed(1)}초`;
 
+export const treasureEvery = (rate: number) => Math.max(AUG.treasureFloor, Math.round(AUG.treasureRate / rate));
+
 export const ABILITIES: readonly AbilityDef[] = [
   // 점수
+  { id: 'precise', name: '정밀 사격', cat: '점수', values: [0.3, 0.5, 0.8, 1.5], cap: 2, desc: (v) => `원 가운데(반지름 ${pct(AUG.preciseR)} 안)를 직접 누르면 점수 ×${+(1 + v).toFixed(2)}` },
   { id: 'picky', name: '편식가', cat: '점수', values: [1, 2, 3, 6], desc: (v) => `내 색 +${v}점, 대신 노란색 −1점` },
   { id: 'yellowTaste', name: '노란 맛', cat: '점수', values: [1, 2, 3, 6], desc: (v) => `노란색 +${v}점` },
   { id: 'rainbowHunt', name: '무지개 사냥', cat: '점수', values: [3, 6, 9, 18], desc: (v) => `무지개 +${v}점` },
@@ -150,7 +156,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 8, 10, 15], cap: 20, desc: (v) => `라운드 처음 ${v}초 동안 점수 ×${AUG.headStartMult}` },
   { id: 'jackpot', name: '잭팟', cat: '점수', values: [5, 10, 15, 30], cap: 35, desc: (v) => `원을 잡을 때 ${v}% 확률로 잭팟 (×1.5~×3)` },
   { id: 'rapid', name: '속사', cat: '점수', values: [1, 2, 3, 6], cap: 12, desc: (v) => `${AUG.rapidMs / 1000}초 안에 연달아 잡으면 두 번째부터 +${v}점` },
-  { id: 'chainCombo', name: '연쇄 콤보', cat: '점수', values: [1, 1, 2, 3], cap: 5, desc: (v) => `${AUG.chainEvery}콤보마다 근처(반경 ${AUG.chainR}) 내 원 ${v}개 자동 획득` },
+
   { id: 'centerKing', name: '중앙의 왕', cat: '점수', values: [30, 50, 70, 120], cap: 200, desc: (v) => `중앙 구역 원 점수 +${v}%` },
   { id: 'edge', name: '찰나의 순간', cat: '점수', values: [0.5, 1, 1.5, 3], cap: 4, desc: (v) => `가장자리 점수 배율 +${v} (기본 ×3)` },
   // 피버
@@ -167,7 +173,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'vanguard', name: '선봉', cat: '보스', values: [2, 3, 4, 6], desc: (v) => `보스마다 내 첫 타 점수 ×${v}` },
   // 유지
   { id: 'insurance', name: '보험', cat: '유지', values: [20, 40, 60, 100], cap: 100, desc: (v) => `콤보가 끊겨도 ${v}% 유지` },
-  { id: 'shield', name: '방패', cat: '유지', values: [1, 2, 3, 6], desc: (v) => `견제당해도 콤보 유지, 라운드당 ${v}번` },
+  { id: 'shield', name: '방패', cat: '유지', values: [1, 2, 3, 6], desc: (v) => `콤보가 끊길 때 통째로 막음, 라운드당 ${v}번` },
   { id: 'rebound', name: '리바운드', cat: '유지', values: [30, 50, 70, 120], cap: 200, desc: (v) => `콤보가 끊긴 뒤 ${AUG.reboundMs / 1000}초 동안 점수 +${v}%` },
   { id: 'laserProof', name: '방해 내성', cat: '유지', values: [25, 40, 60, 100], cap: 100, desc: (v) => (v >= 100 ? '레이저·위험 패턴·방해 아이템에 걸리지 않음' : `레이저·위험 패턴 스턴과 방해 아이템 시간 −${v}%`) },
   // 견제
@@ -175,13 +181,15 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'plunder', name: '강탈', cat: '견제', values: [1, 2, 3, 5], provisional: true, desc: (v) => `견제하면 상대의 이번 라운드 점수 ${v}%를 빼앗음 (최대 ${AUG.plunderMax}점)` },
   { id: 'counterPro', name: '반격 전문가', cat: '견제', values: [2, 4, 6, 12], provisional: true, desc: (v) => `반격 +${v}점` },
   { id: 'reflect', name: '견제 반사', cat: '견제', values: [1, 2, 3, 6], desc: (v) => `내 색을 견제당하면 내가 잡은 것으로, 견제한 사람은 콤보 끊김·표적 (라운드당 ${v}번)` },
-  { id: 'jammer', name: '방해 전파', cat: '견제', values: [500, 1000, 1500, 3000], provisional: true, desc: (v) => `내 피버가 터지면 상대 원이 ${sec(v)} 동안 흐려짐` },
-  { id: 'taunt', name: '도발', cat: '견제', values: [5, 10, 15, 25], cap: 50, desc: (v) => `견제하면 상대 피버 게이지 −${v}%` },
+
+  { id: 'taunt', name: '도발', cat: '견제', values: [5, 10, 15, 25], cap: 50, desc: (v) => `견제하면 상대 피버 게이지 ${v}%를 빼앗아 내 게이지에` },
   // 보조
+  { id: 'treasure', name: '보물 상자', cat: '보조', values: [50, 67, 83, 125], cap: 167, desc: (v) => `${treasureEvery(v)}콤보마다 무작위 아이템이 바로 발동` },
+  { id: 'itemLover', name: '아이템 애호가', cat: '보조', values: [40, 60, 80, 100], cap: 100, desc: (v) => `아이템이 발동하면 ${v}% 확률로 새 아이템이 한 번 더` },
   { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 70], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
   { id: 'magnet', name: '자석', cat: '보조', values: [45, 65, 90, 180], cap: 180, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (무지개 제외, 점수 ${AUG.magnetPointPct}%만)` },
   { id: 'missSave', name: '헛손질 보정', cat: '보조', values: [40, 60, 80, 120], cap: 160, desc: (v) => `빈 곳을 클릭하면 반경 ${v} 안의 가장 가까운 내 원을 대신 잡음` },
-  { id: 'collector', name: '수집가', cat: '보조', values: [20, 40, 60, 100], cap: 200, desc: (v) => `아이템 효과 시간 +${v}%` },
+
   { id: 'autoMagnet', name: '자기장', cat: '보조', values: [3, 4, 6, 10], cap: 15, desc: (v) => `1분에 ${v}번 저절로 자석 ${sec(GROWTH.autoMs.autoMagnet)}` },
   { id: 'autoCharge', name: '충전기', cat: '보조', values: [4, 6, 8, 12], cap: 20, desc: (v) => `1분에 ${v}번 저절로 피버 게이지 +${GROWTH.autoCharge}` },
   { id: 'autoGuard', name: '보호막 발생기', cat: '보조', values: [3, 4, 6, 10], cap: 15, desc: (v) => `1분에 ${v}번 저절로 보호막 ${sec(GROWTH.autoMs.autoGuard)} (견제당해도 페널티 없음)` },
@@ -192,12 +200,14 @@ export const ABILITIES: readonly AbilityDef[] = [
 ];
 
 /** 봇은 고르지 않는 능력 (봇은 원을 정확히 눌러서 효과가 없음) */
-export const ASSIST_ABILITIES: readonly AbilityId[] = ['wideHand', 'magnet', 'missSave', 'autoMagnet'];
+export const ASSIST_ABILITIES: readonly AbilityId[] = ['wideHand', 'magnet', 'missSave', 'autoMagnet', 'precise'];
 
 /** 레전드 전용 효과 문장 (그 능력을 레전드로 한 번이라도 고르면 붙는다) */
 const L_ = LEGEND;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
+  precise: `정밀하게 맞히면 콤보 +${1 + L_.preciseComboAdd}`, treasure: '희귀 이상 아이템만',
+  itemLover: `추가 발동에 성공하면 한 번 더 (최대 ${1 + L_.itemLoverExtra}개)`,
   picky: `내 색 원을 잡으면 피버 게이지가 ${L_.pickyFeverMult}배로 참`, yellowTaste: '노란 원도 피버 게이지가 내 색 원만큼 참',
   rainbowHunt: `무지개 원의 피버 게이지 ${L_.rainbowFeverMult}배`, comboArtist: `콤보 보너스 점수 +${L_.comboBonusAdd}`,
   headStart: `배율 ×${AUG.headStartMult} → ×${L_.headStartMult}, 최소 ${sec(L_.headStartMs)}`, jackpot: `잭팟 배율 ×${L_.jackpotMults[0]}~×${L_.jackpotMults.at(-1)}`,
@@ -209,11 +219,10 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   hunter: '보스 막타 때 화면의 내 원을 전부 잡음', crusher: '방어형 보스의 보호막을 무시', insurance: '콤보가 끊겨도 피버 게이지가 안 깎임',
   shield: `견제당하면 견제한 사람 점수 ${L_.shieldDrain}점을 빼앗음`, thickSkin: '견제해도 피버 게이지가 안 깎임',
   plunder: `1등을 견제하면 빼앗는 점수 ${L_.plunderTopMult}배`,
-  counterPro: `반격하면 피버 게이지 +${L_.counterFever}`, reflect: '횟수 제한 없음', jammer: `내 피버가 터지면 상대 커서 ${sec(L_.jammerSlowMs)} 감도 감소`,
+  counterPro: `반격하면 피버 게이지 +${L_.counterFever}`, reflect: '횟수 제한 없음',
   wideHand: `범위로 같이 잡은 원 점수 ×${L_.wideHandMult}`, magnet: `1초에 ${L_.magnetPerSec}개까지 끌어옴`, missSave: `대신 잡은 원 점수 ×${L_.missSaveMult}`,
   rebound: `끊긴 콤보의 절반을 그 ${sec(AUG.reboundMs)} 안에 되찾음`, rapid: `연속 ${L_.rapidStreak}개면 다음 원 잭팟 확정`,
   laserProof: `레이저·위험 패턴에 닿으면 피버 게이지 +${L_.laserFever}`,
-  collector: `아이템 원을 잡으면 ${pct(L_.collectorUp)} 확률로 한 등급 위`, chainCombo: `${L_.chainEvery}콤보마다`,
   centerKing: `중앙에서 잡으면 콤보 +${1 + L_.zoneComboAdd}`,
   drill: '한 칸 쌓일 때 콤보 보너스도 받음', crownMark: '보스 독식에도 한 칸', luckStack: `잭팟 배율 ×3 이상 확률 ${L_.luckHighMult}배`,
   autoMagnet: `발동 중 자석으로 1초에 ${L_.autoMagnetAdd}개 더`, autoCharge: `피버 게이지 +${GROWTH.autoCharge} → +${L_.autoCharge}`, autoGuard: `보호막 ${sec(GROWTH.autoMs.autoGuard)} → ${sec(L_.autoGuardMs)}`,
@@ -221,7 +230,7 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   taunt: `피버 중인 상대를 견제하면 그 피버가 ${sec(L_.tauntMs)} 짧아짐`,
 };
 
-export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall';
+export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall' | 'bazaar';
 /** 증강 조합: 필요한 증강을 모두 가지면(등급 무관) 보너스. 같은 조합은 한 번 */
 export const COMBOS: readonly { id: ComboId; name: string; needs: readonly AbilityId[]; text: string }[] = [
   { id: 'feverMaster', name: '피버 마스터', needs: ['preheat', 'overtime', 'frenzy'], text: `피버 배율 +${COMBO.feverAdd}` },
@@ -231,6 +240,7 @@ export const COMBOS: readonly { id: ComboId; name: string; needs: readonly Abili
   { id: 'lucky', name: '행운아', needs: ['jackpot', 'rainbowHunt'], text: `잭팟 확률 +${COMBO.jackpotAdd}%` },
   { id: 'outskirts', name: '변두리', needs: ['edge', 'magnet'], text: `커서가 가장자리 구역이면 자석 범위 ×${COMBO.outskirtsMult}` },
   { id: 'gourmet', name: '미식가', needs: ['picky', 'yellowTaste'], text: '노란 원도 내 색 원처럼 (점수·피버 게이지)' },
+  { id: 'bazaar', name: '잡화점', needs: ['treasure', 'itemLover'], text: `아이템 효과 시간 ×${COMBO.bazaarDur}, 아이템이 발동할 때마다 피버 게이지 +${COMBO.bazaarFever}` },
   { id: 'ironWall', name: '철옹성', needs: ['shield', 'insurance', 'rebound'], text: `콤보가 끊기지 않고 ${100 - COMBO.ironKeepPct}%만 줄어듦` },
 ];
 
@@ -259,8 +269,8 @@ export function combosCompletedBy(picks: readonly Pick[] | undefined, card: Pick
 export function buildWeight(id: AbilityId, owned: readonly Pick[] | undefined) {
   if (!owned?.length) return 1;
   const have = new Set(owned.map((p) => p.id));
-  const cats = new Set(owned.map((p) => ABILITY[p.id]?.cat));
-  let w = cats.has(ABILITY[id].cat) ? WEIGHT.sameCat : 1;
+  const cats = new Set(owned.map((p) => ABILITY[p.id]?.aim ?? ABILITY[p.id]?.cat));
+  let w = cats.has(ABILITY[id].aim ?? ABILITY[id].cat) ? WEIGHT.sameCat : 1;
   if (COMBOS.some((c) => !c.needs.every((n) => have.has(n)) && c.needs.some((n) => have.has(n)) && c.needs.includes(id) && !have.has(id))) w *= WEIGHT.comboPart;
   // 진화를 노릴 수 있게: 진화 한 장 전인 증강
   if (owned.filter((p) => p.id === id).length === EVOLVE.count - 1) w *= EVOLVE.weight;
@@ -269,12 +279,12 @@ export function buildWeight(id: AbilityId, owned: readonly Pick[] | undefined) {
 
 /** 레전드로 한 번이라도 고른 능력 */
 export function legendOf(picks: readonly Pick[] | undefined): Set<AbilityId> {
-  const out = new Set((picks ?? []).filter((p) => p.tier === 3 && !ABILITY[p.id]?.curse && !ABILITY[p.id]?.special).map((p) => p.id));
+  const out = new Set((picks ?? []).filter((p) => p.tier === 3 && isOrdinary(p.id)).map((p) => p.id));
   for (const id of evolvedOf(picks)) out.add(id);
   return out;
 }
 /** 레전드 전용 효과가 있는지: 레전드로 고름 또는 진화 */
-export const hasLegend = (p: { picks: readonly Pick[] }, id: AbilityId) => p.picks.some((x) => x.id === id && x.tier === 3) || evolvedOf(p.picks).has(id);
+export const hasLegend = (p: PickHolder, id: AbilityId) => legendsFor(p).has(id);
 
 /** 잭팟 배율과 그 확률(%) */
 export const JACKPOT = { mults: [1.5, 2, 3], odds: [70, 25, 5] } as const;
@@ -314,9 +324,40 @@ export const SPECIALS: readonly AbilityDef[] = ([
   id, name, cat: '특별' as const, values: [1, 1, 1, 1] as const, cap: 1, special: true as const, desc: () => text,
 }));
 
-export const ALL_ABILITIES: readonly AbilityDef[] = [...ABILITIES, ...CURSES, ...SPECIALS];
+export type UniqueId = 'silence' | 'mirror' | 'resonance' | 'huntInstinct' | 'harvest' | 'ember' | 'goldCollector';
+export const UNIQUE_ODDS = [0, 3, 8, 10] as const;
+export const UNIQUE_LAST_FINAL = 10;
+export const UNIQUE = {
+  silenceMs: 2_000, resonanceFever: 20,
+  hunt: { assist: 1, solo: 3, pct: 10, max: 10, shortRoundMs: 60_000 },
+  harvest: { every: 25, pct: 2, max: 15 },
+  ember: { ms: 1_000, max: 5 },
+  gold: { points: 20, pct: 5, max: 3 },
+} as const;
+
+export type UniqueStackId = 'huntInstinct' | 'harvest' | 'ember' | 'goldCollector';
+export const UNIQUE_STACK_MAX: Record<UniqueStackId, number> = {
+  huntInstinct: UNIQUE.hunt.max, harvest: UNIQUE.harvest.max, ember: UNIQUE.ember.max, goldCollector: UNIQUE.gold.max,
+};
+
+export const UNIQUES: readonly AbilityDef[] = ([
+  { id: 'silence', name: '무의 시간', aim: '견제', desc: () => `내 피버가 시작되면 ${sec(UNIQUE.silenceMs)} 동안 상대의 증강 효과가 꺼짐 (저주·특별 제외)` },
+  { id: 'mirror', name: '거울', aim: '보조', desc: () => '라운드 시작 시 점수가 가장 높은 상대의 일반 증강 하나를 그 라운드 동안 복사' },
+  { id: 'resonance', name: '공명', aim: '피버', desc: () => `다른 사람의 피버가 시작될 때마다 내 피버 게이지 +${UNIQUE.resonanceFever}` },
+  { id: 'huntInstinct', name: '사냥 본능', aim: '보스', desc: () => `보스 처치 관여 +${UNIQUE.hunt.assist}칸, 독식 +${UNIQUE.hunt.solo}칸. 칸당 보스 점수 +${UNIQUE.hunt.pct}% (최대 ${UNIQUE.hunt.max}칸, ${sec(UNIQUE.hunt.shortRoundMs)} 미만 라운드는 2배 적립)` },
+  { id: 'harvest', name: '수확', aim: '점수', desc: () => `원 ${UNIQUE.harvest.every}개 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.harvest.pct}% (최대 ${UNIQUE.harvest.max}칸)` },
+  { id: 'ember', name: '불씨', aim: '피버', desc: () => `피버가 끝날 때마다 한 칸. 칸당 피버 시간 +${sec(UNIQUE.ember.ms)} (최대 ${UNIQUE.ember.max}칸)` },
+  { id: 'goldCollector', name: '황금 수집가', aim: '점수', desc: () => `황금 원 +${UNIQUE.gold.points}점, 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.gold.pct}% (최대 ${UNIQUE.gold.max}칸)` },
+] satisfies { id: UniqueId; name: string; aim: AbilityCategory; desc: () => string }[]).map((a) => ({
+  ...a, cat: '유니크', values: [1, 1, 1, 1], cap: 1, unique: true,
+}));
+
+export const ALL_ABILITIES: readonly AbilityDef[] = [...ABILITIES, ...CURSES, ...SPECIALS, ...UNIQUES];
 export const isCurse = (id: AbilityId) => !!ABILITY[id]?.curse;
 export const isSpecial = (id: AbilityId) => !!ABILITY[id]?.special;
+export const isUnique = (id: AbilityId) => !!ABILITY[id]?.unique;
+export const isOrdinary = (id: AbilityId) => !!ABILITY[id] && !isCurse(id) && !isSpecial(id) && !isUnique(id);
+export const hasLegendPick = (picks: readonly Pick[]) => picks.some((p) => p.tier === 3 && isOrdinary(p.id));
 
 /**
  * 역전 기회 판정: 1등 점수가 0보다 크고, 꼴찌(최저 점수, 모두 동점이면 없음) 점수가 1등 × ratio 미만이면 그 꼴찌들
@@ -335,6 +376,39 @@ export const ABILITY = Object.fromEntries(ALL_ABILITIES.map((a) => [a.id, a])) a
 
 export interface Pick { id: AbilityId; tier: Tier }
 export type Mods = Record<AbilityId, number>;
+
+export type PickHolder = { picks: readonly Pick[]; silenced?: boolean; mirror?: Pick | null };
+
+export function activePicks(p: PickHolder): readonly Pick[] {
+  return p.silenced ? p.picks.filter(({ id }) => isCurse(id) || isSpecial(id)) : p.picks;
+}
+
+export function modsFor(p: PickHolder): Mods {
+  const picks = activePicks(p);
+  const m = modsOf(picks);
+  const copy = p.silenced ? null : p.mirror;
+  if (!copy || !isOrdinary(copy.id)) return m;
+  const cap = evolvedCap(copy.id, evolvedOf(picks).has(copy.id));
+  return { ...m, [copy.id]: Math.min(cap, m[copy.id] + abilityValue(copy)) };
+}
+
+export function legendsFor(p: PickHolder): Set<AbilityId> {
+  const legends = legendOf(activePicks(p));
+  if (!p.silenced && p.mirror?.tier === 3 && isOrdinary(p.mirror.id)) legends.add(p.mirror.id);
+  return legends;
+}
+
+export const combosFor = (p?: PickHolder) => combosOf(p && activePicks(p));
+export const synergiesFor = (p?: PickHolder) => synergiesOf(p && activePicks(p));
+
+type MirrorPlayer = PickHolder & { id: string; score: number; team?: number; outAt?: number };
+export function pickMirror(p: MirrorPlayer, players: readonly MirrorPlayer[], team: boolean, rand = Math.random): Pick | null {
+  if (!p.picks.some(({ id }) => id === 'mirror')) return null;
+  const target = players.filter((o) => o.id !== p.id && !o.outAt && (!team || o.team !== p.team))
+    .reduce<MirrorPlayer | undefined>((best, o) => !best || o.score > best.score ? o : best, undefined);
+  const pool = target?.picks.filter(({ id }) => isOrdinary(id));
+  return pool?.length ? { ...pool[Math.floor(rand() * pool.length)] } : null;
+}
 
 const ZERO = Object.fromEntries(ALL_ABILITIES.map((a) => [a.id, 0])) as Mods;
 
@@ -355,6 +429,7 @@ export function modsOf(picks: readonly Pick[] | undefined): Mods {
 /** 중첩 상한: 진화하면 ×capMult, 잭팟만은 +jackpotCapAdd(%p)만 (확률 상한이 너무 커지지 않게) */
 export function evolvedCap(id: AbilityId, evolved: boolean) {
   const cap = ABILITY[id].cap ?? Infinity;
+  if (id === 'itemLover') return cap;
   if (!evolved) return cap;
   return id === 'jackpot' ? cap + EVOLVE.jackpotCapAdd : cap * EVOLVE.capMult;
 }
@@ -366,7 +441,7 @@ export const EVOLVE = { count: 3, capMult: 1.5, weight: 2, jackpotCapAdd: 5 } as
 export function evolvedOf(picks: readonly Pick[] | undefined): Set<AbilityId> {
   const n = new Map<AbilityId, number>();
   for (const p of picks ?? []) n.set(p.id, (n.get(p.id) ?? 0) + 1);
-  return new Set([...n].filter(([id, c]) => c >= EVOLVE.count && !ABILITY[id]?.curse && !ABILITY[id]?.special).map(([id]) => id));
+  return new Set([...n].filter(([id, c]) => c >= EVOLVE.count && isOrdinary(id)).map(([id]) => id));
 }
 
 /** 시너지: 같은 분류의 서로 다른 증강 수가 need 이상이면 보너스 (저주·특별·성장 제외, 증강 조합과 따로) */
@@ -399,14 +474,15 @@ export function synergiesOf(picks: readonly Pick[] | undefined): Set<SynergyCat>
 export function groupPicks(picks: readonly Pick[]): { id: AbilityId; tier: Tier; count: number }[] {
   const out = new Map<AbilityId, { id: AbilityId; tier: Tier; count: number }>();
   for (const p of picks) {
+    if (!ABILITY[p.id]) continue;
     const g = out.get(p.id);
     if (g) { g.count++; if (p.tier > g.tier) g.tier = p.tier; } else out.set(p.id, { id: p.id, tier: p.tier, count: 1 });
   }
   return [...out.values()];
 }
 
-export const abilityValue = (p: Pick) => ABILITY[p.id].values[p.tier];
-export const abilityText = (p: Pick) => ABILITY[p.id].desc(abilityValue(p));
+export const abilityValue = (p: Pick) => ABILITY[p.id]?.values[p.tier] ?? 0;
+export const abilityText = (p: Pick) => ABILITY[p.id]?.desc(abilityValue(p)) ?? '';
 
 /** 콤보 보너스 주기: 기본 10콤보, 최소 3콤보 */
 export const comboPeriod = (cut: number) => Math.max(3, 10 - cut);
@@ -461,6 +537,7 @@ export interface RollOpts {
   special?: boolean;
   /** 지금 가진 능력 (빌드 가중치) */
   owned?: readonly Pick[];
+  unique?: boolean;
 }
 
 export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.random, opts: RollOpts = {}, count: number = ARCADE.optionCount): Pick[] {
@@ -472,14 +549,27 @@ export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.r
   if (odds.every((w) => w === 0)) odds = base.map((_, t) => (t === base.length - 1 ? 1 : 0));
   const pool = ABILITIES.filter((a) => !opts.exclude?.includes(a.id));
   const out: Pick[] = [];
+  const uniquePct = lastPlace ? UNIQUE_ODDS[i + 1] ?? UNIQUE_LAST_FINAL : UNIQUE_ODDS[i];
+  const uniques = opts.unique && !opts.allLegend && !opts.owned?.some(({ id }) => isUnique(id))
+    ? UNIQUES.filter((a) => !opts.exclude?.includes(a.id)) : [];
+  const replaceRare = odds[1] ? uniquePct * odds.reduce((a, b) => a + b, 0) / (100 * odds[1]) : 0;
+  let offeredUnique = false;
   // 빌드 가중치에 비례해 하나씩 뽑고 풀에서 뺀다 (중복 없음)
   const weights = pool.map((a) => buildWeight(a.id, opts.owned));
   while (out.length < count && pool.length) {
     let r = rand() * weights.reduce((x, y) => x + y, 0), k = pool.length - 1;
     for (let j = 0; j < pool.length; j++) { r -= weights[j]; if (r < 0) { k = j; break; } }
+    const tier = opts.allLegend ? 3 : rollTier(odds, rand);
+    if (tier === 1 && uniques.length && !offeredUnique && replaceRare > 0 && rand() < replaceRare) {
+      let draw = rand() * uniques.reduce((sum, a) => sum + buildWeight(a.id, opts.owned), 0);
+      const a = uniques.find(({ id }) => (draw -= buildWeight(id, opts.owned)) < 0) ?? uniques[uniques.length - 1];
+      out.push({ id: a.id, tier: 0 });
+      offeredUnique = true;
+      continue;
+    }
     const a = pool.splice(k, 1)[0];
     weights.splice(k, 1);
-    out.push({ id: a.id, tier: opts.allLegend ? 3 : rollTier(odds, rand) });
+    out.push({ id: a.id, tier });
   }
   let curseAt = -1;
   // 저주 카드: 선택지 하나를 바꿔 끼운다
@@ -488,18 +578,22 @@ export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.r
     // 악마의 계약은 마지막 선택에서는 대가만 남아서 제외
     const curses = CURSES.filter((c) => !(c.id === 'devilPact' && pickIndex >= ARCADE.rounds - 2));
     const c = curses[Math.floor(rand() * curses.length)];
-    curseAt = Math.floor(rand() * out.length);
-    out[curseAt] = { id: c.id, tier: 0 };
+    const spots = out.flatMap(({ id }, k) => isOrdinary(id) ? [k] : []);
+    const reserve = Number(!!opts.special) + Number(opts.guarantee !== undefined);
+    if (spots.length > reserve) {
+      curseAt = spots[Math.floor(rand() * spots.length)];
+      out[curseAt] = { id: c.id, tier: 0 };
+    }
   }
   // 특별 카드: 저주가 아닌 자리 하나를 바꾼다
   if (opts.special && out.length) {
-    const spots = out.map((_, k) => k).filter((k) => k !== curseAt);
+    const spots = out.map((_, k) => k).filter((k) => k !== curseAt && isOrdinary(out[k].id));
     const s = SPECIALS[Math.floor(rand() * SPECIALS.length)];
-    if (spots.length) out[spots[Math.floor(rand() * spots.length)]] = { id: s.id, tier: 0 };
+    if (spots.length > Number(opts.guarantee !== undefined)) out[spots[Math.floor(rand() * spots.length)]] = { id: s.id, tier: 0 };
   }
   // 꼴찌 등급 보장: 저주·특별 카드를 끼운 뒤, 남은 일반 카드 중에서
   const g = opts.guarantee;
-  const plain = out.filter((o) => !isCurse(o.id) && !isSpecial(o.id));
+  const plain = out.filter((o) => isOrdinary(o.id));
   if (g !== undefined && plain.length && !plain.some((o) => o.tier >= g)) plain[Math.floor(rand() * plain.length)].tier = g;
   return out;
 }

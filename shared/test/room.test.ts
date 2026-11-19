@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { FIELD, RULES, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, type Circle, type MapPattern, type Pick } from '../src/index.ts';
+import { AUG, COMBO, UNIQUE, FIELD, RULES, clearCombo, buffOn, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, isUnique, type Circle, type MapPattern, type Pick, type ServerToClient } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
+type ItemEvent = Parameters<ServerToClient['item:got']>[0];
+const itemEvents: ItemEvent[] = [];
 /** 판 중앙 (예전 1600×900 판의 (800, 450) 자리) */
 const CX = FIELD.w / 2, CY = FIELD.h / 2;
-const fakeIo = () => ({ to: () => ({ emit(ev: string) { sent.push(ev); } }), sockets: { sockets: new Map() } }) as never;
+const fakeIo = () => ({ to: () => ({ emit(ev: string, data?: ItemEvent) { sent.push(ev); if (ev === 'item:got' && data) itemEvents.push(data); } }), sockets: { sockets: new Map() } }) as never;
 
 /** 방장이 아닌 사람을 모두 준비시킨 뒤 시작 (대기실 준비 규칙) */
 function startReady(room: Room, hostId: string) {
@@ -552,7 +554,7 @@ test('두 장 선택: 하나 고르면 새 카드 3장과 need 1을 다시 보�
   room.choose(me.id, 0);
   assert.deepEqual([o.need, o.options.length, o.chosen, me.picks.length], [1, 3, false, 1]);
   assert.notEqual(o.options, first, '새로 뽑은 카드');
-  assert.ok(o.options.every((c) => c.tier >= 1 || isCurse(c.id)), '3라운드 뒤는 노말 제외 그대로');
+  assert.ok(o.options.every((c) => c.tier >= 1 || isCurse(c.id) || isUnique(c.id)), '3라운드 뒤는 노말 제외 그대로');
   assert.equal(o.extra.gift, false);
   assert.ok(sent.includes('arcade:offer'));
   room.choose(me.id, 0);
@@ -585,6 +587,8 @@ test('3라운드 끝 역전 꼴찌는 특별 카드를 받음, 1등은 못 받�
   me.score = 100; other.score = 1000;
   openPick(r, 3);
   assert.equal(me.comeback, true);
+  assert.ok(r.offers.get(me.id)!.options.every((o) => o.tier === 3));
+  room.choose(me.id, 0);
   assert.equal(r.offers.get(me.id)!.options.filter((o) => isSpecial(o.id)).length, 1);
   assert.equal(r.offers.get(other.id)!.options.some((o) => isSpecial(o.id)), false);
   room.destroy();
@@ -622,7 +626,8 @@ test('봇은 두 장을 고르고 특별 카드를 먼저', (t) => {
   openPick(r, 3);
   for (let k = 0; k < 10; k++) t.mock.timers.tick(1000); // 두 번째 카드 타이머는 첫 카드를 고른 뒤에 걸린다
   assert.equal(bots[0].picks.length, 2);
-  assert.equal(isSpecial(bots[0].picks[0].id), true);
+  assert.equal(bots[0].picks[0].tier, 3);
+  assert.equal(isSpecial(bots[0].picks[1].id), true);
 });
 
 test('연쇄 폭발: 근처 내 원을 함께 잡음', (t) => {
@@ -659,7 +664,10 @@ test('특별 카드를 고른 뒤 다시 뽑아도 특별 카드는 다시 안 �
   me.score = 100; other.score = 1000;
   openPick(r, 3);
   const o = r.offers.get(me.id)!;
-  room.choose(me.id, o.options.findIndex((x) => isSpecial(x.id)));
+  room.choose(me.id, 0);
+  const special = o.options.findIndex((x) => isSpecial(x.id));
+  assert.notEqual(special, -1);
+  me.picks.push(o.options[special]);
   for (let n = 0; n < 20; n++) {
     (o as unknown as { rerolls: number }).rerolls = 1;
     room.reroll(me.id);
@@ -698,10 +706,10 @@ test('헛손질 보정은 내 원만 (남의 색·끌리는 원·보호 구역 �
   room.destroy();
 });
 
-test('자동 획득은 다시 연쇄하지 않음 (점화·연쇄 콤보·연쇄 폭발 함께)', (t) => {
+test('자동 획득은 다시 연쇄하지 않음 (점화·연쇄 폭발 함께)', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();
-  me.picks = [{ id: 'ignite', tier: 3 }, { id: 'chainCombo', tier: 3 }, { id: 'chainBlast', tier: 0 }];
+  me.picks = [{ id: 'ignite', tier: 3 }, { id: 'chainBlast', tier: 0 }];
   me.fever = 99; me.combo = 4;
   for (let i = 0; i < 12; i++) circles.set(100 + i, slowAt(100 + i, me.color, 750 + i * 25, 300 + (i % 3) * 40, now));
   t.mock.method(Math, 'random', () => 0);
@@ -1320,9 +1328,9 @@ test('자동 시전(방): 보호막 발생기는 보호막 버프, 자기장은 
   bot.bot = true;
   for (const p of [me, bot]) { p.picks = [{ id: 'autoGuard', tier: 0 }, { id: 'autoMagnet', tier: 0 }]; p.autoAt = { autoGuard: now, autoMagnet: now }; p.buffs = {}; }
   r.updateAuto(now);
-  assert.ok((me.buffs.guard ?? 0) > now && (me.buffs.magnet ?? 0) > now);
-  assert.ok((bot.buffs.guard ?? 0) > now);
-  assert.equal(bot.buffs.magnet, undefined);
+  assert.ok(buffOn(me, 'guard', now) && buffOn(me, 'magnet', now));
+  assert.equal(buffOn(bot, 'guard', now), true);
+  assert.equal(buffOn(bot, 'magnet', now), false);
   room.destroy();
 });
 
@@ -1339,4 +1347,104 @@ test('두 장 차례: 새로 깔린 카드가 같은 자리에 같은 증강이�
   room.choose(me.id, 0, first, o.deal); // 새 묶음 번호면 고름
   assert.equal(me.picks.length, 2);
   room.destroy();
+});
+
+test('레전드 천장: 첫 묶음과 다시 뽑기에 적용하고 이미 레전드를 가진 사람은 일반 확률로 뽑는다', (t) => {
+  const { room, me, other, r } = arcadeRoom();
+  t.after(() => room.destroy());
+  other.picks = [{ id: 'hammer', tier: 3 }];
+  t.mock.method(Math, 'random', () => 0.4);
+  openPick(r, 3);
+  const mine = r.offers.get(me.id)!;
+  assert.ok(mine.options.every((c) => c.tier === 3 && !isUnique(c.id)));
+  assert.ok(r.offers.get(other.id)!.options.some((c) => c.tier !== 3));
+  room.reroll(me.id);
+  assert.ok(mine.options.every((c) => c.tier === 3 && !isUnique(c.id)));
+  room.choose(me.id, 0);
+  assert.ok(mine.options.some((c) => c.tier !== 3));
+});
+
+test('정밀 사격: 서버가 직접 클릭의 중심 40% 경계를 판정한다', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  me.picks = [{ id: 'precise', tier: 3 }];
+  const now = Date.now();
+  const c = slowAt(1, me.color, 850, 550, now);
+  circles.set(1, c);
+  room.click(me.id, { circleId: 1, x: 850, y: 550 + c.r * AUG.preciseR - 0.01 });
+  assert.equal(me.combo, 2);
+  circles.set(2, { ...c, id: 2 });
+  room.click(me.id, { circleId: 2, x: 850, y: 550 + c.r * AUG.preciseR + 0.01 });
+  assert.equal(me.combo, 3);
+});
+
+test('보물 상자 레전드와 애호가 레전드: 콤보가 끊겨도 누적, 커서에서 3개 발동, 잡화점 피버', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  me.picks = [{ id: 'treasure', tier: 3 }, { id: 'itemLover', tier: 3 }];
+  me.chestCount = 7;
+  me.combo = 12; clearCombo(me);
+  room.cursor(me.id, { x: 880, y: 560 });
+  circles.set(1, slowAt(1, me.color, 850, 550, now));
+  t.mock.method(Math, 'random', () => 0.05);
+  const initial = itemEvents.length;
+  room.click(me.id, { circleId: 1, x: 850, y: 550 });
+  const fired = itemEvents.slice(initial);
+  assert.equal(me.chestCount, 0);
+  assert.deepEqual(fired.map((e) => [e.circleId, e.tier, !!e.extra]), [[null, 1, false], [null, 0, true], [null, 0, true]]);
+  assert.deepEqual([fired[0].x, fired[0].y], [880, 560]);
+  assert.ok(me.feverUntil > now);
+  assert.equal(me.fever, 0);
+});
+
+test('아이템 애호가 일반은 추가분을 다시 굴리지 않고 잡화점은 추가분에도 충전한다', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  me.picks = [{ id: 'treasure', tier: 0 }, { id: 'itemLover', tier: 0 }];
+  circles.set(1, { ...slowAt(1, 'item', 850, 550, now), itemTier: 0 });
+  t.mock.method(Math, 'random', () => 0.05);
+  const initial = itemEvents.length;
+  room.click(me.id, { circleId: 1, x: 850, y: 550 });
+  assert.deepEqual(itemEvents.slice(initial).map((e) => [e.circleId, !!e.extra]), [[1, false], [null, true]]);
+  assert.equal(COMBO.bazaarFever, 50);
+  assert.ok(me.feverUntil > now);
+  assert.equal(me.fever, 0);
+});
+
+test('라운드 시작 예열 피버도 무의 시간을 걸고, 룸 상태의 종료 시각에 풀린다', (t) => {
+  const { room, me, other } = arcadeRoom();
+  t.after(() => room.destroy());
+  const r = room as unknown as { beginRound(): void; updateArcadeTimers(now: number): void; startAt: number };
+  me.picks = [{ id: 'silence', tier: 0 }, { id: 'preheat', tier: 3 }];
+  other.picks = [{ id: 'mirror', tier: 0 }];
+  r.beginRound();
+  assert.ok(other.mirror);
+  assert.equal(other.silencedUntil, r.startAt + UNIQUE.silenceMs);
+  r.updateArcadeTimers(other.silencedUntil);
+  assert.equal(other.silenced, false);
+  assert.ok(other.mirror);
+  (room as unknown as { endRound(): void }).endRound();
+  assert.equal(other.mirror, null);
+});
+
+test('무의 시간: 진행 중인 증강 자석은 풀리고 아이템 자석은 유지', (t) => {
+  const { room, me, circles } = playingRoom();
+  t.after(() => room.destroy());
+  const now = Date.now();
+  const r = room as unknown as { pulls: Map<number, { circleId: number; by: string; at: number; ms: number }>; resolvePulls(now: number): void };
+  me.picks = [{ id: 'magnet', tier: 0 }];
+  me.silenced = true;
+  me.silencedUntil = now + 2000;
+  const c = slowAt(1, me.color, 850, 550, now);
+  circles.set(1, c);
+  r.pulls.set(1, { circleId: 1, by: me.id, at: now, ms: 100 });
+  r.resolvePulls(now);
+  assert.equal(r.pulls.has(1), false);
+  assert.equal(circles.has(1), true);
+  me.buffs.magnet = now + 1000;
+  r.pulls.set(1, { circleId: 1, by: me.id, at: now, ms: 100 });
+  r.resolvePulls(now + 100);
+  assert.equal(circles.has(1), false);
 });

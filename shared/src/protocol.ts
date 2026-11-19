@@ -228,7 +228,7 @@ export interface ServerToClient {
   'circle:claimed': (d: { circleId: number; by: string; result: ClaimResult; x: number; y: number }) => void;
   'click:rejected': (d: { circleId: number }) => void;
   /** 아이템 원을 잡음. 블라스트(폭죽·필드 클리어)면 이 이벤트가 먼저 오고 circle:claimed가 이어진다 */
-  'item:got': (d: { circleId: number; by: string; item: ItemId; tier: ItemTier; x: number; y: number }) => void;
+  'item:got': (d: { circleId: number | null; by: string; item: ItemId; tier: ItemTier; x: number; y: number; extra?: boolean }) => void;
   'zone:add': (z: Zone) => void;
   /** 레이저 예고 (at에 발사) */
   'laser:warn': (d: LaserVolley) => void;
@@ -243,6 +243,7 @@ export interface ServerToClient {
   'aura:hit': (d: { by: string; x: number; y: number }) => void;
   /** 커서 자석이 원을 끌기 시작함 */
   'circle:pull': (d: Pull) => void;
+  'circle:unpull': (d: { circleId: number }) => void;
   /** 발사 패턴 예고: at(서버 시각)에 웨이브가 나온다 */
   'wave:warn': (d: { pattern: WavePattern; at: number }) => void;
   /** 시간 정지: 해당 원들에 정지 구간 [at, at + ms] */
