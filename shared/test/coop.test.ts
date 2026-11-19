@@ -236,11 +236,12 @@ test('breaks에 burstMs가 남는다', () => {
   const { room, r, me } = coopRoom(1, 0);
   const now = r.startAt + 5000;
   toShield(r, me, now);
-  breakMine(r, me, now + 9_000); // 남은 3초 → 4초 + 1.5초
-  const res = r.coop.result(now + 9_000, r.startAt, false, 'time');
+  const breakAt = r.coop.state().shield!.until - 3_000;
+  breakMine(r, me, breakAt); // 남은 3초 → 4초 + 1.5초
+  const res = r.coop.result(breakAt, r.startAt, false, 'time');
   assert.equal(res.breaks.length, 1);
   assert.equal(res.breaks[0]!.burstMs, 5_500);
-  assert.equal(r.coop.state().burstUntil, now + 9_000 + 5_500);
+  assert.equal(r.coop.state().burstUntil, breakAt + 5_500);
   room.destroy();
 });
 
@@ -307,15 +308,16 @@ test('엑스퍼트 난이도: 규칙 정리를 통과하고 하드보다 한 칸
   const { hard: h, expert: x } = C.levels;
   assert.ok(x.laserWarnMs <= h.laserWarnMs && x.laserWidth > h.laserWidth);
   assert.ok(x.threatCount > h.threatCount && x.threatSpeed > h.threatSpeed);
-  assert.ok(x.crystalHits[0] > h.crystalHits[0] && x.crystalHits[1] > h.crystalHits[1] && x.crystalSec < h.crystalSec);
+  assert.ok(x.crystalHits[0] > h.crystalHits[0] && x.crystalHits[1] > h.crystalHits[1]);
   assert.ok(x.safeCount <= h.safeCount && x.orbMult < h.orbMult && x.bulletEveryMs < h.bulletEveryMs);
 });
 
-test('난이도 표: 세 난이도 모두 있고 하드일수록 공격이 잦고 수정이 단단하다', () => {
+test('난이도 표: 수정 제한은 이지 9초, 노말 7초, 하드 5초, 엑스퍼트 8초', () => {
   const L = C.levels;
   for (const k of ['easy', 'normal', 'hard', 'expert'] as const) assert.ok(L[k]);
   assert.ok(L.easy.bulletEveryMs > L.normal.bulletEveryMs && L.normal.bulletEveryMs > L.hard.bulletEveryMs);
-  assert.ok(L.easy.laserWarnMs > L.hard.laserWarnMs && L.easy.crystalSec > L.hard.crystalSec);
+  assert.ok(L.easy.laserWarnMs > L.hard.laserWarnMs);
+  assert.deepEqual([L.easy.crystalSec, L.normal.crystalSec, L.hard.crystalSec, L.expert.crystalSec], [9, 7, 5, 8]);
   for (const k of ['easy', 'normal', 'hard', 'expert'] as const) {
     for (const gone of ['laserEvery', 'threatEvery', 'slamEvery', 'safeEvery', 'mapEvery', 'phase3Mult']) assert.ok(!(gone in L[k]), `${k}.${gone}`);
   }
@@ -414,7 +416,11 @@ function toShield(r: CRoom, me: PlayerState, now: number, edge = C.phaseAt[0]) {
 /** 내 수정을 다 깬다 */
 function breakMine(r: CRoom, p: PlayerState, now: number) {
   const c = crystals(r).find((x) => x.target === p.id)!;
-  while (r.circles.has(c.id)) r.coop.hitCrystal(p, c, now);
+  while (r.circles.has(c.id)) {
+    const before = c.hp!;
+    r.coop.hitCrystal(p, c, now);
+    assert.ok(c.hp! < before, '제한 시간 안의 수정 타격이어야 함');
+  }
 }
 
 type SkillRun = { useSkill(k: CoopSkill, now: number): void; rand: () => number };
@@ -828,7 +834,7 @@ test('수정 구간 중 탈락하면 그 사람 수정이 치워진다 (깬 것�
   r.coop.damage(other, 'laser', now + 10);
   assert.ok(other.outAt > 0);
   assert.equal(crystals(r).filter((c) => c.target === other.id).length, 0);
-  breakMine(r, me, now + 9000);
+  breakMine(r, me, now + 1000);
   assert.equal(r.coop.isShielded(), false);
   room.destroy();
 });
@@ -908,7 +914,7 @@ test('coop 결과: 사람마다 대미지·큰 피해 대미지·수정·추적 
   const mine = res.players[me.id]!;
   assert.ok(mine.dmg > mine.burstDmg && mine.burstDmg > 0);
   assert.equal(mine.crystals, 1);
-  assert.deepEqual(res.breaks, [{ ms: 2000, rages: 0, burstMs: 9000 }]);
+  assert.deepEqual(res.breaks, [{ ms: 2000, rages: 0, burstMs: 6500 }]);
   assert.equal(res.maxHp, r.coop.boss.maxHp);
   room.destroy();
 });
@@ -1559,12 +1565,14 @@ test('고유 패턴: 보호막·큰 피해 구간에는 안 나오고, 끝난 �
   for (let t = r.startAt; t <= now; t += 50) r.coop.tick(t);
   assert.equal(calls.length, 1);
   toShield(r, me, now);
+  const shieldUntil = r.coop.state().shield!.until;
+  const breakAt = shieldUntil - 1000;
   calls.length = 0;
-  for (let t = now; t <= now + 8000; t += 50) r.coop.tick(t);
+  for (let t = now; t <= breakAt; t += 50) r.coop.tick(t);
   assert.equal(calls.length, 0, '보호막 중 없음');
-  breakMine(r, me, now + 8000);
-  const end = now + 8000 + burstMsFor((C.levels.normal.crystalSec - 8) * 1000);
-  for (let t = now + 8000; t < end; t += 50) r.coop.tick(t);
+  breakMine(r, me, breakAt);
+  const end = breakAt + burstMsFor(shieldUntil - breakAt);
+  for (let t = breakAt; t < end; t += 50) r.coop.tick(t);
   assert.equal(calls.length, 0, '큰 피해 구간 중 없음');
   for (let t = end; t <= end + 12_000; t += 50) r.coop.tick(t);
   assert.equal(calls.length, 1);

@@ -14,7 +14,7 @@ test('스페셜 어택 선택: 기본 레이저, 공격별 충전량·위력과 
   assert.match(html, /충전 50 · 기본 총피해 34/);
   assert.match(html, /충전 75 · 기본 총피해 55/);
   assert.match(html, /수호 결계[\s\S]*?모든 피해 40% 감소[\s\S]*?충전 50 · 5초/);
-  assert.match(html, /중력 족쇄[\s\S]*?충전 55 · 3초/);
+  assert.match(html, /중력 족쇄[\s\S]*?충전 55 · 5초/);
   assert.match(html, /연계 신호[\s\S]*?충전 40 · 6초/);
 });
 

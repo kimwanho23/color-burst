@@ -44,7 +44,7 @@ const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string, keyof typeof UI]> = {
   easy: ['이지', '레이저가 얇고 공격이 느려요', 'chill'],
   normal: ['노말', '보통 세기의 공격', 'basic'],
   hard: ['하드', '굵은 레이저와 빠른 공격 원', 'hardcore'],
-  expert: ['엑스퍼트', '촘촘한 탄막과 단단한 수정, 짧은 제한 시간', 'expert'],
+  expert: ['엑스퍼트', '촘촘한 탄막, 단단한 수정과 중앙 프리즘', 'expert'],
 };
 /** 커스텀 규칙: 방장 브라우저에만 저장 (모드 설정은 빼고) */
 const CUSTOM_KEY = 'cb-custom-rules';
