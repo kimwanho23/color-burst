@@ -104,8 +104,8 @@ let lastClick = { x: 0, y: 0 };
 /** 판 중앙과 중앙에서 구석까지 거리 (화면 문구·폭죽 위치) */
 const CX = FIELD.w / 2, CY = FIELD.h / 2, CORNER = Math.hypot(CX, CY);
 let blast = { x: CX, y: CY, R: CORNER };
-/** 얼음 원: 내가 얼어붙는 시각(그때까지 서리가 차오름), 얼어붙음이 끝나는 시각 */
-let frostUntil = 0, icedUntil = 0;
+/** 얼음 원으로 인한 기절이 끝나는 시각 */
+let icedUntil = 0;
 /** 마지막 폭탄 원 십자 폭발 중심 (걸린 원을 거리 순으로 늦춰 터뜨린다) */
 let crossAt = { x: CX, y: CY };
 let startAt = 0, endAt = 0, playing = false, lastCount = -1;
@@ -664,8 +664,7 @@ function applyPlay(d: PlayPayload, fresh: boolean) {
   // 다시 접속·재개: 서버 상태에서 내려찍기·안전지대를 이어서 그린다
   coopSlams = coopState?.slams ?? []; coopSafe = coopState?.safe ?? null; coopSeal = coopState?.seal ?? null; coopBeam = coopState?.beam ?? null; coopHoming = coopState?.homing ?? null;
   setVolleys(coopState?.volleys ?? []);
-  // 재접속: 원에 남아 있는 정지 구간으로 시간 정지 상태 복원
-  frozenUntil = Math.max(0, ...d.circles.flatMap((c) => (c.holds ?? []).map(([a, ms]) => a + ms)));
+  frozenUntil = d.freezeUntil;
   playing = true;
   show(null);
   renderScores();
@@ -1208,11 +1207,10 @@ socket.on('bomb:blast', ({ circleId, x, y }) => {
   renderer.crossBlast(x, y, RULES.specialCircles.bomb.halfWidth * 2);
   sfx.cross();
 });
-socket.on('ice:burst', ({ circleId, x, y, targets, freezeAt }) => {
+socket.on('ice:burst', ({ circleId, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
   renderer.iceBurst(x, y);
   sfx.ice();
-  if (targets.includes(myId())) frostUntil = freezeAt;
 });
 socket.on('split:burst', ({ circleId, x, y }) => {
   circles.delete(circleId); pending.delete(circleId);
@@ -1262,7 +1260,7 @@ socket.on('stun', ({ playerId, until, by }) => {
   const p = nameOf(playerId);
   const snipe = by === 'snipe';
   if (playerId === myId()) {
-    if (by === 'ice') { icedUntil = until; frostUntil = 0; }
+    if (by === 'ice') icedUntil = until;
     if (snipe) { sfx.snipe(); renderer.snipe(); renderer.text(CX, CY + -70, '저격당했다!', '#ff5d73', 1.6); }
     else sfx.stun();
     const c = gameCursor.pos ?? { x: CX, y: CY };
@@ -1290,7 +1288,7 @@ socket.on('circles:hold', ({ ids, at, ms, bossOnly }) => {
   // 서버와 같은 방식으로 붙인다 (정지 중 또 정지하면 이어 붙임)
   holdCircles(ids.map((id) => circles.get(id)).filter((c): c is Circle => !!c), at, ms);
   if (bossOnly) return;
-  frozenUntil = Math.max(frozenUntil, at + ms);
+  frozenUntil = at + ms;
   // 예고 중인 레이저도 서버처럼 늦춘다 (발사음도 다시 예약)
   holdLasers(lasers, at, ms);
   setLasers(lasers);
@@ -1661,6 +1659,8 @@ function frame() {
   checkBulletHit(m, now, live && playing);
   // 협력전: 맞은 뒤 무적 동안 내 커서가 깜빡인다
   const blink = !!m && rules.coop && now < m.immuneUntil && Math.floor(now / 120) % 2 === 0;
+  // 시간 정지 중에는 서버가 미룬 frostAt과 정지 종료 시각 사이의 남은 시간을 쓴다
+  const frostLeft = (m?.frostAt ?? 0) - Math.max(now, frozenUntil);
   renderer.draw({
     circles: circles.values(),
     hidden: pending,
@@ -1673,7 +1673,7 @@ function frame() {
     cursor: gameCursor.pos && playing && !picking() && !roundOver && !pausedView && !blink && !out
       ? { ...gameCursor.pos, stunned: !!m && isStunned(m, now), reach: m ? reachOf(m, now) : 0, magnet: m ? magnetOf(m, now, gameCursor.pos) : 0,
         barrier: rules.coop && m?.coopFx && now < m.coopFx.barrierUntil ? (m.coopFx.barrierUntil - now) / RULES.coop.barrier.durationMs : 0,
-        frost: now < frostUntil ? 1 - (frostUntil - now) / RULES.specialCircles.ice.slowMs : 0,
+        frost: frostLeft > 0 ? Math.max(0, 1 - frostLeft / RULES.specialCircles.ice.slowMs) : 0,
         iced: !!m && isStunned(m, now) && now < icedUntil }
       : null,
     lasers: lasers.filter((l) => now < l.at + RULES.laser.fireMs),

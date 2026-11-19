@@ -8,7 +8,7 @@ export function inCross(center: Point, q: Point, r: number, halfWidth: number = 
 
 const I = RULES.specialCircles.ice, S = RULES.specialCircles.split;
 /** 얼음 원 설명 (숫자는 RULES.specialCircles.ice에서) */
-export const ICE_DESC = `누르면 나 빼고 모두 ${I.slowMs / 1000}초 동안 커서가 아주 느려진 뒤 ${I.stunMs / 1000}초 얼어붙음. 콤보는 그대로`;
+export const ICE_DESC = `누르면 나 빼고 모두(팀전이면 상대 팀만) ${I.slowMs / 1000}초 동안 커서가 아주 느려진 뒤 ${I.stunMs / 1000}초 얼어붙음. 콤보는 그대로`;
 /** 분열 원 설명 (숫자는 RULES.specialCircles.split에서) */
 export const SPLIT_DESC = `누르면 내 색 파편 ${S.count}개가 흩어짐. 파편은 내가 잡으면 점수, 남의 커서에 닿으면 ${S.stunMs / 1000}초 기절`;
 /** 폭탄 원 설명 (대기실 규칙 표·도감 공용) */

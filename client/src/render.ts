@@ -404,8 +404,9 @@ export class Renderer {
       else if (c.kind === 'threat') this.drawThreat(c, p.x, p.y, r, s);
       else if (c.kind === 'crystal') crystals.push({ c, x: p.x, y: p.y, r });
       else {
+        if (c.splitBy && !reduceMotion) this.drawPieceTrail(c, p.x, p.y, r);
         this.drawCircle(c.kind, p.x, p.y, r, (s.now - c.born) / 700 + c.id, s);
-        if (c.splitBy) this.drawPieceEdge(c, p.x, p.y, r);
+        if (c.splitBy) this.drawPieceEdge(p.x, p.y, r);
       }
     }
     ctx.globalAlpha = base;
@@ -996,20 +997,22 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** 분열 파편: 주인 색 원 위에 톱니 테두리 + 진행 반대쪽 짧은 잔상 (일반 원과 구분) */
-  private drawPieceEdge(c: Circle, x: number, y: number, r: number) {
+  /** 분열 파편 몸체 뒤에 진행 반대쪽으로 짧은 잔상 */
+  private drawPieceTrail(c: Circle, x: number, y: number, r: number) {
     const ctx = this.ctx;
-    const col = typeof c.kind === 'number' ? COLORS[c.kind].hex : '#ffffff';
     ctx.save();
-    if (!reduceMotion) {
-      const dx = -Math.cos(c.angle), dy = -Math.sin(c.angle);
-      for (let i = 1; i <= 3; i++) {
-        ctx.globalAlpha *= 0.55;
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(x + dx * r * 0.9 * i, y + dy * r * 0.9 * i, r * (1 - i * 0.22), 0, Math.PI * 2); ctx.fill();
-      }
+    ctx.fillStyle = typeof c.kind === 'number' ? COLORS[c.kind].hex : '#ffffff';
+    const dx = -Math.cos(c.angle), dy = -Math.sin(c.angle);
+    for (let i = 1; i <= 3; i++) {
+      ctx.globalAlpha *= 0.55;
+      ctx.beginPath(); ctx.arc(x + dx * r * 0.9 * i, y + dy * r * 0.9 * i, r * (1 - i * 0.22), 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
+  }
+
+  /** 분열 파편 몸체 위에 흰 톱니 테두리 */
+  private drawPieceEdge(x: number, y: number, r: number) {
+    const ctx = this.ctx;
     ctx.save(); ctx.translate(x, y);
     const n = 10, out = r + 7;
     ctx.beginPath();

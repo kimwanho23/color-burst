@@ -65,10 +65,15 @@ export class Bot {
     const total = weights.reduce((a, b) => a + b, 0);
     if (total <= 0) return null;
     let r = Math.random() * total;
-    let pick = cands[cands.length - 1];
-    for (let i = 0; i < cands.length; i++) { r -= weights[i]; if (r <= 0) { pick = cands[i]; break; } }
+    let pick: Circle | null = null;
+    for (let i = 0; i < cands.length; i++) {
+      if (weights[i] <= 0) continue;
+      pick = cands[i];
+      r -= weights[i];
+      if (r < 0) break;
+    }
     // 황금 원은 노려도 놓칠 수 있다
-    if (pick.kind === 'gold' && Math.random() >= L.goldHit) return null;
+    if (pick?.kind === 'gold' && Math.random() >= L.goldHit) return null;
     return pick;
   }
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Bot } from '../../server/src/bot.ts';
-import { makeGold, newPlayer } from '../src/index.ts';
+import { makeGold, newPlayer, type Circle } from '../src/index.ts';
 
 test('봇은 황금 원에 늦게 반응하고, 노려도 놓칠 수 있다', (t) => {
   const me = newPlayer('b', 'B', 1, true);
@@ -17,4 +17,17 @@ test('봇은 황금 원에 늦게 반응하고, 노려도 놓칠 수 있다', (t
   assert.equal(bot.think(me, [old], [me], t0 + 2000)?.id, 2);
   rnd = 0.7; // 명중 확률 밖 → 놓침
   assert.equal(bot.think(me, [old], [me], t0 + 4000), null);
+});
+
+test('봇은 가중치 추첨의 난수가 0이어도 남의 파편을 고르지 않는다', (t) => {
+  t.mock.method(Math, 'random', () => 0);
+  const me = newPlayer('b', 'B', 0, true);
+  const other = newPlayer('p', 'P', 1);
+  const t0 = 100_000;
+  const own: Circle = { id: 1, kind: me.color, angle: 0, speed: 0, r: 22, born: t0, noGuard: true, splitBy: me.id };
+  const foe: Circle = { ...own, id: 2, kind: other.color, splitBy: other.id };
+  const bot = new Bot(2);
+  assert.equal(bot.think(me, [foe, own], [me, other], t0), null);
+  assert.equal(bot.think(me, [foe, own], [me, other], t0 + 800), own);
+  assert.equal(bot.think(me, [foe], [me, other], t0 + 2000), null);
 });

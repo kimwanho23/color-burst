@@ -1139,7 +1139,7 @@ export class Room {
 
   private playPayload() {
     return {
-      startAt: this.startAt, endAt: this.endAt, players: this.players, circles: [...this.circles.values()],
+      startAt: this.startAt, endAt: this.endAt, freezeUntil: this.freezeUntil, players: this.players, circles: [...this.circles.values()],
       rules: this.rules, pausedBy: this.pausedBy, pausedAt: this.pausedAt, nextCutAt: this.nextCutAt, pauseUntil: this.pauseUntil, resumeAt: this.resumeAt, arcade: this.arcadeState(), zones: this.zones, theme: this.theme,
       pulls: [...this.pulls.values()], lasers: this.lasers.map(({ lines, at }) => ({ lines, at })),
       pattern: this.pattern, popped: [...this.popped],

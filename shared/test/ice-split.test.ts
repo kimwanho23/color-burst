@@ -138,9 +138,17 @@ test('얼음: 일시정지·시간 정지만큼 얼어붙는 시각이 밀린다
   advance(500);
   r.finishResume();
   assert.equal(other.frostAt, at0 + 500);
+  assert.equal(of('game:sync').at(-1).players.find((p: PlayerState) => p.id === other.id).frostAt, at0 + 500);
   t.mock.method(Math, 'random', () => 0); // 전설 중 시간 정지
   r.fireItem(me, 2, CX - 300, CY - 300, now(), null);
   assert.equal(other.frostAt, at0 + 500 + RULES.items.freezeMs);
+  r.pausedAt = now();
+  advance(500);
+  r.finishResume();
+  const sync = of('game:sync').at(-1);
+  assert.equal(sync.circles.length, 0);
+  assert.equal(sync.freezeUntil, now() + RULES.items.freezeMs);
+  assert.equal(sync.players.find((p: PlayerState) => p.id === other.id).frostAt, at0 + 1000 + RULES.items.freezeMs);
   // 정지 중에는 얼어붙지 않는다
   advance(I.slowMs);
   r.tick();

@@ -182,6 +182,8 @@ export interface GameOver {
 export interface PlayPayload {
   startAt: number;
   endAt: number;
+  /** 시간 정지 종료 서버 시각 (정지한 적 없으면 0) */
+  freezeUntil: number;
   players: PlayerState[];
   circles: Circle[];
   rules: RoomRules;
