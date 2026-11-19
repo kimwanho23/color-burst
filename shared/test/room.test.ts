@@ -27,6 +27,42 @@ function playingRoom() {
   return { room, me: room.players.find((p) => p.id === a.id)!, circles: r.circles };
 }
 
+test('개발 자동사냥: 보호막 강타가 있으면 일반 반격과 반격권을 내 색 원보다 먼저 쓴다', (t) => {
+  const room = new Room(fakeIo(), 'AUTO', () => {}, true, false, true);
+  t.after(() => room.destroy());
+  const { id } = room.join('s1', 'k1', 'A') as { id: string };
+  room.setDevAutoFarm(id, true);
+  assert.equal(room.start(id), null);
+  const r = room as unknown as { startAt: number; circles: Map<number, Circle>; tickDevAutoFarm(now: number): void };
+  const now = r.startAt + 100;
+  t.mock.method(Date, 'now', () => now);
+  const [me, marked, unmarked] = room.players;
+  me.picks = [{ id: 'autoGuard', tier: 0 }, { id: 'shield', tier: 0 }];
+  me.generatorGuard = true;
+  marked.markedUntil = now + 1000;
+  const x = CX + 300, y = CY;
+  r.circles.set(100, slowAt(100, me.color, x, y, now));
+  r.circles.set(101, slowAt(101, unmarked.color, x, y, now));
+  r.circles.set(102, slowAt(102, marked.color, x, y, now));
+  r.tickDevAutoFarm(now);
+  assert.deepEqual([...r.circles.keys()], [100, 101]);
+  assert.equal(me.generatorGuard, false);
+  assert.equal(me.stats.counters, 1);
+  assert.equal(me.score, 2 * RULES.points.counter + COMBO.shieldBashPoints);
+
+  r.tickDevAutoFarm(now);
+  assert.deepEqual([...r.circles.keys()], [101]);
+
+  me.picks.push({ id: 'counterPro', tier: 0 });
+  me.counterReady = me.generatorGuard = true;
+  r.circles.set(103, slowAt(103, me.color, x, y, now));
+  r.tickDevAutoFarm(now);
+  assert.deepEqual([...r.circles.keys()], [103]);
+  assert.equal(me.stats.counters, 2);
+  assert.equal(me.counterReady, false);
+  assert.equal(me.generatorGuard, false);
+});
+
 test('이미 가져간 원을 늦게 누르면 거절만 하고 빈 곳 페널티는 없다', () => {
   const { room, me } = playingRoom();
   me.combo = 12; me.fever = 40;

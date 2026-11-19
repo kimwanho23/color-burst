@@ -26,6 +26,7 @@ const BEAM_STEP_MS = 10;
 
 export interface CoopHost {
   players(): PlayerState[];
+  isDevInvulnerable?(p: PlayerState): boolean;
   emit<E extends keyof ServerToClient>(ev: E, ...args: Parameters<ServerToClient[E]>): void;
   nextId(): number;
   /** circles에 넣고 circle:spawn */
@@ -874,7 +875,7 @@ export class CoopRun {
 
   /** 체력을 hurt[by]만큼 깎고 무적·기절을 건다. 봇·탈락·무적이면 false. 방어막이 막으면 피해 없이 무적만 걸고 true */
   damage(p: PlayerState, by: CoopHitBy, now: number, circleId?: number): boolean {
-    if (p.bot || p.outAt || (by !== 'crush' && now < p.immuneUntil) || p.hp <= 0) return false;
+    if (p.bot || p.outAt || (by !== 'crush' && now < p.immuneUntil) || p.hp <= 0 || this.host.isDevInvulnerable?.(p)) return false;
     const fx = C.hurtFx[by];
     // 우클릭 보호막: 켜진 동안 피해·기절·무적 없이 막는다. 아이템 방어막은 소모하지 않는다. 압살·분노·큰 구체 놓침은 관통
     if (by !== 'crush' && by !== 'rage' && by !== 'threat' && p.coopFx && now < p.coopFx.barrierUntil + C.barrier.lagMs) {

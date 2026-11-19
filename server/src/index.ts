@@ -8,6 +8,7 @@ import type { AbilityId, ClientToServer, ColorIndex, ServerToClient } from '@col
 import { Room } from './room.ts';
 
 const PORT = Number(process.env.PORT ?? 3001);
+const devAutoFarm = process.env.NODE_ENV !== 'production' && process.argv.includes('--dev-auto-farm');
 const VERSION: string = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')).version;
 const DIST = fileURLToPath(new URL('../../client/dist', import.meta.url));
 const MIME: Record<string, string> = {
@@ -86,7 +87,7 @@ io.on('connection', (socket) => {
     if (!validKey(key)) return ack({ ok: false, error: '접속 정보가 올바르지 않아요. 새로고침해 주세요.' });
     leaveCurrent();
     const code = makeCode();
-    const room = new Room(io, code, () => rooms.delete(code), true, tutorial === true);
+    const room = new Room(io, code, () => rooms.delete(code), true, tutorial === true, devAutoFarm);
     rooms.set(code, room);
     const r = enter(room, key, String(name ?? ''));
     ack('error' in r ? { ok: false, error: r.error } : { ok: true, code, you: r.id });
@@ -109,6 +110,10 @@ io.on('connection', (socket) => {
   socket.on('lobby:botLevel', (d) => { const s = here(); if (s && typeof d?.id === 'string') s.room.setBotLevel(s.id, d.id, d.level); });
   socket.on('lobby:team', (t) => { const s = here(); if (s && (t === 0 || t === 1)) s.room.setTeam(s.id, t); });
   socket.on('lobby:ready', (on) => { const s = here(); if (s) s.room.setReady(s.id, on === true); });
+  if (devAutoFarm) socket.on('dev:autoFarm', (enabled) => {
+    const s = here();
+    if (s && typeof enabled === 'boolean') s.room.setDevAutoFarm(s.id, enabled);
+  });
   socket.on('lobby:special', (kind) => { const s = here(); if (s) s.room.setSpecial(s.id, kind); });
   socket.on('coop:special', () => { const s = here(); if (s) s.room.coopSpecial(s.id); });
   socket.on('coop:barrier', () => { const s = here(); if (s) s.room.coopBarrier(s.id); });

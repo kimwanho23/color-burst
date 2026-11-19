@@ -376,7 +376,7 @@ socket.on('room:state', (s) => {
   if (!playing) rules = s.rules;
   if (!playing) players = s.players;
   $('roomTag').hidden = false;
-  $('roomTag').textContent = s.tutorial ? '연습' : s.solo ? '혼자 하기' : `방 ${s.code}`;
+  $('roomTag').textContent = s.tutorial ? '연습' : import.meta.env.DEV && s.devAutoFarm ? '테스트 · 자동사냥' : s.solo ? '혼자 하기' : `방 ${s.code}`;
   document.body.classList.toggle('tutorial', s.tutorial);
   history.replaceState(null, '', s.solo ? location.pathname : `#${s.code}`);
   renderScores();
@@ -398,9 +398,27 @@ const RULE_ICON = { coop: UI.coop, timer: UI.timer, fever: UI.fever, speed: UI.s
 
 $('coopRuleList').innerHTML = coopRulesHtml();
 
+const devAutoFarmButton = import.meta.env.DEV ? document.createElement('button') : null;
+if (devAutoFarmButton) {
+  devAutoFarmButton.type = 'button';
+  devAutoFarmButton.className = 'btn ghost small';
+  devAutoFarmButton.hidden = true;
+  devAutoFarmButton.setAttribute('aria-label', '테스트 자동사냥');
+  devAutoFarmButton.onclick = () => {
+    if (room?.devAutoFarm !== undefined) socket.emit('dev:autoFarm', !room.devAutoFarm);
+  };
+  $('startBtn').before(devAutoFarmButton);
+}
+
 function renderLobby() {
   if (!room) return;
   const host = room.hostId === myId();
+  if (devAutoFarmButton) {
+    const enabled = room.devAutoFarm === true;
+    devAutoFarmButton.hidden = !host || room.devAutoFarm === undefined;
+    devAutoFarmButton.textContent = enabled ? '테스트 자동사냥 켜짐' : '테스트 자동사냥 꺼짐';
+    devAutoFarmButton.setAttribute('aria-pressed', String(enabled));
+  }
   $('lobbyName').textContent = room.solo ? '혼자 하기' : `방 ${room.code}`;
   $('copyLinkBtn').hidden = room.solo;
   $('leaveBtn').innerHTML = `${icon(UI.leave, 16)}<span>나가기</span>`;
@@ -728,7 +746,8 @@ function myHurtFx(text: string) {
 let previousBulletCursor: { x: number; y: number; at: number } | undefined;
 function checkBulletHit(m: PlayerState | undefined, now: number, live: boolean) {
   const pos = gameCursor.pos;
-  if (!rules.coop || !live || !m || m.outAt || now < m.immuneUntil || !pos || !coopVolleys.length) { previousBulletCursor = undefined; return; }
+  if (!rules.coop || !live || !m || m.outAt || now < m.immuneUntil || !pos || !coopVolleys.length
+    || (import.meta.env.DEV && room?.devAutoFarm)) { previousBulletCursor = undefined; return; }
   const hit = hitShot(pos, coopVolleys, now, coopSkip, previousBulletCursor);
   previousBulletCursor = { x: pos.x, y: pos.y, at: now };
   if (!hit) return;

@@ -135,6 +135,8 @@ export interface RoomSnapshot {
   solo: boolean;
   /** 튜토리얼 방 (혼자, 단계별 연습) */
   tutorial: boolean;
+  /** 자동사냥을 지원하는 개발용 혼자 하기 방에서만 전달 */
+  devAutoFarm?: boolean;
   /** 이 방에서의 누적 승수 (사람만) */
   wins: Record<string, number>;
 }
@@ -329,6 +331,7 @@ export interface ClientToServer {
   'room:leave': () => void;
   /** 튜토리얼: 설명 카드 넘기기 */
   'tutorial:next': () => void;
+  'dev:autoFarm': (enabled: boolean) => void;
   'lobby:color': (color: ColorIndex) => void;
   'lobby:special': (id: CoopSpecialId) => void;
   /** 방장: 빈 칸에 봇 추가 (팀전이면 그 팀) */

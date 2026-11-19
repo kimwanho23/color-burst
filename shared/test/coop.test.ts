@@ -12,6 +12,62 @@ import { Bot } from '../../server/src/bot.ts';
 import { COOP_ATTACK_SPECIAL_IDS, attackSpecialRule, specialRule } from '../src/coopSpecial.ts';
 
 mock.method(console, 'log', () => {});
+test('개발 자동사냥은 지원하는 혼자 하기 방에서만 켤 수 있다', (t) => {
+  for (const [solo, tutorial, dev] of [[true, false, false], [false, false, true], [true, true, true], [true, false, true]]) {
+    const room = new Room(fakeIo(), 'AUTO', () => {}, solo, tutorial, dev);
+    t.after(() => room.destroy());
+    const { id } = room.join('s0', 'k0', 'P0') as { id: string };
+    const available = solo && !tutorial && dev;
+    assert.equal(room.snapshot().devAutoFarm, available ? false : undefined);
+    room.setDevAutoFarm('other', true);
+    assert.equal(room.snapshot().devAutoFarm, available ? false : undefined);
+    room.setDevAutoFarm(id, true);
+    assert.equal(room.snapshot().devAutoFarm, available ? true : undefined);
+  }
+});
+
+test('개발 자동사냥은 직접 클릭으로 보스를 공격하며 모든 보스전 피해를 막는다', (t) => {
+  const room = new Room(fakeIo(), 'AUTO', () => {}, true, false, true);
+  t.after(() => room.destroy());
+  const { id } = room.join('s0', 'k0', 'P0') as { id: string };
+  for (const p of [...room.players]) if (p.bot) room.removeBot(id, p.id);
+  room.setRules(id, { rules: { coop: true } });
+  room.setDevAutoFarm(id, true);
+  assert.equal(room.start(id), null);
+  const r = room as unknown as CRoom;
+  const me = room.players.find((p) => p.id === id)!;
+  room.setDevAutoFarm(id, false);
+  assert.equal(room.snapshot().devAutoFarm, true);
+
+  let now = r.startAt + 100;
+  t.mock.method(Date, 'now', () => now);
+  const mine = makeOrb(70_001, now, { x: 550, y: 700 }, 0, me.color, 0);
+  const foreign = makeOrb(70_002, now, { x: 300, y: 700 }, 0, me.color === 0 ? 1 : 0, 0);
+  r.circles.set(mine.id, mine);
+  r.circles.set(foreign.id, foreign);
+  const hp = r.coop.state().hp;
+  r.pausedAt = now;
+  r.tick();
+  assert.ok(r.circles.has(mine.id));
+  r.pausedAt = 0;
+  r.tick();
+  assert.equal(r.circles.has(mine.id), false);
+  assert.ok(r.circles.has(foreign.id));
+  assert.ok(r.coop.state().hp < hp);
+  assert.equal(me.combo, 1);
+
+  now += 100;
+  toShield(r, me, now);
+  const crystal = crystals(r)[0]!;
+  const crystalHpBefore = crystal.hp!;
+  r.tick();
+  assert.equal(crystal.hp, crystalHpBefore - C.crystal.sameColorDamage);
+
+  for (const by of Object.keys(C.hurtFx) as CoopHitBy[]) assert.equal(r.coop.damage(me, by, now), false, by);
+  assert.equal(me.hp, C.hpMax);
+  assert.equal(me.stunUntil, 0);
+});
+
 test('보스 체력: 난이도 배율과 사람·봇 인원 반영', () => {
   for (const [level, hp] of [['easy', 240], ['normal', 300], ['hard', 360], ['expert', 540]] as const) {
     assert.equal(raidMaxHp(1, 0, level), hp);

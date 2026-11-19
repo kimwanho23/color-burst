@@ -3,7 +3,7 @@ import { BEATS, enterStep as enterTutorialStep, freeDone, freeKinds as tutorialK
 import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, autoEveryMs, AUG, COMBO, LEGEND, SPECIAL, addFever, combosFor, goldGain, clearCombo, preventComboBreak, releaseSilence, onFeverStarted, pickMirror, hasLegendPick, rollItemTier, treasureEvery, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
-  applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, circlePos, isFever, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
+  applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, bossState, circlePos, isFever, isMarked, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, itemDurationMult, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsFor, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
@@ -20,6 +20,7 @@ import { COOP_SPECIAL_IDS, type CoopSpecialId } from '@color-burst/shared';
 type IO = Server<ClientToServer, ServerToClient>;
 
 const TICK_MS = 50;
+const DEV_AUTO_CLICK_MS = 100;
 /** 네트워크 지연을 감안해 과거 몇 ms까지 클릭 위치를 인정할지 */
 const LAG_WINDOW_MS = RULES.lagWindowMs;
 /** 대기실에서 연결이 끊긴 사람의 자리를 비워 두는 시간(새로고침 대비) */
@@ -138,8 +139,13 @@ export class Room {
   /** 아직 안 내보낸 웨이브 원 (born이 되면 내보낸다) */
   private spawnQueue: Circle[] = [];
 
+  private readonly devAutoFarmAvailable: boolean;
+  private devAutoFarm = false;
+  private nextDevAutoClick = 0;
+
   /** tutorial: 혼자 단계별 연습 (단계별 판만, 결과·기록 없음) */
-  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly tutorial = false) {
+  constructor(private io: IO, readonly code: string, private onEmpty: () => void, readonly solo = false, readonly tutorial = false, devAutoFarmAvailable = false) {
+    this.devAutoFarmAvailable = devAutoFarmAvailable && solo && !tutorial;
     if (tutorial) this.rules = { ...TUTORIAL_RULES };
   }
 
@@ -649,6 +655,12 @@ export class Room {
     this.broadcastState();
   }
 
+  setDevAutoFarm(id: string, enabled: boolean) {
+    if (!this.devAutoFarmAvailable || id !== this.hostId || this.phase !== 'lobby' || this.devAutoFarm === enabled) return;
+    this.devAutoFarm = enabled;
+    this.broadcastState();
+  }
+
   /** rematch: 결과 화면의 [바로 한 판 더] (게임이 막 끝났고 그 뒤로 규칙·사람이 그대로면 준비 확인 없이) */
   start(id: string, rematch = false): string | null {
     if (id !== this.hostId) return '방장만 시작할 수 있어요.';
@@ -1002,7 +1014,11 @@ export class Room {
   }
 
   snapshot(): RoomSnapshot {
-    return { code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, rules: this.rules, solo: this.solo, tutorial: this.tutorial, wins: Object.fromEntries(this.wins) };
+    return {
+      code: this.code, hostId: this.hostId, phase: this.phase, players: this.players, rules: this.rules,
+      solo: this.solo, tutorial: this.tutorial, wins: Object.fromEntries(this.wins),
+      ...(this.devAutoFarmAvailable ? { devAutoFarm: this.devAutoFarm } : {}),
+    };
   }
 
   destroy() {
@@ -1137,6 +1153,7 @@ export class Room {
     this.circles.clear();
     this.bossHits.clear();
     this.clickLog.clear();
+    this.nextDevAutoClick = 0;
     this.theme = this.nextTheme;
     this.nextTheme = null;
     this.bossQueue = bossTimes(this.G, this.theme);
@@ -1413,6 +1430,7 @@ export class Room {
       }
     }
     if (zoned) this.emitPlayers();
+    if (this.devAutoFarm && now >= this.nextDevAutoClick) this.tickDevAutoFarm(now);
 
     for (const p of this.players) {
       if (this.phase !== 'play') return;
@@ -1429,6 +1447,41 @@ export class Room {
       else if (target.kind === 'gold') this.claimGold(p, target, now);
       else this.claim(p, target, now, 'click');
     }
+  }
+
+  private tickDevAutoFarm(now: number) {
+    this.nextDevAutoClick = now + DEV_AUTO_CLICK_MS;
+    const p = this.players.find((player) => player.id === this.hostId && player.connected && !player.bot && !player.outAt);
+    if (!p || isStunned(p, now)) return;
+
+    const combos = combosFor(p);
+    const prioritizeCounter = !this.G.coop && combos.has('shieldBash') && !modsFor(p).allHands;
+    const forcedCounter = p.counterReady && combos.has('counterStance');
+    let target: { id: number; point: Point; priority: number } | undefined;
+    for (const c of this.circles.values()) {
+      if (c.boss === 'raid' || c.born > now || this.pulls.has(c.id) || isOut(c, now)) continue;
+      const opposing = typeof c.kind === 'number' && !this.owns(c.kind, p);
+      if (opposing) {
+        if (!prioritizeCounter) continue;
+        const owner = this.players.find((player) => player.color === c.kind && !player.outAt);
+        if (!owner || (!forcedCounter && !isMarked(owner, now))) continue;
+      }
+      if (c.kind === 'boss') {
+        const state = bossState(c, now);
+        if (state.enraged || state.shielded) continue;
+      }
+      // 협력전 대상, 반격, 나머지 원 순서로 누른다.
+      const priority = c.kind === 'crystal' ? 0 : c.kind === 'threat' ? 1 : opposing ? 2 : 3;
+      if (target && priority >= target.priority) continue;
+      const q = circlePos(c, now);
+      const point = { x: Math.max(0, Math.min(FIELD.w, q.x)), y: Math.max(0, Math.min(FIELD.h, q.y)) };
+      if (this.blockedAll(point, now) || !isHit(c, now, point.x, point.y)) continue;
+      target = { id: c.id, point, priority };
+      if (priority === 0) break;
+    }
+    if (!target) return;
+    this.cursor(p.id, target.point);
+    this.click(p.id, { circleId: target.id, ...target.point });
   }
 
   /** 새 원 생성 옵션: 아이템 원 확률, 내 색 비 */
@@ -1550,6 +1603,7 @@ export class Room {
   private startCoop() {
     const host: CoopHost = {
       players: () => this.players,
+      isDevInvulnerable: (p) => this.devAutoFarm && p.id === this.hostId,
       emit: (ev, ...args) => (this.io.to(this.code).emit as (e: string, ...a: unknown[]) => void)(ev, ...args),
       nextId: () => this.nextCircleId++,
       addCircle: (c) => { this.circles.set(c.id, c); this.io.to(this.code).emit('circle:spawn', c); },
@@ -1960,9 +2014,10 @@ export class Room {
     // 팀 합계·팀 최고 점수까지 같으면 무승부: 두 팀 모두 1승 (개인전의 공동 1등과 같은 규칙)
     const teamDraw = !!teams && teams[0].score === teams[1].score && teams[0].best === teams[1].best;
     const winners = coopResult ? new Set(coopResult.win ? this.humans.map((p) => p.id) : []) : teams ? new Set(teamDraw ? [...teams[0].ids, ...teams[1].ids] : teams[0].ids) : this.G.survival ? new Set([rank[0]?.id]) : new Set(rank.filter((p) => p.score === top).map((p) => p.id));
-    for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
-    // 판 기록 한 줄 (튜토리얼은 end()까지 오지 않는다)
-    logGame({ rules: this.rules, solo: this.solo, roundMs: this.G.roundMs, ranking: rank, coop: coopResult, startAt: this.startAt });
+    if (!this.devAutoFarm) {
+      for (const p of rank) if (winners.has(p.id) && !p.bot) this.wins.set(p.id, (this.wins.get(p.id) ?? 0) + 1);
+      logGame({ rules: this.rules, solo: this.solo, roundMs: this.G.roundMs, ranking: rank, coop: coopResult, startAt: this.startAt });
+    }
     this.io.to(this.code).emit('game:over', {
       ranking: rank,
       teams,
