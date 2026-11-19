@@ -89,11 +89,11 @@ export const CURSE = {
 export const TIER_ODDS: readonly (readonly [number, number, number, number])[] = [
   [70, 25, 5, 0],
   [55, 32, 12, 1],
-  [40, 37, 20, 3],
-  [25, 40, 30, 5],
+  [40, 27, 30, 3],
+  [25, 22, 48, 5],
 ];
 /** 꼴찌는 한 단계 다음 차례의 확률을 쓰고, 마지막 차례에서는 이 확률을 쓴다 */
-export const LAST_PLACE_FINAL_ODDS = [15, 35, 35, 15] as const;
+export const LAST_PLACE_FINAL_ODDS = [15, 20, 50, 15] as const;
 
 export type AbilityId =
   | 'picky' | 'yellowTaste' | 'rainbowHunt' | 'comboArtist' | 'headStart'
