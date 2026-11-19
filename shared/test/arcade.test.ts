@@ -43,13 +43,13 @@ test('블라스트: 남의 색 +1, 페널티·표적·주인 콤보 끊기 없�
   assert.deepEqual([a.combo, b.combo, a.stats.steals], [2, 5, 0]);
 });
 
-test('블라스트: 표적인 주인이어도 반격이 아니고 잭팟도 없음', () => {
+test('블라스트: 표적인 주인이어도 반격이 아니고, 잭팟은 굴린다', () => {
   const [a, b] = two();
   a.picks = [{ id: 'jackpot', tier: 3 }];
   b.markedUntil = 10_000;
   const r = resolveClaim(a, 1, [a, b], 100, G, { via: 'blast', rand: seq(0) });
   assert.notEqual(r.type, 'counter');
-  assert.equal(r.jackpot, 1);
+  assert.ok(r.jackpot > 1);
 });
 
 test('reachOf·magnetOf: 능력 + 아이템, 능력 상한', () => {

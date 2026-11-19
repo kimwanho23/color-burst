@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
 import {
-  DEFAULT_RULES, FIELD, PRESETS, RULES, SRC_KEYS, TUTORIAL_RULES, inCross, makeCircle, sanitizeRules, toGameRules,
+  DEFAULT_RULES, newPlayer, resolveClaim, FIELD, PRESETS, RULES, SRC_KEYS, TUTORIAL_RULES, inCross, makeCircle, sanitizeRules, toGameRules,
   type Circle, type ClaimResult, type PlayerState, type Zone,
 } from '../src/index.ts';
 
@@ -236,4 +236,11 @@ test('점수 출처: 십자로 얻은 점수는 폭탄 출처, 출처 합 = 총�
   assert.ok(src.bomb > 0);
   assert.equal(src.circle + src.combo, 0);
   assert.equal(SRC_KEYS.reduce((a, k) => a + src[k], 0) - src.lost, me.score);
+});
+
+test('폭죽·필드 클리어로 잡은 원도 잭팟을 굴린다', () => {
+  const a = newPlayer('a', 'A', 0), b = newPlayer('b', 'B', 1);
+  a.picks = [{ id: 'jackpot', tier: 3 }];
+  const res = resolveClaim(a, 0, [a, b], 0, G, { via: 'blast', rand: () => 0 });
+  assert.ok(res.jackpot > 1);
 });

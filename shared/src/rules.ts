@@ -1818,8 +1818,8 @@ export function resolveClaim(
   const feverMult = fever ? feverMultOf(claimer, G) : 1;
   const mult = capMult((after ? afterMultOf(claimer) : feverMult) * scoreBoostOf(m) * itemMult(claimer, now, true, !area && !magnet && pts > 0)
     * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend * (precise ? 1 + m.precise : 1));
-  // 잭팟은 맨 마지막에 곱한다 (블라스트·자석은 없음). 속사 레전드면 이번 잭팟 확정
-  if (!blast && !magnet) {
+  // 잭팟은 맨 마지막에 곱한다 (자석만 없음, 폭죽·필드 클리어·십자도 굴림). 속사 레전드면 이번 잭팟 확정
+  if (!magnet) {
     const forced = rapidForced && pts > 0;
     if (forced) claimer.rapidJackpot = false;
     res.jackpot = rollJackpot(claimer, m, opts.rand, forced);
