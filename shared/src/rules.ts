@@ -1605,7 +1605,7 @@ export function resolveClaim(
   } else if (kind === 'y' && !fever && buffOn(claimer, 'paint', now)) {
     // 물들이기: 노란 원을 내 색으로 계산 (외길이면 그대로 0점)
     res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; bump();
-    res.feverStarted = gauge(RULES.fever.own * (K.has('gourmet') && L.has('picky') ? LEGEND.pickyFeverMult : 1));
+    res.feverStarted = gauge(RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1));
   } else if (kind === 'y' && fever) {
     res.type = 'own'; pts = m.oneWay ? 0 : P.own + m.picky + m.yellowTaste; bump();
   } else if (kind === 'y' && K.has('gourmet')) {

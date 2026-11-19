@@ -255,11 +255,13 @@ test('부분 콤보 손실 후 이미 받은 보너스와 단련 칸은 콤보 0
   assert.equal(a.stacks.drill, 2);
 });
 
-test('물들이기와 미식가가 함께 적용돼도 노란 원에 편식가 레전드 피버 게이지 2배', () => {
-  const a = player(pick('picky', 3), pick('yellowTaste'));
-  a.buffs.paint = 2000;
-  resolveClaim(a, 'y', [a], 1000, G, raw);
-  assert.equal(a.fever, RULES.fever.own * LEGEND.pickyFeverMult * G.feverGain);
+test('물들인 노란 원은 미식가 보유 여부와 관계없이 편식가 레전드 피버 게이지 2배', () => {
+  for (const picks of [[pick('picky', 3)], [pick('picky', 3), pick('yellowTaste')]]) {
+    const a = player(...picks);
+    a.buffs.paint = 2000;
+    resolveClaim(a, 'y', [a], 1000, G, raw);
+    assert.equal(a.fever, RULES.fever.own * LEGEND.pickyFeverMult * G.feverGain);
+  }
 });
 
 test('보물 상자 간격과 잡화점 아이템 지속 시간', () => {
