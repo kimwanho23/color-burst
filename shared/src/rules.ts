@@ -1627,7 +1627,7 @@ export const crossedCombo = (before: number, after: number, every: number) =>
  */
 export function resolveClaim(
   claimer: PlayerState, kind: CircleKind, players: PlayerState[], now: number, G: GameRules,
-  opts: { via?: ClaimVia; rand?: () => number; zone?: ZoneIndex; precise?: boolean; reflected?: boolean; magneticField?: boolean } = {},
+  opts: { via?: ClaimVia; rand?: () => number; zone?: ZoneIndex; precise?: boolean; reflected?: boolean; magneticField?: boolean; fromItem?: boolean } = {},
 ): ClaimResult {
   const via = opts.via ?? 'click';
   const direct = via === 'click' && !opts.reflected;
@@ -1818,8 +1818,8 @@ export function resolveClaim(
   const feverMult = fever ? feverMultOf(claimer, G) : 1;
   const mult = capMult((after ? afterMultOf(claimer) : feverMult) * scoreBoostOf(m) * itemMult(claimer, now, true, !area && !magnet && pts > 0)
     * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend * (precise ? 1 + m.precise : 1));
-  // 잭팟은 맨 마지막에 곱한다 (자석만 없음, 폭죽·필드 클리어·십자도 굴림). 속사 레전드면 이번 잭팟 확정
-  if (!magnet) {
+  // 잭팟은 맨 마지막에 곱한다. 자석은 없음, 블라스트는 아이템(폭죽·필드 클리어)일 때만 (점화·사냥꾼·연쇄 폭발 자동 획득은 없음). 십자는 굴림. 속사 레전드면 이번 잭팟 확정
+  if (!magnet && (!blast || opts.fromItem)) {
     const forced = rapidForced && pts > 0;
     if (forced) claimer.rapidJackpot = false;
     res.jackpot = rollJackpot(claimer, m, opts.rand, forced);

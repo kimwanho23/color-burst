@@ -1456,6 +1456,7 @@ export class Room {
       else if (this.coop && (target.kind === 'y' || typeof target.kind === 'number')) this.catchCoopOrb(p, target, now);
       else if (target.kind === 'boss') this.hitBoss(p, target, now);
       else if (target.kind === 'item') this.claimItem(p, target, now);
+      else if (target.kind === 'bomb') this.detonate(p, target, now);
       else if (target.kind === 'gold') this.claimGold(p, target, now);
       else this.claim(p, target, now, 'click');
     }
@@ -1848,7 +1849,8 @@ export class Room {
 
   private queueBlast(by: string, bomb: Circle, now: number) {
     if (this.pendingBlasts.some((b) => b.circleId === bomb.id)) return;
-    this.pendingBlasts.push({ by, circleId: bomb.id, at: now + RULES.specialCircles.bomb.chainDelayMs });
+    // 시간 정지 중에 걸린 폭탄은 정지가 끝난 뒤에 터진다
+    this.pendingBlasts.push({ by, circleId: bomb.id, at: Math.max(now, this.freezeUntil) + RULES.specialCircles.bomb.chainDelayMs });
   }
 
   /** 시각이 된 연쇄 폭발을 터뜨린다 (터뜨린 사람이 나갔거나 탈락했거나 폭탄이 사라졌으면 버림) */
@@ -1876,7 +1878,7 @@ export class Room {
     const comboBefore = p.combo;
     const owner = this.players.find((q) => q !== p && q.color === c.kind);
     const ownerCombo = owner?.combo ?? 0;
-    const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }), precise, magneticField: !!pulled?.target });
+    const result = resolveClaim(p, c.kind, this.players, now, this.G, { via, zone: zoneOf({ x, y }), precise, magneticField: !!pulled?.target, fromItem });
     this.io.to(this.code).emit('circle:claimed', { circleId: c.id, by: p.id, result, ...(pulled?.target ?? { x, y }) });
     // 하이에나: 1등이 잡으면 하이에나를 가진 사람이 확률로 점수를 얻는다
     for (const g of hyenaGains(p, this.players.filter((x) => !x.outAt), result.gained)) this.io.to(this.code).emit('special:gain', { playerId: g.playerId, id: 'hyena', delta: g.delta });

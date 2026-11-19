@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
+import { Bot } from '../../server/src/bot.ts';
 import {
   DEFAULT_RULES, newPlayer, resolveClaim, FIELD, PRESETS, RULES, SRC_KEYS, TUTORIAL_RULES, inCross, makeCircle, sanitizeRules, toGameRules,
   type Circle, type ClaimResult, type PlayerState, type Zone,
@@ -18,9 +19,10 @@ const claimedBy = (id: number) => events.find((e) => e.ev === 'circle:claimed' &
 type Internals = {
   startAt: number; circles: Map<number, Circle>; zones: Zone[]; pausedAt: number;
   pendingBlasts: { by: string; circleId: number; at: number }[];
-  tick(): void; endRound(): void; finishResume(): void;
+  tick(): void; endRound(): void; finishResume(): void; freezeUntil: number;
+  autoClaim(p: PlayerState, from: { x: number; y: number }, radius: number, n: number, now: number): void;
   fireItem(p: PlayerState, tier: 0 | 1 | 2, x: number, y: number, now: number, circleId: number | null): void;
-  chargeTreasure(...a: unknown[]): void; autoClaim(...a: unknown[]): void;
+  chargeTreasure(...a: unknown[]): void;
 };
 
 /** 시각을 now로 고정한 2인 방 (두 사람 모두 사람) */
@@ -241,6 +243,60 @@ test('점수 출처: 십자로 얻은 점수는 폭탄 출처, 출처 합 = 총�
 test('폭죽·필드 클리어로 잡은 원도 잭팟을 굴린다', () => {
   const a = newPlayer('a', 'A', 0), b = newPlayer('b', 'B', 1);
   a.picks = [{ id: 'jackpot', tier: 3 }];
-  const res = resolveClaim(a, 0, [a, b], 0, G, { via: 'blast', rand: () => 0 });
+  const res = resolveClaim(a, 0, [a, b], 0, G, { via: 'blast', fromItem: true, rand: () => 0 });
   assert.ok(res.jackpot > 1);
+});
+
+test('봇이 폭탄 원을 고르면 견제가 아니라 십자로 터진다', (t) => {
+  events.length = 0;
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const room = new Room(fakeIo(), 'BOT', () => {});
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.addBot(a.id);
+  assert.equal(room.start(a.id), null);
+  const r = room as unknown as Internals;
+  r.startAt = now - 1000;
+  r.circles.clear();
+  events.length = 0;
+  const bot = room.players.find((p) => p.bot)!;
+  r.circles.set(1, at(1, 'bomb', CX + 300, CY, now));
+  r.circles.set(2, at(2, bot.color, CX + 300, CY + 300, now));
+  t.mock.method(Bot.prototype, 'think', () => r.circles.get(1) ?? null);
+  r.tick();
+  assert.equal(count('bomb:blast'), 1);
+  assert.equal(bot.stats.steals, 0);
+  assert.equal(claimedBy(2)?.by, bot.id);
+});
+
+test('시간 정지 중에 새로 걸린 연쇄는 정지가 끝난 뒤 터진다', (t) => {
+  const { room, r, me, now, advance } = playing(t);
+  t.mock.method(Math, 'random', () => 0); // 전설 중 시간 정지
+  r.fireItem(me, 2, CX - 300, CY - 300, now(), null);
+  assert.equal(r.freezeUntil, now() + RULES.items.freezeMs);
+  r.circles.set(1, at(1, 'bomb', CX + 300, CY, now()));
+  r.circles.set(2, at(2, 'bomb', CX + 300, CY + 300, now()));
+  room.click(me.id, { circleId: 1, x: CX + 300, y: CY });
+  assert.equal(r.pendingBlasts[0].at, now() + RULES.items.freezeMs + RULES.specialCircles.bomb.chainDelayMs);
+  advance(RULES.specialCircles.bomb.chainDelayMs);
+  r.tick();
+  assert.ok(r.circles.has(2));
+});
+
+test('잭팟은 아이템 폭죽·필드 클리어와 십자만: 점화·사냥꾼 자동 획득은 굴리지 않는다', (t) => {
+  const { r, me, now } = playing(t);
+  me.picks = [{ id: 'jackpot', tier: 3 }];
+  t.mock.method(Math, 'random', () => 0);
+  r.circles.set(2, at(2, me.color, CX - 300, CY, now()));
+  r.autoClaim(me, { x: CX, y: CY }, Infinity, Infinity, now());
+  assert.equal(claimedBy(2)?.result.jackpot, 1);
+});
+
+test('보호 구역 안 폭탄을 누르면 거절을 받는다 (다시 누를 수 있게)', (t) => {
+  const { room, r, me, now } = playing(t);
+  r.circles.set(1, at(1, 'bomb', CX + 50, CY, now()));
+  room.click(me.id, { circleId: 1, x: CX + 50, y: CY });
+  assert.equal(count('bomb:blast'), 0);
+  assert.ok(events.some((e) => e.ev === 'circle:rejected' || e.ev === 'click:rejected'));
 });
