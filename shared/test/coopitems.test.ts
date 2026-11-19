@@ -17,7 +17,6 @@ type Run = {
   hitCrystal(p: PlayerState, c: Circle, now: number): boolean;
   damage(p: PlayerState, by: 'bullet' | 'laser', now: number): boolean;
   applyItem(p: PlayerState, item: CoopItemId, now: number, at: { x: number; y: number }): void;
-  hitWeak(p: PlayerState, pt: { x: number; y: number }, now: number): { dmg: number; killed: boolean };
   state(withVolleys?: boolean): CoopState; isShielded(): boolean; inBurst(now: number): boolean;
   result(now: number, startAt: number, win: boolean): { players: Record<string, { dmg: number }> };
   rand: () => number; volleys: Volley[];
@@ -56,8 +55,8 @@ test('rollCoopItem: 엑스퍼트는 회복이 안 나옴', () => {
 
 test('수치: RULES.coop.items', () => {
   assert.deepEqual(I.chance, { easy: 4, normal: 3, hard: 2.5, expert: 1.5 });
-  assert.deepEqual([I.guardMs, I.heal, I.healAll, I.fireMs, I.fireMult, I.powerStep, I.powerMax, I.weakMs, I.weakR, I.weakDmg, I.chainN, I.chainMult, I.comboAdd, I.missiles, I.missileGapMs, I.missilePct],
-    [3000, 20, 10, 5000, 1.5, 0.2, 3, 5000, 34, 1.5, 3, 2, 10, 8, 200, 0.04]);
+  assert.deepEqual([I.guardMs, I.heal, I.healAll, I.fireMs, I.fireMult, I.powerStep, I.powerMax, I.weakMs, I.weakMult, I.chainN, I.chainMult, I.comboAdd, I.missiles, I.missileGapMs, I.missilePct],
+    [3000, 20, 10, 5000, 1.5, 0.2, 3, 5000, 1.2, 3, 2, 10, 8, 200, 0.04]);
 });
 
 test('방어막: 3초 안 한 번 막고 사라짐, 3초 뒤엔 못 막음', () => {
@@ -118,7 +117,7 @@ test('화력 강화 × 공격력 강화 × 연쇄 폭발이 곱해진다', () =>
   room.destroy();
 });
 
-test('미사일: 8발 합계 최대 체력 4%, 콤보·강화와 상관없음, 경계를 넘지 않음, 보호막 뒤 발은 0', () => {
+test('미사일: 8발 합계 최대 체력 4% 고정 피해, 경계를 넘지 않음, 보호막 뒤 발은 0', () => {
   const { room, r, me } = coopRoom();
   const now = r.startAt + 5000;
   (r.coop as unknown as { nextSkill: number }).nextSkill = Infinity;
@@ -127,6 +126,7 @@ test('미사일: 8발 합계 최대 체력 4%, 콤보·강화와 상관없음, �
   me.combo = 40;
   r.coop.applyItem(me, 'power', now, AT);
   r.coop.applyItem(me, 'fire', now, AT);
+  r.coop.applyItem(me, 'weak', now, AT);
   r.coop.applyItem(me, 'missile', now, AT);
   const m = sent.find((s) => s.ev === 'coop:missile')?.d as { by: string; n: number; gapMs: number; at: number };
   assert.deepEqual([m.by, m.n, m.gapMs], [me.id, I.missiles, I.missileGapMs]);
@@ -153,43 +153,44 @@ test('미사일: 8발 합계 최대 체력 4%, 콤보·강화와 상관없음, �
   room.destroy();
 });
 
-test('약점: 활성 중 약점 안 클릭은 피해, 밖이나 끝난 뒤는 아무 일 없음', () => {
-  const { room, r, me } = coopRoom();
+test('약점 노출: 보스가 팀 전체의 원 피해를 더 받고 재획득 시 시간만 갱신된다', (t) => {
+  const { room, r, me } = coopRoom(2, 1);
+  t.after(() => room.destroy());
+  const other = room.players.find((p) => p !== me && !p.bot)!;
+  const bot = room.players.find((p) => p.bot)!;
   const now = r.startAt + 5000;
-  assert.equal(r.coop.state().weak, null);
-  r.coop.rand = () => 0.25;
+  assert.equal(r.coop.state().weakUntil, 0);
   r.coop.applyItem(me, 'weak', now, AT);
-  const w = r.coop.state().weak!;
-  assert.equal(w.until, now + I.weakMs);
-  assert.ok(Math.abs(Math.hypot(w.dx, w.dy) - C.bossR * I.weakAt) < 1e-6);
-  const bp = circlePos(r.coop.boss, now + 100);
-  me.combo = 0;
-  const hp0 = r.coop.boss.hp!;
-  const d = r.coop.hitWeak(me, { x: bp.x + w.dx, y: bp.y + w.dy }, now + 100).dmg;
-  assert.ok(Math.abs(d - C.orb.dmg * I.weakDmg) < 1e-9, String(d));
-  assert.ok(Math.abs(hp0 - r.coop.boss.hp! - d) < 1e-9);
-  assert.ok(r.coop.result(now, r.startAt, false).players[me.id]!.dmg > 0);
-  assert.equal(r.coop.hitWeak(me, { x: bp.x - w.dx, y: bp.y - w.dy }, now + 100).dmg, 0, '밖');
-  const t = now + I.weakMs + 1, q = circlePos(r.coop.boss, t);
-  assert.equal(r.coop.hitWeak(me, { x: q.x + w.dx, y: q.y + w.dy }, t).dmg, 0, '끝난 뒤');
-  room.destroy();
+  assert.equal(r.coop.state().weakUntil, now + I.weakMs);
+
+  const damage = (p: PlayerState, at: number) => r.coop.catchOrb(p, orbOf(p.color, at), at).dmg;
+  for (const p of [me, other, bot]) {
+    assert.ok(Math.abs(damage(p, now) - orbDamage(p, p.color, false) * I.weakMult) < 1e-9);
+  }
+
+  r.coop.applyItem(other, 'weak', now + 1000, AT);
+  assert.equal(r.coop.state().weakUntil, now + 1000 + I.weakMs);
+  r.coop.shift(2000);
+  const until = r.coop.state().weakUntil;
+  assert.equal(until, now + 3000 + I.weakMs);
+  assert.ok(Math.abs(damage(me, until - 1) - orbDamage(me, me.color, false) * I.weakMult) < 1e-9);
+  assert.ok(Math.abs(damage(me, until) - orbDamage(me, me.color, false)) < 1e-9);
+  r.coop.tick(until);
+  assert.equal(r.coop.state().weakUntil, 0);
 });
 
-test('약점: 방 클릭 경로 (보스를 누르면 약점 안일 때만 피해)', () => {
+test('약점이 노출된 레이드 보스 클릭은 피해나 헛클릭으로 처리하지 않는다', (t) => {
   const { room, r, me } = coopRoom();
+  t.after(() => room.destroy());
   r.startAt = Date.now() - 1000;
   const now = Date.now();
   r.coop.applyItem(me, 'weak', now, AT);
-  const w = r.coop.state().weak!;
-  const bp = circlePos(r.coop.boss, Date.now());
-  const hp0 = r.coop.boss.hp!;
-  r.clickLog.clear();
-  room.click(me.id, { circleId: r.coop.boss.id, x: bp.x - w.dx, y: bp.y - w.dy });
-  assert.equal(r.coop.boss.hp, hp0, '밖');
-  r.clickLog.clear();
-  room.click(me.id, { circleId: r.coop.boss.id, x: bp.x + w.dx, y: bp.y + w.dy });
-  assert.ok(r.coop.boss.hp! < hp0, '약점 안');
-  room.destroy();
+  const boss = r.coop.boss;
+  const hp = boss.hp;
+  const misses = me.stats.misses;
+  room.click(me.id, { circleId: boss.id, ...circlePos(boss, now) });
+  assert.equal(boss.hp, hp);
+  assert.equal(me.stats.misses, misses);
 });
 
 test('회복: heal +20, healAll 살아 있는 사람 +10, 100 넘지 않음', () => {
@@ -325,7 +326,7 @@ test('아이템 이름은 설계 표와 같고, 설명의 숫자는 RULES.coop.i
   assert.ok(d('healAll').includes(`+${I.healAll}`), d('healAll'));
   assert.ok(d('fire').includes(`${I.fireMs / 1000}초`) && d('fire').includes(`×${I.fireMult}`), d('fire'));
   assert.ok(d('power').includes(`+${Math.round(I.powerStep * 100)}%`) && d('power').includes(`+${Math.round(I.powerStep * I.powerMax * 100)}%`), d('power'));
-  assert.ok(d('weak').includes(`${I.weakMs / 1000}초`), d('weak'));
+  assert.ok(d('weak').includes(`${I.weakMs / 1000}초`) && d('weak').includes(`+${Math.round((I.weakMult - 1) * 100)}%`), d('weak'));
   assert.ok(d('chain').includes(`${I.chainN}개`) && d('chain').includes(`×${I.chainMult}`), d('chain'));
   assert.ok(d('combo').includes(`${I.comboAdd}`), d('combo'));
   assert.ok(d('missile').includes(`${I.missiles}발`), d('missile'));

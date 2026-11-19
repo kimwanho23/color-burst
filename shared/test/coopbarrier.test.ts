@@ -177,8 +177,8 @@ test('방 조건: 시작 카운트다운 중 요청은 무시', () => {
 });
 
 test('안내: 대기실 협력전 설명에 우클릭 보호막 한 줄', async () => {
-  const { specialPickerHtml } = await import('../../client/src/coopUI.ts');
-  const html = specialPickerHtml(undefined);
+  const { coopRulesHtml } = await import('../../client/src/coopUI.ts');
+  const html = coopRulesHtml();
   assert.ok(html.includes('우클릭') && html.includes('보호막'), html);
   assert.ok(html.includes(`${B.durationMs / 1000}초`), html);
 });

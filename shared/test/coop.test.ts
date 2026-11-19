@@ -1,7 +1,7 @@
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, inSafe, isGuarded, isHit, isOut,
+  DEFAULT_RULES, FIELD, PRESETS, RULES, applyRaidDamage, circlePos, coopPhase, coopStars, crystalHits, crystalHp, inSafe, isGuarded, isHit, isOut,
   COOP_BOSSES, beamHits, hitShot, inSeal, pickSkill, rollSeal,
   burstMsFor, makeCrystal, makeOrb, makeRaid, makeThreat, matchPreset, newPlayer, orbDamage, inCrystalDanger, placeCrystals, raidMaxHp, safeZoneAt, sanitizeRules, shotGone, shotPos, toGameRules, zoneOf,
   type Beam, type Circle, type CoopHitBy, type CoopSkill, type Homing, type Seal, type CoopResult, type CoopState, type GameOver, type PlayerState, type SafeZones, type Volley,
@@ -9,7 +9,7 @@ import {
 import { Room } from '../../server/src/room.ts';
 import { gameRecord } from '../../server/src/gameLog.ts';
 import { Bot } from '../../server/src/bot.ts';
-import { COOP_SPECIAL_IDS, specialRule } from '../src/coopSpecial.ts';
+import { COOP_ATTACK_SPECIAL_IDS, attackSpecialRule, specialRule } from '../src/coopSpecial.ts';
 
 mock.method(console, 'log', () => {});
 test('보스 체력: 난이도 배율과 사람·봇 인원 반영', () => {
@@ -104,6 +104,8 @@ test('crystalHits: 난이도·두 번째 보호막', () => {
   assert.equal(crystalHits('normal', 1), 12);
   assert.equal(crystalHits('hard', 1), 15);
   assert.equal(crystalHits('easy', 0), 6);
+  assert.equal(crystalHp('normal', 0), 16);
+  assert.equal(crystalHp('expert', 1), 48);
 });
 
 test('placeCrystals: 가장자리 구역, 서로 떨어짐, 판 안', () => {
@@ -186,7 +188,7 @@ test('breaks에 burstMs가 남는다', () => {
   room.destroy();
 });
 
-test('makeCrystal: 움직이지 않고 체력 = 횟수, 주인과 색', () => {
+test('makeCrystal: 움직이지 않고 체력, 주인과 색을 유지', () => {
   const c = makeCrystal(5, 1000, { x: 100, y: 900 }, 'a', 2, 8);
   assert.deepEqual(circlePos(c, 6000), { x: 100, y: 900 });
   assert.deepEqual([c.kind, c.hp, c.maxHp, c.target, c.colorOf], ['crystal', 8, 8, 'a', 2]);
@@ -316,6 +318,7 @@ test('큰 구체: 좌우 반사 뒤에도 아래로 이탈, 일반 공격 원은
 
 type CoopRunT = {
   activateSpecial(p: PlayerState, now: number): boolean;
+  applyItem(p: PlayerState, item: 'weak' | 'missile', now: number, at: { x: number; y: number }): void;
   damage(p: PlayerState, by: CoopHitBy, now: number): boolean; threatEscaped(c: Circle, now: number): void;
   catchOrb(p: PlayerState, c: Circle, now: number): { dmg: number; killed: boolean }; hitCrystal(p: PlayerState, c: Circle, now: number): boolean;
   tick(now: number): void; shift(delta: number): void; recheck(): void; phase: number; boss: Circle;
@@ -487,10 +490,10 @@ test('스페셜 어택: 대기실 선택·준비 해제, 게임 중 변경 금�
 });
 
 test('스페셜 어택: 종류별 충전량·피해, 연타 중복 방지와 공격 후 게이지', () => {
-  for (const kind of COOP_SPECIAL_IDS) {
+  for (const kind of COOP_ATTACK_SPECIAL_IDS) {
     const { room, r, me } = coopRoom(1, 0);
     noSkills(r);
-    const now = r.startAt + 5000, spec = specialRule(kind);
+    const now = r.startAt + 5000, spec = attackSpecialRule(kind);
     me.coopSpecial = kind;
     r.cursors.set(me.id, { x: 550, y: 700, at: now });
     me.coopCharge = spec.charge - 1;
@@ -507,6 +510,32 @@ test('스페셜 어택: 종류별 충전량·피해, 연타 중복 방지와 공
     assert.ok(Math.abs(r.coop.boss.hp! - (hp - spec.damage)) < 1e-8, kind);
     assert.equal(r.coop.state().specials?.length, 0);
     room.destroy();
+  }
+});
+
+test('딜 타임과 약점 노출: 스페셜 어택은 고정 피해, 원 획득 피해는 증폭', (t) => {
+  for (const kind of COOP_ATTACK_SPECIAL_IDS) {
+    const { room, r, me } = coopRoom(1, 0, 'hard');
+    t.after(() => room.destroy());
+    const now = r.startAt + 5000, spec = attackSpecialRule(kind);
+    const normal = r.coop.catchOrb(me, orbOf(me.color, now - 1), now - 1).dmg;
+    r.coop.phase = 2;
+    toShield(r, me, now, C.phaseAt[1]);
+    breakMine(r, me, now);
+    assert.equal(r.coop.phase, 3);
+    assert.equal(r.coop.inBurst(now + spec.durationMs), true);
+    const at = { x: 550, y: 700 };
+    r.coop.applyItem(me, 'weak', now, at);
+    const orb = r.coop.catchOrb(me, orbOf(me.color, now), now).dmg;
+    assert.ok(Math.abs(orb - normal * C.burst.mult * C.items.weakMult) < 1e-9);
+
+    me.coopSpecial = kind;
+    me.coopCharge = spec.charge;
+    r.cursors.set(me.id, { x: 550, y: 700, at: now });
+    const hp = r.coop.boss.hp!;
+    assert.equal(r.coop.activateSpecial(me, now), true);
+    r.coop.tick(now + spec.durationMs);
+    assert.ok(Math.abs(hp - r.coop.boss.hp! - spec.damage) < 1e-8, kind);
   }
 });
 
@@ -624,7 +653,7 @@ test('coop 보호막: 67%에 닿으면 무적, 사람·봇마다 수정, 원 뿜
   toShield(r, me, now);
   assert.ok(r.coop.state().shield);
   assert.equal(crystals(r).length, 4);
-  assert.ok(crystals(r).every((c) => c.hp === crystalHits('normal', 0)));
+  assert.ok(crystals(r).every((c) => c.hp === crystalHp('normal', 0)));
   const hp = r.coop.boss.hp;
   assert.equal(r.coop.catchOrb(me, orbOf(me.color, now + 10), now + 10).dmg, 0);
   assert.equal(r.coop.boss.hp, hp);
@@ -634,14 +663,16 @@ test('coop 보호막: 67%에 닿으면 무적, 사람·봇마다 수정, 원 뿜
   room.destroy();
 });
 
-test('coop 수정: 주인만, 횟수만큼 눌러 깨고 모두 깨면 큰 피해 (피해 2배)', () => {
+test('coop 수정: 타격자 색에 따라 체력이 깎이고 모두 깨면 큰 피해 (피해 2배)', () => {
   const { room, r, me } = coopRoom(1, 1);
   const bot = room.players.find((p) => p.bot)!;
   const now = r.startAt + 5000;
   toShield(r, me, now);
   const mine = crystals(r).find((c) => c.target === me.id)!;
   r.coop.hitCrystal(bot, mine, now);
-  assert.equal(mine.hp, crystalHits('normal', 0), '남이 누르면 그대로');
+  assert.equal(mine.hp, crystalHp('normal', 0) - C.crystal.otherColorDamage);
+  r.coop.hitCrystal(me, mine, now);
+  assert.equal(mine.hp, crystalHp('normal', 0) - C.crystal.otherColorDamage - C.crystal.sameColorDamage);
   breakMine(r, me, now);
   assert.equal(r.coop.isShielded(), true, '봇 수정이 남음');
   breakMine(r, bot, now);
@@ -691,20 +722,45 @@ test('coop 큰 피해 구간에도 단계 경계에서 멈추고 보호막', () 
   room.destroy(); room2.destroy();
 });
 
-test('coop 분노: 제한 시간 안에 못 깨면 경고 뒤 모두 체력 −(노말 분노), 남은 수정 횟수 처음으로', () => {
+test('수정 실패: 폭발 한 번, 다음 단계로 전환, 폭주 중 보스 피해 차단', (t) => {
   const { room, r, me } = coopRoom(2, 0);
+  t.after(() => room.destroy());
   const now = r.startAt + 5000;
   toShield(r, me, now);
   const c = crystals(r).find((x) => x.target === me.id)!;
-  r.coop.hitCrystal(me, c, now);
-  const end = now + C.levels.normal.crystalSec * 1000;
-  r.coop.tick(end + 1);
-  assert.ok(r.coop.state().rageAt > 0);
-  r.coop.tick(end + 1 + C.rageWarnMs + 1);
-  assert.ok(room.players.filter((p) => !p.bot).every((p) => p.hp === C.hpMax - C.levels.normal.hurt.rage));
-  assert.equal(c.hp, crystalHits('normal', 0));
-  assert.equal(r.coop.result(end + 5000, r.startAt, false).breaks.length, 0, '아직 안 깨짐');
-  room.destroy();
+  const ids = crystals(r).map((x) => x.id);
+  const end = r.coop.state().shield!.until;
+  const failAt = end + C.rageWarnMs;
+  r.coop.tick(end);
+  assert.equal(r.coop.state().rageAt, failAt);
+  assert.equal(r.coop.hitCrystal(me, c, end + 1), false);
+  assert.equal(c.hp, crystalHp('normal', 0));
+
+  sent.length = 0;
+  r.coop.tick(failAt);
+  assert.deepEqual(sent.filter((s) => s.ev === 'coop:crystalFail').map((s) => s.d), [{ ids }]);
+  assert.deepEqual(crystals(r), []);
+  assert.equal(r.coop.state().phase, 2);
+  assert.equal(r.coop.state().burstUntil, 0);
+  assert.equal(r.coop.state().rampageUntil, failAt + C.rampageMs);
+  assert.ok(room.players.every((p) => p.hp === C.hpMax - C.levels.normal.hurt.rage));
+
+  const hp = r.coop.state().hp;
+  const during = failAt + 10;
+  assert.equal(r.coop.catchOrb(me, orbOf(me.color, during), during).dmg, 0);
+  r.coop.applyItem(me, 'missile', during, { x: 550, y: 700 });
+  r.coop.tick(during + 2400);
+  assert.equal(r.coop.state().hp, hp);
+  assert.equal(sent.filter((s) => s.ev === 'coop:crystalFail').length, 1);
+
+  const resumeAt = failAt + C.rampageMs;
+  me.coopSpecial = 'laser';
+  me.coopCharge = specialRule('laser').charge;
+  r.cursors.set(me.id, { x: 550, y: 700, at: resumeAt });
+  assert.equal(r.coop.activateSpecial(me, resumeAt - 1), false);
+  assert.equal(me.coopCharge, specialRule('laser').charge);
+  assert.ok(r.coop.catchOrb(me, orbOf(me.color, resumeAt), resumeAt).dmg > 0);
+  assert.equal(r.coop.isShielded(), false);
 });
 
 test('수정 구간 중 탈락하면 그 사람 수정이 치워진다 (깬 것으로 침)', () => {
@@ -879,6 +935,11 @@ test('회복: 큰 피해 구간 시작에 노말 +20(최대 100), 엑스퍼트�
   ex.me.hp = 50;
   toShield(ex.r, ex.me, ex.r.startAt + 5000);
   breakMine(ex.r, ex.me, ex.r.startAt + 5000);
+  const prism = crystals(ex.r).find((c) => c.prism)!;
+  for (let damage = 0; damage < C.crystal.prismHp; damage += C.crystal.otherColorDamage) {
+    ex.r.coop.hitCrystal(ex.me, prism, ex.r.startAt + 5000);
+  }
+  assert.equal(ex.r.coop.inBurst(ex.r.startAt + 5001), true);
   assert.equal(ex.me.hp, 50);
   ex.room.destroy();
 });
@@ -900,28 +961,33 @@ test('회복은 바로 players로 알리고, coop:hit에 피해량이 실림', (
   room.destroy();
 });
 
-test('엑스퍼트 분노: 바로 패배, reason crystal', () => {
+test('엑스퍼트 수정 폭발: 수호 결계로 피해가 줄고 폭주 후 전투가 이어진다', (t) => {
   const { room, r, me } = coopRoom(1, 0, 'expert');
-  assert.equal(C.levels.expert.hurt.rage, Infinity);
+  t.after(() => room.destroy());
   const now = r.startAt + 5000;
   toShield(r, me, now);
-  const end = now + C.levels.expert.crystalSec * 1000;
-  r.coop.tick(end + 1);
+  const end = r.coop.state().shield!.until;
+  r.coop.tick(end);
+  const failAt = end + C.rageWarnMs;
+  me.coopSpecial = 'ward';
+  me.coopCharge = C.special.support.ward.charge;
+  r.cursors.set(me.id, { x: 550, y: 700, at: failAt });
+  assert.equal(r.coop.activateSpecial(me, failAt), true);
+  r.coop.tick(failAt);
   assert.equal(room.phase, 'play');
-  r.coop.tick(end + 1 + C.rageWarnMs + 1);
-  assert.equal(room.phase, 'lobby');
-  assert.equal(overOf()?.coop?.win, false);
-  assert.equal(overOf()?.coop?.reason, 'crystal');
-  assert.equal(me.hp, C.hpMax);
-  room.destroy();
+  assert.equal(r.coop.state().phase, 2);
+  assert.equal(r.coop.state().rampageUntil, failAt + C.rampageMs);
+  assert.equal(me.hp, 46);
 });
 
-test('난이도 표: 모든 단계에 모든 공격의 피해, 분노만 엑스퍼트에서 Infinity', () => {
+test('난이도 표: 모든 단계에서 모든 공격의 피해가 유한함', () => {
   const by = Object.keys(C.hurtFx);
   for (const k of ['easy', 'normal', 'hard', 'expert'] as const) {
     assert.deepEqual(Object.keys(C.levels[k].hurt).sort(), [...by].sort());
-    for (const b of by) assert.ok(C.levels[k].hurt[b as CoopHitBy] > 0);
-    assert.equal(Number.isFinite(C.levels[k].hurt.rage), k !== 'expert');
+    for (const b of by) {
+      const damage = C.levels[k].hurt[b as CoopHitBy];
+      assert.ok(Number.isFinite(damage) && damage > 0);
+    }
   }
 });
 
@@ -1099,18 +1165,28 @@ test('coop 검토: 보호막 중 연결이 끊겨도 수정은 남고 보호막�
   room.destroy();
 });
 
-test('coop 검토: 파훼 기록은 보호막마다 하나 (분노 횟수 포함)', () => {
+test('수정 파훼는 두 보호막에서 한 번씩 기록되고 실패 시 딜 타임을 주지 않는다', (t) => {
   const { room, r, me } = coopRoom(1, 0);
-  const now = r.startAt + 5000;
-  toShield(r, me, now);
-  const end = now + C.levels.normal.crystalSec * 1000;
-  r.coop.tick(end + 1);
-  r.coop.tick(end + 2 + C.rageWarnMs);
-  breakMine(r, me, end + 5000);
-  const br = r.coop.result(end + 6000, r.startAt, false).breaks;
-  assert.deepEqual(br.map((b) => [b.ms, b.rages]), [[end + 5000 - now, 1]]);
-  assert.ok(br[0]!.burstMs >= C.burst.baseMs && br[0]!.burstMs <= C.burst.maxMs);
-  room.destroy();
+  t.after(() => room.destroy());
+  let now = r.startAt + 5000;
+  for (const [index, edge] of C.phaseAt.entries()) {
+    me.hp = C.hpMax;
+    toShield(r, me, now, edge);
+    const end = r.coop.state().shield!.until;
+    r.coop.tick(end);
+    const failAt = end + C.rageWarnMs;
+    r.coop.tick(failAt);
+    assert.equal(r.coop.state().phase, index + 2);
+    assert.equal(r.coop.isShielded(), false);
+    assert.equal(r.coop.result(failAt, r.startAt, false).breaks.length, index + 1);
+    assert.equal(r.coop.state().rampageUntil, failAt + C.rampageMs);
+    r.coop.shift(1000);
+    now = failAt + C.rampageMs + 1000;
+    assert.equal(r.coop.state().rampageUntil, now);
+    r.coop.tick(now);
+  }
+  const br = r.coop.result(now, r.startAt, false).breaks;
+  assert.deepEqual(br, Array.from(C.phaseAt, () => ({ ms: C.levels.normal.crystalSec * 1000, rages: 1, burstMs: 0 })));
 });
 
 test('coop 원은 보스 아래쪽으로만 날아감 (위로 가서 바로 사라지는 원 없음)', () => {
@@ -1657,6 +1733,7 @@ test('판이 끝난 뒤: 엑스퍼트 수정 실패로 진 tick의 나머지가 
   const { room, r, me } = coopRoom(1, 0, 'expert');
   const now = r.startAt + 5000;
   toShield(r, me, now);
+  me.hp = 1;
   sent.length = 0;
   assert.deepEqual(tickToOver(r, room, now, now + 60_000), []);
   assert.equal(overOf()?.coop?.reason, 'crystal');
@@ -1670,7 +1747,7 @@ test('판이 끝난 뒤: 분노로 모두 탈락한 tick의 나머지가 수정�
   me.hp = 1;
   sent.length = 0;
   assert.deepEqual(tickToOver(r, room, now, now + 60_000), []);
-  assert.equal(overOf()?.coop?.reason, 'wipe');
+  assert.equal(overOf()?.coop?.reason, 'crystal');
   room.destroy();
 });
 
@@ -1792,7 +1869,7 @@ test('일시정지 뒤: 봇 수정 두드리는 시각도 밀려 재개하자마
   r.startAt += delta;
   r.coop.shift(delta);
   for (let t = now + 200 + delta; t <= now + 400 + delta; t += 50) r.coop.tick(t);
-  assert.ok(c.hp! >= before - 1, `${before} → ${c.hp}`);
+  assert.ok(c.hp! >= before - C.crystal.sameColorDamage, `${before} → ${c.hp}`);
   room.destroy();
 });
 
@@ -1941,4 +2018,174 @@ test('유도탄: 방어막에 막히면 피해 없이 탄이 사라진다', () =
   assert.equal(me.hp, C.hpMax);
   assert.equal(r.coop.state().homing, null);
   room.destroy();
+});
+
+test('수호 결계: 수정 구간에서도 발동하며 반경 안 팀원이 받는 모든 체력 피해 감소', (t) => {
+  const { room, r, me, ids } = coopRoom(2, 0, 'hard');
+  t.after(() => room.destroy());
+  const ally = room.players.find((p) => p.id === ids[1])!;
+  const now = r.startAt + 5000, ward = C.special.support.ward;
+  const center = { x: 500, y: 700 };
+  me.coopSpecial = 'ward';
+  me.coopCharge = ward.charge;
+  toShield(r, me, now);
+  assert.equal(r.coop.activateSpecial(me, now), false, '커서 위치 필요');
+  assert.equal(me.coopCharge, ward.charge);
+  r.cursors.set(me.id, { ...center, at: now });
+  assert.equal(r.coop.activateSpecial(me, now), true);
+  assert.deepEqual(r.coop.state().wards, [{ ...center, until: now + ward.durationMs }]);
+  assert.equal(me.coopCharge, 0);
+
+  const at = now + 1;
+  r.cursors.set(ally.id, { x: center.x + ward.radius, y: center.y, at });
+  for (const by of Object.keys(C.levels.hard.hurt) as CoopHitBy[]) {
+    ally.hp = C.hpMax;
+    ally.immuneUntil = 0;
+    assert.equal(r.coop.damage(ally, by, at), true, by);
+    const reduced = C.levels.hard.hurt[by] * (1 - ward.damageReduction);
+    assert.equal(ally.hp, C.hpMax - reduced, by);
+  }
+
+  ally.hp = C.hpMax;
+  ally.immuneUntil = 0;
+  r.cursors.set(ally.id, { x: center.x + ward.radius + 1, y: center.y, at });
+  r.coop.damage(ally, 'bullet', at);
+  assert.equal(ally.hp, C.hpMax - C.levels.hard.hurt.bullet);
+
+  r.coop.shift(2000);
+  const until = now + ward.durationMs + 2000;
+  assert.equal(r.coop.state().wards?.[0]?.until, until);
+  const ownHp = me.hp;
+  r.coop.damage(me, 'bullet', until);
+  assert.equal(me.hp, ownHp - C.levels.hard.hurt.bullet);
+});
+
+test('중력 족쇄: 보스 정지, 팀 색 원만 발사, 해제 후 10초 팀 공통 내성', (t) => {
+  const { room, r, me, ids } = coopRoom(2, 0, 'expert');
+  t.after(() => room.destroy());
+  const ally = room.players.find((p) => p.id === ids[1])!;
+  const now = r.startAt + 5000, bind = C.special.support.bind;
+  const run = r.coop as unknown as { nextBullet: number; nextOrb: Map<string, number>; threatAt: number; rand: () => number };
+  // 난수 0은 평소라면 노란 원과 ? 원을 우선 뽑는다.
+  run.rand = () => 0;
+  run.nextBullet = now;
+  run.threatAt = now + 500;
+  for (const p of [me, ally]) {
+    run.nextOrb.set(p.id, now);
+    p.coopSpecial = 'bind';
+    p.coopCharge = bind.charge;
+  }
+  const before = circlePos(r.coop.boss, now);
+  sent.length = 0;
+  assert.equal(r.coop.activateSpecial(me, now), true);
+  assert.equal(me.coopCharge, 0);
+  const until = now + bind.durationMs, immuneUntil = until + bind.immunityMs;
+  assert.equal(r.coop.state().bindUntil, until);
+  assert.equal(r.coop.state().bindImmuneUntil, immuneUntil);
+  assert.deepEqual(sent.find((e) => e.ev === 'circles:hold')?.d, { ids: [r.coop.boss.id], at: now, ms: bind.durationMs, bossOnly: true });
+  assert.deepEqual(circlePos(r.coop.boss, until), before);
+  assert.notDeepEqual(circlePos(r.coop.boss, until + 100), before);
+  r.coop.tick(now + 2000);
+  const created = sent.filter((e) => e.ev === 'circle:spawn').map((e) => e.d as Circle);
+  assert.deepEqual(new Set(created.map((c) => c.kind)), new Set([me.color, ally.color]));
+  assert.ok(created.every((c) => !c.coopItem && c.from?.x === before.x));
+  assert.equal(sent.some((e) => e.ev === 'coop:volley'), false);
+  for (const t of [now + 1, until, immuneUntil - 1]) {
+    assert.equal(r.coop.activateSpecial(ally, t), false);
+    assert.equal(ally.coopCharge, bind.charge);
+  }
+  r.coop.tick(until);
+  assert.equal(sent.some((e) => e.ev === 'coop:volley'), true);
+  assert.equal(r.coop.activateSpecial(ally, immuneUntil), true);
+});
+
+test('연계 신호: 발동자와 팀원의 콤보가 하나씩 더 쌓이고 종료와 함께 보너스가 끝난다', (t) => {
+  const { room, r, me, ids } = coopRoom(2, 0, 'hard');
+  t.after(() => room.destroy());
+  const ally = room.players.find((p) => p.id === ids[1])!;
+  const now = r.startAt + 5000, link = C.special.support.link;
+  const host = room as unknown as { catchCoopOrb(p: PlayerState, c: Circle, now: number): void };
+  const catchOrb = (p: PlayerState, at: number, kind: Circle['kind']) => {
+    const c = orbOf(kind, at);
+    r.circles.set(c.id, c);
+    host.catchCoopOrb(p, c, at);
+  };
+  me.coopSpecial = 'link';
+  me.coopCharge = link.charge;
+  assert.equal(r.coop.activateSpecial(me, now), true);
+  assert.equal(me.coopCharge, 0);
+  catchOrb(me, now + 1, me.color);
+  catchOrb(ally, now + 1, 'y');
+  assert.equal(me.combo, 1 + link.comboAdd);
+  assert.equal(ally.combo, 1 + link.comboAdd);
+  assert.equal(me.coopCharge, C.special.gain.orb);
+  catchOrb(ally, now + link.durationMs, ally.color);
+  assert.equal(ally.combo, 2 + link.comboAdd);
+});
+
+test('색 수정: 실제 클릭에서 다른 팀원도 피해 1을 주고 같은 색은 피해 2를 준다', (t) => {
+  const { room, r, me, ids } = coopRoom(2, 0, 'hard');
+  t.after(() => room.destroy());
+  const ally = room.players.find((p) => p.id === ids[1])!;
+  r.startAt = Date.now() - 1000;
+  const now = Date.now();
+  toShield(r, me, now);
+  const crystal = crystals(r).find((c) => c.target === me.id)!;
+  const pt = circlePos(crystal, now);
+  room.click(ally.id, { circleId: crystal.id, ...pt });
+  assert.equal(crystal.hp, crystalHp('hard', 0) - C.crystal.otherColorDamage);
+  room.click(me.id, { circleId: crystal.id, ...pt });
+  assert.equal(crystal.hp, crystalHp('hard', 0) - C.crystal.otherColorDamage - C.crystal.sameColorDamage);
+});
+
+test('엑스퍼트: 두 보호막 모두 색 수정 뒤 중앙 프리즘을 다섯 번 클릭해 파훼', (t) => {
+  for (const [no, edge] of C.phaseAt.entries()) {
+    const { room, r, me } = coopRoom(1, 1, 'expert');
+    t.after(() => room.destroy());
+    const bot = room.players.find((p) => p.bot)!;
+    r.startAt = Date.now() - 1000;
+    const now = Date.now();
+    r.coop.phase = no + 1;
+    toShield(r, me, now, edge);
+    const deadline = r.coop.state().shield!.until;
+    breakMine(r, me, now);
+    assert.equal(crystals(r).some((c) => c.prism), false);
+    breakMine(r, bot, now);
+    assert.equal(r.coop.isShielded(), true);
+    assert.equal(r.coop.state().shield?.prism, true);
+    assert.equal(r.coop.state().shield?.until, deadline);
+    const [prism] = crystals(r);
+    assert.equal(crystals(r).length, 1);
+    assert.equal(prism?.prism, true);
+    assert.equal(prism?.hp, C.crystal.prismHp);
+    assert.deepEqual(circlePos(prism!, now), { x: FIELD.w / 2, y: FIELD.h / 2 });
+    assert.equal(r.coop.hitCrystal(bot, prism!, now), false);
+    const click = { circleId: prism!.id, ...circlePos(prism!, now) };
+    for (const remaining of [4, 3, 2, 1]) {
+      room.click(me.id, click);
+      assert.equal(prism!.hp, remaining);
+      assert.equal(r.coop.isShielded(), true);
+    }
+    room.click(me.id, click);
+    assert.equal(crystals(r).length, 0);
+    assert.equal(r.coop.isShielded(), false);
+    assert.equal(r.coop.phase, no + 2);
+  }
+});
+
+test('엑스퍼트: 색 수정을 다 깨도 프리즘이 남으면 같은 제한 시간에 폭주', (t) => {
+  const { room, r, me } = coopRoom(1, 0, 'expert');
+  t.after(() => room.destroy());
+  const now = r.startAt + 5000;
+  toShield(r, me, now);
+  breakMine(r, me, now);
+  assert.equal(r.coop.state().shield?.prism, true);
+  const deadline = r.coop.state().shield!.until;
+  r.coop.tick(deadline);
+  r.coop.tick(deadline + C.rageWarnMs + 1);
+  assert.equal(room.phase, 'play');
+  assert.equal(me.hp, C.hpMax - C.levels.expert.hurt.rage);
+  assert.equal(r.coop.isShielded(), false);
+  assert.deepEqual(crystals(r), []);
+  assert.equal(r.coop.state().rampageUntil, deadline + C.rageWarnMs + 1 + C.rampageMs);
 });

@@ -6,7 +6,7 @@ import {
   COLORS, COOP_BOSSES, FIELD, RULES, YELLOW, auraAt, barSegment, beamAngles, bossState, circlePos, fogAt, isGuarded, lensWarp, moverAt, ringE, shotGone, shotPos, vortexAlive, vortexWarned,
   type Volley, type BlindKind, type BossType, type Circle, type CircleKind, type ColorIndex, type MapPattern, safeZoneAt, type Slam, type SafeZones, type Seal, type Beam, type Homing, homingAlpha, homingRule } from '@color-burst/shared';
 
-import { COOP_SPECIALS, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
+import { COOP_SPECIALS, attackSpecialRule, type CoopSpecialAttack, type CoopWard } from '@color-burst/shared';
 
 /** 시드로 같은 모양을 다시 만드는 난수 (시야 방해 모양이 재접속해도 같게) */
 function seeded(seed: number) {
@@ -130,8 +130,11 @@ export interface DrawState {
   homing?: { h: Homing; from: { x: number; y: number }; still: boolean } | null;
   /** 협력전: 탄막 (원보다 위, 수정보다 아래) */
   volleys?: readonly Volley[];
-  /** 협력전 약점 노출: 보스 중심 + (dx, dy)의 노란 과녁 (until까지) */
-  coopWeak?: { until: number; dx: number; dy: number } | null;
+  /** 협력전 보스 약점 노출 종료 시각 */
+  coopWeakUntil?: number;
+  coopRampageUntil?: number;
+  coopBindUntil?: number;
+  coopWards?: readonly CoopWard[];
   /** 협력전 미사일: from에서 to(보스)로 곡선 비행, at에 닿는다 (flyMs 동안 날아감) */
   missiles?: { list: readonly { from: { x: number; y: number }; at: number; side: number }[]; to: { x: number; y: number }; flyMs: number } | null;
 }
@@ -240,6 +243,13 @@ export class Renderer {
   /** 협력전: 잡은 원에서 보스로 날아가는 빛줄기 */
   beam(x0: number, y0: number, x1: number, y1: number, col: string) { this.add({ type: 'line', x: x0, y: y0, x1, y1, col, t: 0, life: 0.3 }); }
   shockwave(x: number, y: number, R: number) { this.add({ type: 'ring', x, y, col: '#fff', t: 0, life: 0.35, r0: 10, r1: R, w: 6 }); }
+  crystalFailure() {
+    const x = FIELD.w / 2, y = FIELD.h / 2;
+    const r = Math.hypot(x, y);
+    this.add({ type: 'ring', x, y, col: '#ff8a76', t: 0, life: 0.4, r0: reduceMotion ? x * 0.75 : 25, r1: reduceMotion ? x * 0.75 : r, w: 6 });
+    if (!reduceMotion) this.sparks(x, y, '#ffb09f', 12, 420);
+  }
+
   flash() { if (!reduceMotion) this.add({ type: 'flash', t: 0, life: 0.12 }); }
   /** 저격당함: 화면 가운데 붉은 조준선이 좁혀든다 */
   snipe() { this.snipeUntil = performance.now() + 600; }
@@ -327,6 +337,7 @@ export class Renderer {
     ctx.setLineDash([]);
 
     for (const z of s.zones ?? []) this.drawZone(z, s.now);
+    for (const ward of s.coopWards ?? []) this.drawCoopWard(ward, s.now);
 
 
     // 방해 전파: 원을 흐리고 옅게 / 시간 정지: 채도를 낮춘다
@@ -544,11 +555,12 @@ export class Renderer {
     const low = frac <= 0.2;
     const type = c.boss ?? 'normal';
     const st = bossState(c, t);
+    const rampaging = c.boss === 'raid' && t < (s?.coopRampageUntil ?? 0);
 
     ctx.save();
     ctx.translate(x, y);
     // 몸통 (붉은 공격형은 빨갛게)
-    const [c0, c1, c2] = st.enraged ? RAGE_BODY : BOSS_BODY[type];
+    const [c0, c1, c2] = st.enraged || rampaging ? RAGE_BODY : BOSS_BODY[type];
     const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
     g.addColorStop(0, c0); g.addColorStop(0.55, c1); g.addColorStop(1, c2);
     ctx.fillStyle = g;
@@ -561,7 +573,7 @@ export class Renderer {
       ctx.shadowColor = `rgba(255, 40, 60, ${k})`; ctx.shadowBlur = 20 + 30 * k;
     }
     ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = s?.coop && s.coopPhase ? 7 : 4; ctx.strokeStyle = st.enraged ? '#ff4d4d' : s?.coop && s.coopPhase ? COOP_BOSSES.core.rims[s.coopPhase - 1] : '#fff'; ctx.stroke();
+    ctx.lineWidth = s?.coop && s.coopPhase ? 7 : 4; ctx.strokeStyle = st.enraged || rampaging ? '#ff4d4d' : s?.coop && s.coopPhase ? COOP_BOSSES.core.rims[s.coopPhase - 1] : '#fff'; ctx.stroke();
     ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
     this.bossEmblem(type, r, st.enraged);
     // 체력 숫자
@@ -578,9 +590,24 @@ export class Renderer {
     ctx.strokeStyle = low ? '#ff5d73' : '#fff';
     ctx.beginPath(); ctx.arc(0, 0, r + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
     ctx.globalAlpha = 1;
-    // 협력전 약점 노출: 노란 과녁 (보스 몸 위, 끝나기 1초 전 깜빡임)
-    const wk = c.boss === 'raid' ? s?.coopWeak : null;
-    if (wk && t < wk.until && (wk.until - t > 1000 || Math.floor(frameNow / 120) % 2 === 0)) this.drawWeak(wk.dx * (size / c.r), wk.dy * (size / c.r), frameNow);
+    // 약점 노출 상태는 보스 바깥 테두리에 표시한다.
+    if (c.boss === 'raid' && !s?.coopShield && t < (s?.coopWeakUntil ?? 0)) {
+      ctx.save();
+      ctx.setLineDash([12, 8]);
+      ctx.strokeStyle = '#ffd43b';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, r + 26, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    if (c.boss === 'raid' && t < (s?.coopBindUntil ?? 0)) {
+      ctx.save();
+      ctx.strokeStyle = COOP_SPECIALS.bind.color;
+      ctx.lineWidth = 5;
+      for (const y of [-0.32, 0.32]) {
+        ctx.beginPath(); ctx.ellipse(0, r * y, r + 10, r * 0.22, -0.26, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
     // 방어형 보호막: 밝은 하늘색 육각 테두리 (이때는 피해가 안 들어감)
     if (st.shielded) {
       ctx.lineWidth = 6; ctx.strokeStyle = `rgba(127, 211, 255, ${0.6 + 0.4 * Math.abs(Math.sin(frameNow / 120))})`;
@@ -588,23 +615,6 @@ export class Renderer {
       for (let i = 0; i <= 6; i++) { const a = (Math.PI / 3) * i + frameNow / 900; ctx.lineTo(Math.cos(a) * (r + 26), Math.sin(a) * (r + 26)); }
       ctx.stroke();
     }
-    ctx.restore();
-  }
-
-  /** 약점 과녁: 노란 겹원과 십자 (반지름 = 약점 판정 weakR) */
-  private drawWeak(x: number, y: number, frameNow: number) {
-    const ctx = this.ctx, R = RULES.coop.items.weakR;
-    const k = reduceMotion ? 1 : 1 + 0.08 * Math.sin(frameNow / 110);
-    ctx.save();
-    ctx.translate(x, y); ctx.scale(k, k);
-    ctx.fillStyle = 'rgba(255, 212, 59, .28)';
-    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#ffd43b'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0, 0, R * 0.5, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-R - 8, 0); ctx.lineTo(-R * 0.25, 0); ctx.moveTo(R * 0.25, 0); ctx.lineTo(R + 8, 0);
-    ctx.moveTo(0, -R - 8); ctx.lineTo(0, -R * 0.25); ctx.moveTo(0, R * 0.25); ctx.lineTo(0, R + 8); ctx.stroke();
     ctx.restore();
   }
 
@@ -921,11 +931,51 @@ export class Renderer {
     ctx.restore();
   }
 
+  private drawCoopWard(ward: CoopWard, now: number) {
+    const left = ward.until - now;
+    if (left <= 0) return;
+    const ctx = this.ctx, r = RULES.coop.special.support.ward.radius;
+    const color = COOP_SPECIALS.ward.color;
+    ctx.save();
+    ctx.translate(ward.x, ward.y);
+    ctx.globalAlpha *= Math.min(1, left / 1000);
+    ctx.fillStyle = 'rgba(99, 242, 212, .09)';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.globalAlpha *= 0.62;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r - 10, 0, Math.PI * 2); ctx.stroke();
+
+    if (!reduceMotion) ctx.rotate((RULES.coop.special.support.ward.durationMs - left) / 3500);
+    ctx.beginPath();
+    for (let triangle = 0; triangle < 2; triangle++) {
+      for (let side = 0; side < 3; side++) {
+        const a = triangle * Math.PI + side * 2 * Math.PI / 3 - Math.PI / 2;
+        const x = Math.cos(a) * (r - 40), y = Math.sin(a) * (r - 40);
+        if (side === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+    ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      ctx.save();
+      ctx.rotate(i * Math.PI / 6);
+      ctx.translate(0, -(r - 25));
+      ctx.beginPath();
+      ctx.moveTo(-5, 0); ctx.lineTo(0, -7); ctx.lineTo(5, 0); ctx.lineTo(0, 7); ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   /** 자동 공격은 탄막 아래에 그려 위험 탄을 가리지 않는다. */
   private drawSpecials(attacks: readonly CoopSpecialAttack[], to: { x: number; y: number }, now: number) {
     const ctx = this.ctx;
     for (const a of attacks) {
-      const spec = specialRule(a.kind), elapsed = now - a.at;
+      const spec = attackSpecialRule(a.kind), elapsed = now - a.at;
       if (elapsed < 0 || elapsed >= spec.durationMs) continue;
       const progress = elapsed / spec.durationMs;
       ctx.save();
@@ -1217,21 +1267,32 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** 협력전 수정: 주인 색 육각 결정, 남은 횟수, 금 (내 수정은 굵은 테두리) */
+  /** 협력전 수정: 색이나 프리즘으로 구분하고 남은 체력을 표시한다. */
   private drawCrystal(c: Circle, x: number, y: number, r: number, s: DrawState) {
     const ctx = this.ctx, col = c.colorOf ?? 0, mine = c.target === s.meId;
     const left = (c.hp ?? 0) / (c.maxHp || 1);
     ctx.save(); ctx.translate(x, y);
-    ctx.fillStyle = COLORS[col].hex; ctx.globalAlpha = 0.9;
+    if (c.prism) {
+      const prism = ctx.createLinearGradient(-r, -r, r, r);
+      prism.addColorStop(0, '#77eeff');
+      prism.addColorStop(0.38, '#f6f1ff');
+      prism.addColorStop(0.68, '#bc83ff');
+      prism.addColorStop(1, '#ffb6d9');
+      ctx.fillStyle = prism;
+    } else {
+      ctx.fillStyle = COLORS[col].hex;
+    }
+    ctx.globalAlpha = 0.9;
     ctx.beginPath();
     for (let i = 0; i < 6; i++) { const a = Math.PI / 6 + (i / 6) * Math.PI * 2; if (i) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
     ctx.closePath(); ctx.fill();
-    ctx.globalAlpha = 1; ctx.lineWidth = mine ? 6 : 3; ctx.strokeStyle = mine ? '#fff' : 'rgba(255,255,255,.6)'; ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = mine || c.prism ? 6 : 3; ctx.strokeStyle = mine || c.prism ? '#fff' : 'rgba(255,255,255,.6)'; ctx.stroke();
     // 금: 깎인 만큼 선이 늘어난다
     const cracks = Math.round((1 - left) * 6);
     ctx.strokeStyle = 'rgba(16,18,42,.75)'; ctx.lineWidth = 2;
     for (let i = 0; i < cracks; i++) { const a = (i / 6) * Math.PI * 2 + 0.4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9); ctx.stroke(); }
     ctx.fillStyle = '#fff'; ctx.font = `400 ${Math.round(r * 0.7)}px Jua, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (c.prism) ctx.fillStyle = '#221647';
     ctx.fillText(String(c.hp ?? 0), 0, 2);
     ctx.restore();
   }

@@ -11,6 +11,7 @@ export const COOP_ITEM_IDS: readonly CoopItemId[] = ['clear', 'guard', 'heal', '
 const I = RULES.coop.items;
 const sec = (ms: number) => `${ms / 1000}초`;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+const weakBonus = pct(I.weakMult - 1);
 export const COOP_ITEMS: Record<CoopItemId, { name: string; desc: string }> = {
   clear: { name: '탄 지우개', desc: '판의 탄을 모두 지워요' },
   guard: { name: '방어막', desc: `${sec(I.guardMs)} 안에 한 번 막아요` },
@@ -18,7 +19,7 @@ export const COOP_ITEMS: Record<CoopItemId, { name: string; desc: string }> = {
   healAll: { name: '함께 치료', desc: `살아 있는 모두 체력 +${I.healAll}` },
   fire: { name: '화력 강화', desc: `${sec(I.fireMs)} 동안 피해 ×${I.fireMult}` },
   power: { name: '공격력 강화', desc: `피해 +${pct(I.powerStep)}, 겹치면 최대 +${pct(I.powerStep * I.powerMax)} (단계가 오르면 사라져요)` },
-  weak: { name: '약점 노출', desc: `${sec(I.weakMs)} 동안 보스 약점을 누르면 피해` },
+  weak: { name: '약점 노출', desc: `${sec(I.weakMs)} 동안 보스가 받는 원 피해 +${weakBonus}` },
   chain: { name: '연쇄 폭발', desc: `다음 원 ${I.chainN}개 피해 ×${I.chainMult}` },
   combo: { name: '콤보 점화', desc: `콤보가 ${I.comboAdd} 올라요` },
   missile: { name: '미사일 세례', desc: `보스에게 미사일 ${I.missiles}발` },

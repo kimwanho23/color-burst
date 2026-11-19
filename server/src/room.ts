@@ -859,10 +859,11 @@ export class Room {
       const pulled = c && this.pulls.get(c.id);
       if (!c || !this.hitWithLag(c, now, d.x, d.y) || (pulled && pulled.by !== id)) this.rejectTo(id, d.circleId);
       else {
+        // 레이드 보스 직접 클릭은 헛클릭으로도 처리하지 않는다.
+        if (c.boss === 'raid') return;
         got = true;
         if (this.G.coop && typeof c.kind === 'number' && !this.owns(c.kind, p)) { got = false; this.rejectTo(id, c.id); }
-        // 협력전: 보스를 눌러도 아무 일 없음 (헛클릭도 아님, 약점 노출 중 약점 안이면 피해). 수정은 주인만, 내 색·노란 원은 보스 피해, ? 원은 아이템
-        else if (c.boss === 'raid') this.hitCoopWeak(p, d, now);
+        // 협력전: 수정은 공유 대상, 내 색·노란 원은 보스 피해, ? 원은 아이템
         else if (this.coop && c.coopItem) this.catchCoopItem(p, c, now);
         else if (c.kind === 'crystal') this.hitCrystal(p, c, now);
         else if (c.kind === 'threat') this.popThreat(p, c, now);
@@ -1568,7 +1569,7 @@ export class Room {
     if (!this.coop || !this.circles.has(c.id)) return;
     this.circles.delete(c.id);
     const { x, y } = circlePos(c, now);
-    p.combo++;
+    p.combo += 1 + this.coop.orbComboAdd(now);
     p.stats.hits++;
     p.stats.maxCombo = Math.max(p.stats.maxCombo, p.combo);
     p.roundMaxCombo = Math.max(p.roundMaxCombo, p.combo);
@@ -1596,15 +1597,6 @@ export class Room {
     if (item) this.io.to(this.code).emit('coop:item', { circleId: c.id, by: p.id, item, x, y });
   }
 
-  /** 협력전: 보스 클릭 (약점 노출 중 약점 안이면 피해, 아니면 아무 일 없음) */
-  private hitCoopWeak(p: PlayerState, pt: Point, now: number) {
-    if (!this.coop) return;
-    const r = this.coop.hitWeak(p, pt, now);
-    if (r.dmg <= 0) return;
-    this.emitPlayers();
-    if (r.killed) this.coopBossKilled(p, now);
-  }
-
   /** 협력전: 화면이 알린 탄 맞음 (진행 중·멈추지 않았을 때만, 확인과 피해는 CoopRun.reportHurt) */
   coopHurt(id: string, d: { volleyId: number; shot: number }) {
     const now = Date.now();
@@ -1613,11 +1605,9 @@ export class Room {
     if (p) this.coop.reportHurt(p, d.volleyId, d.shot, now);
   }
 
-  /** 협력전: 내 수정 누르기 */
+  /** 협력전: 수정 타격 */
   private hitCrystal(p: PlayerState, c: Circle, now: number) {
-    if (!this.coop) return;
-    if (c.target !== p.id) { this.rejectTo(p.id, c.id); return; }
-    this.coop.hitCrystal(p, c, now);
+    this.coop?.hitCrystal(p, c, now);
   }
 
   /** 협력전 공격 원 터뜨리기 */

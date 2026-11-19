@@ -779,6 +779,7 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .coophud .ch-shield { color: #7fd3ff; display: inline-flex; align-items: center; gap: 4px; }
 .coophud .ch-rage { color: var(--red); animation: chRage .4s steps(2) infinite; }
 .coophud .ch-burst { color: var(--yellow); }
+.coophud .ch-link { margin-top: 4px; color: #91e5ff; font-size: 11px; }
 .coophud.shielded .ch-bar i { background: #7fd3ff; }
 @keyframes chRage { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .coophud .ch-rage { animation: none; } }
@@ -839,7 +840,12 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 @media (prefers-reduced-motion: reduce) { .coop-fail span { animation: none; } }
 
 /* 협력전 스페셜 어택 */
-.special-picker > p { color: #b9bbd5; font-size: 12px; margin: 6px 0 10px; }
+.coop-rules h2, .special-picker h2 { margin: 0; font: 400 20px var(--display); }
+.coop-rules dl { display: grid; gap: 4px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.coop-rules dl > div { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 8px; }
+.coop-rules dt { color: var(--fg); font-weight: 700; }
+.coop-rules dd { margin: 0; }
+.special-picker h2 { margin-bottom: 8px; }
 .special-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .special-choice { display: flex; flex-direction: column; gap: 7px; text-align: left; padding: 12px; border: 1px solid #44475e; border-radius: 12px; color: #eee; background: #17192d; cursor: pointer; font: inherit; }
 .special-choice strong { color: var(--special-color); display: flex; align-items: center; justify-content: space-between; gap: 4px; flex-wrap: wrap; }

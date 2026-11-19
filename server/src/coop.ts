@@ -7,18 +7,19 @@
  * 계산은 shared/src/coop.ts, 수치는 RULES.coop.
  */
 import {
-  COOP_BOSSES, RULES, addSrc, coopDamageMult, coopThreatCount, coopVolleyOdds, newCoopFx, rollCoopItem, applyRaidDamage, beamHits, circlePos, coopStars, crystalHits, inSafe, inSeal, makeCrystal, makeOrb,
-  burstMsFor, makeRaid, makeThreat, makeVolley, orbDamage, pickSkill, placeCrystals, raidMaxHp, rollSafe, rollSeal, rollVolley, hitShot, shotGone, shotPos, threatSpeed, volleyDone,
+  COOP_BOSSES, RULES, addSrc, coopDamageMult, coopThreatCount, coopVolleyOdds, newCoopFx, rollCoopItem, applyRaidDamage, beamHits, circlePos, coopStars, crystalHp, inSafe, inSeal, makeCrystal, makeOrb, makePrismCrystal,
+  burstMsFor, makeRaid, makeThreat, makeVolley, orbDamage, pickSkill, placeCrystals, raidMaxHp, rollSafe, rollSeal, rollVolley, hitShot, holdCircles, shotGone, shotPos, threatSpeed, volleyDone,
   type Beam, type Circle, type CoopHitBy, type CoopLevel, type CoopPhase, type CoopPlayerResult, type CoopResult, type CoopSkill, type CoopState,
   type LaserLine, type PlayerState, type Point, type SafeZones, type Seal, type ServerToClient, type Slam,
   type BulletShape, type CoopItemId, type Volley,
 } from '@color-burst/shared';
 import { FIELD, homingHits, homingRule, steerHoming, type Homing } from '@color-burst/shared';
 import { barrierCovers, fillCounter, newCounter, type CoopCounter } from '@color-burst/shared';
-import { coopAttackRules, specialId, specialRule, type CoopSpecialAttack } from '@color-burst/shared';
+import { attackSpecialRule, coopAttackRules, isAttackSpecial, specialId, specialRule, type CoopSpecialAttack, type CoopWard } from '@color-burst/shared';
 
 const C = RULES.coop;
-const I = RULES.coop.items;
+const I = C.items;
+const SUPPORT = C.special.support;
 const NO_SKIP: ReadonlySet<string> = new Set();
 /** 빔 지연 보정에서 커서를 다시 보는 간격(ms, 판정 촘촘함일 뿐 규칙 수치는 아님) */
 const BEAM_STEP_MS = 10;
@@ -48,6 +49,11 @@ export interface CoopHost {
 
 export class CoopRun {
   private specials: (CoopSpecialAttack & { hit: number })[] = [];
+  private wards: CoopWard[] = [];
+  private bindAt = 0;
+  private bindUntil = 0;
+  private bindImmuneUntil = 0;
+  private linkUntil = 0;
   phase: CoopPhase = 1;
   boss: Circle | null = null;
   /** 다음 고유 패턴 시각 (보호막·큰 피해 구간 동안은 0, 끝나면 그 시각 + skillEveryMs), 직전 고유 패턴 */
@@ -58,11 +64,12 @@ export class CoopRun {
   private nextOrb = new Map<string, number>();
   private targetTurn = 0;
   /** 보호막: 시작·제한 시간 끝·몇 번째 */
-  private shield: { from: number; until: number; no: 0 | 1; rages: number } | null = null;
+  private shield: { from: number; until: number; no: 0 | 1; prism?: true } | null = null;
   /** 봇 수정을 두드릴 다음 시각 (봇은 제한 시간 안에 반드시 깬다) */
   private botNext = new Map<number, number>();
   private burstUntil = 0;
   private rageAt = 0;
+  private rampageUntil = 0;
   private slams: Slam[] = [];
   private safe: SafeZones | null = null;
   /** 구역 봉인·회전 빔과 그 패턴에 이미 맞은 사람 (한 패턴에 한 번) */
@@ -80,7 +87,6 @@ export class CoopRun {
   /** 큰 피해 구간이 끝나면 고유 패턴·탄막 일정을 다시 잡는다 */
   private afterBurst = false;
   /** 진 이유 (결과에 실림) */
-  private reason: CoopResult['reason'];
   /** 아직 끝나지 않은 탄막, 탄막마다 이미 받은 맞음 보고 (`${사람}:${탄}`) */
   private volleys: Volley[] = [];
   private hurtSeen = new Map<number, Set<string>>();
@@ -88,8 +94,8 @@ export class CoopRun {
   private nextBullet = 0;
   private aimTurn = 0;
   private clock = 0;
-  /** 아이템: 약점 노출(보스 중심 기준 자리), 날아가는 미사일(발마다 닿는 시각·피해·쏜 사람), 아이템 확률 두 배가 끝나는 시각 */
-  private weak: { until: number; dx: number; dy: number } | null = null;
+  /** 아이템: 약점 노출 종료 시각, 날아가는 미사일(발마다 닿는 시각·피해·쏜 사람), 아이템 확률 두 배가 끝나는 시각 */
+  private weakUntil = 0;
   private missiles: { by: string; at: number; dmg: number }[] = [];
   private boostUntil = 0;
   /** 폭딜 반격 분노 게이지 (판 중에만) */
@@ -108,12 +114,14 @@ export class CoopRun {
   /** 판 시작: 체력, 레이드 보스, 첫 원·공격 시각 */
   start(now: number) {
     this.specials = [];
+    this.wards = [];
+    this.bindAt = this.bindUntil = this.bindImmuneUntil = this.linkUntil = 0;
     for (const p of this.host.players()) {
       p.coopCharge = 0;
       p.hp = p.bot ? 0 : C.hpMax; p.immuneUntil = 0; this.stat(p.id);
       if (p.bot) delete p.coopFx; else p.coopFx = { ...newCoopFx(), barrierLeft: C.barrier.uses[this.level] };
     }
-    this.weak = null; this.missiles = []; this.boostUntil = 0;
+    this.weakUntil = 0; this.missiles = []; this.boostUntil = 0;
     this.counter = newCounter(now);
     const ps = this.host.players();
     const hp = raidMaxHp(ps.filter((p) => !p.bot).length, ps.filter((p) => p.bot).length, this.level);
@@ -132,6 +140,9 @@ export class CoopRun {
 
   isShielded() { return !!this.shield; }
   inBurst(now: number) { return now < this.burstUntil; }
+  private inRampage(now: number) { return now < this.rampageUntil; }
+  private inBind(now: number) { return this.bindAt <= now && now < this.bindUntil; }
+  orbComboAdd(now: number) { return now < this.linkUntil ? SUPPORT.link.comboAdd : 0; }
   /** 투표가 없어져 늘 false (일시정지 요청을 막을 일이 없다) */
   busy() { return false; }
 
@@ -144,13 +155,34 @@ export class CoopRun {
 
   /** 모든 발동 조건과 게이지 소모는 서버에서 확인한다. */
   activateSpecial(p: PlayerState, now: number): boolean {
-    const spec = specialRule(p.coopSpecial);
-    if (!this.boss || this.shield || p.bot || p.outAt || !p.connected || p.hp <= 0 || now < p.stunUntil) return false;
-    if ((p.coopCharge ?? 0) < spec.charge || this.specials.some((a) => a.by === p.id)) return false;
-    const from = this.host.cursorOf(p.id);
-    if (!from) return false;
+    const boss = this.boss, kind = specialId(p.coopSpecial);
+    if (!boss || (this.shield && kind !== 'ward') || p.bot || p.outAt || !p.connected || p.hp <= 0 || now < p.stunUntil) return false;
+    if ((p.coopCharge ?? 0) < specialRule(kind).charge || this.specials.some((a) => a.by === p.id)) return false;
+    if (isAttackSpecial(kind) && this.inRampage(now)) return false;
+    if (kind === 'bind' && now < this.bindImmuneUntil) return false;
+
+    if (kind === 'ward' || isAttackSpecial(kind)) {
+      const from = this.host.cursorOf(p.id);
+      if (!from) return false;
+      if (kind === 'ward') this.wards.push({ x: from.x, y: from.y, until: now + SUPPORT.ward.durationMs });
+      else this.specials.push({ by: p.id, kind, from: { x: from.x, y: from.y }, at: now, hit: 0 });
+    } else if (kind === 'bind') {
+      const { durationMs, immunityMs } = SUPPORT.bind;
+      this.bindAt = now;
+      this.bindUntil = now + durationMs;
+      this.bindImmuneUntil = this.bindUntil + immunityMs;
+      const ids = holdCircles([boss], now, durationMs);
+      this.host.emit('circles:hold', { ids, at: now, ms: durationMs, bossOnly: true });
+      // 예약된 공격은 남은 대기 시간을 보존한다. 날아오는 탄은 계속 움직인다.
+      this.nextBullet = Math.max(now, this.nextBullet) + durationMs;
+      if (this.nextSkill && Number.isFinite(this.nextSkill)) this.nextSkill = Math.max(now, this.nextSkill) + durationMs;
+      if (this.threatAt) this.threatAt = Math.max(now, this.threatAt) + durationMs;
+      if (this.homing && this.homing.t < this.homing.at) this.homing.at = Math.max(now, this.homing.at) + durationMs;
+    } else {
+      this.linkUntil = now + SUPPORT.link.durationMs;
+    }
     p.coopCharge = 0;
-    this.specials.push({ by: p.id, kind: specialId(p.coopSpecial), from: { x: from.x, y: from.y }, at: now, hit: 0 });
+    if (!isAttackSpecial(kind)) this.host.emit('coop:support', { by: p.id, kind });
     this.host.emitPlayers();
     this.host.emit('coop:state', this.state());
     return true;
@@ -171,19 +203,19 @@ export class CoopRun {
     let finished = false;
     for (const attack of [...this.specials]) {
       const p = this.host.players().find((x) => x.id === attack.by);
-      const spec = specialRule(attack.kind);
+      const spec = attackSpecialRule(attack.kind);
       if (!p || p.outAt || !p.connected) { attack.hit = spec.hits; finished = true; continue; }
       const due = Math.min(spec.hits, Math.floor((now - attack.at) / (spec.durationMs / spec.hits)));
       while (attack.hit < due && this.boss && !this.shield) {
         attack.hit++;
-        const dmg = spec.damage / spec.hits * (this.inBurst(now) ? C.burst.mult : 1);
+        const dmg = spec.damage / spec.hits;
         const result = this.hurtBoss(p, dmg, now, circlePos(this.boss, now));
         if (result.killed) { this.host.bossKilled(p, now); return true; }
       }
       if (attack.hit >= spec.hits || this.shield) finished = true;
     }
     if (finished) {
-      this.specials = this.specials.filter((a) => !this.shield && a.hit < specialRule(a.kind).hits);
+      this.specials = this.specials.filter((a) => !this.shield && a.hit < attackSpecialRule(a.kind).hits);
       this.host.emitPlayers();
       this.host.emit('coop:state', this.state());
     }
@@ -192,6 +224,19 @@ export class CoopRun {
 
   tick(now: number) {
     if (!this.boss) return;
+    this.wards = this.wards.filter((w) => w.until > now);
+    if (this.bindImmuneUntil && now >= this.bindImmuneUntil) {
+      this.bindAt = this.bindUntil = this.bindImmuneUntil = 0;
+      this.host.emit('coop:state', this.state());
+    }
+    if (this.rampageUntil && now >= this.rampageUntil) {
+      this.rampageUntil = 0;
+      this.host.emit('coop:state', this.state());
+    }
+    if (this.linkUntil && now >= this.linkUntil) {
+      this.linkUntil = 0;
+      this.host.emit('coop:state', this.state());
+    }
     // 큰 피해 구간이 끝남: 다음 단계. 고유 패턴은 지금부터 다시 skillEveryMs를 센다
     if (this.afterBurst && now >= this.burstUntil) {
       this.afterBurst = false;
@@ -207,7 +252,7 @@ export class CoopRun {
     if (this.tickMissiles(now)) return; // 미사일로 보스가 쓰러져 판이 끝남
     if (this.tickSpecials(now)) return;
     if (!this.boss) return;
-    if (this.weak && now >= this.weak.until) { this.weak = null; this.host.emit('coop:state', this.state()); }
+    if (this.weakUntil && now >= this.weakUntil) { this.weakUntil = 0; this.host.emit('coop:state', this.state()); }
     // 아래 패턴은 모두 탈락시켜 판을 끝낼 수 있다 (끝나면 dispose가 boss를 지우니 이 tick의 나머지는 아무것도 보내지 않는다)
     this.tickSlams(now);
     if (!this.boss) return;
@@ -220,8 +265,13 @@ export class CoopRun {
     this.tickHoming(now);
     if (!this.boss) return;
     this.tickBullets(now);
-    if (this.shield) { this.tickBotCrystals(now); if (this.shield && now >= this.shield.until && !this.rageAt) this.startRage(now); return; }
+    if (this.shield) {
+      if (now < this.shield.until) this.tickBotCrystals(now);
+      else if (!this.rageAt) this.startRage(now);
+      return;
+    }
     this.spawnOrbs(now);
+    if (this.inBind(now)) return;
     if (this.threatAt && now >= this.threatAt) {
       this.threatAt = 0;
       this.spawnThreats(now);
@@ -398,7 +448,7 @@ export class CoopRun {
         return false;
       });
     }
-    if (!this.boss || this.inBurst(now) || now < this.nextBullet) return;
+    if (!this.boss || this.inBurst(now) || this.inBind(now) || now < this.nextBullet) return;
     const gap = this.bulletGap();
     // 오래 밀려 있었으면(보호막 직후 등) 지금부터 다시 센다
     const at = this.nextBullet < now - gap ? now : this.nextBullet;
@@ -483,12 +533,13 @@ export class CoopRun {
       let at = this.nextOrb.get(p.id) ?? now;
       if (at > now + gap) at = now + gap * this.rand(); // 큰 피해 구간이 시작되면 바로 촘촘하게
       while (at <= now) {
-        const kind = this.rand() * 100 < C.orb.yellowPct ? 'y' as const : p.color;
+        const bound = this.inBind(at);
+        const kind = !bound && this.rand() * 100 < C.orb.yellowPct ? 'y' as const : p.color;
         // 보스는 위쪽에 있으니 아래쪽 반원(양옆 조금 남김)으로만 뿜는다 (위로 가면 보스 몸 위를 지나 곧 판 밖으로 나가 잡을 수 없다)
         const angle = Math.PI * (0.08 + 0.84 * this.rand());
         const orb = makeOrb(this.host.nextId(), at, from, angle, kind, C.orb.speed, this.rand);
         // 가끔 ? 원 (무슨 아이템인지는 잡을 때 굴린다)
-        if (this.rand() * 100 < this.itemChance(at)) { orb.kind = 'item'; orb.itemTier = 0; orb.coopItem = true; }
+        if (!bound && this.rand() * 100 < this.itemChance(at)) { orb.kind = 'item'; orb.itemTier = 0; orb.coopItem = true; }
         this.host.addCircle(orb);
         at += gap;
       }
@@ -519,21 +570,21 @@ export class CoopRun {
   catchOrb(p: PlayerState, c: Circle, now: number): { dmg: number; gained: number; killed: boolean } {
     if (this.boss && !this.shield && !p.outAt) this.chargeSpecial(p, C.special.gain.orb);
     const boss = this.boss;
-    if (!boss || this.shield || p.outAt) return { dmg: 0, gained: 0, killed: false };
+    if (!boss || this.shield || this.inRampage(now) || p.outAt) return { dmg: 0, gained: 0, killed: false };
     // 아이템 배율: 공격력·화력 강화, 연쇄 폭발 (남은 수를 하나 쓴다)
     const fx = p.coopFx;
-    let mult = coopDamageMult(fx, now);
+    let mult = coopDamageMult(fx, now) * (now < this.weakUntil ? I.weakMult : 1);
     if (fx && fx.chain > 0) { fx.chain--; mult *= I.chainMult; }
     return this.hurtBoss(p, orbDamage(p, c.kind, this.inBurst(now), mult), now, circlePos(c, now), true);
   }
 
   /**
    * 보스에게 dmg: 경계에서 멈춤, 기록·점수, at이 있으면 coop:orb 연출. 경계에 닿으면 보호막, 0에 닿으면 killed.
-   * combo: 콤보 배율을 받는 피해(원·약점)면 분노 게이지에 넣는다 (큰 피해 구간·보호막 단계 제외)
+   * fromOrb: 원 획득 피해는 분노 게이지에 넣는다 (큰 피해 구간·보호막 단계 제외)
    */
-  private hurtBoss(p: PlayerState, dmg: number, now: number, at: Point | null, combo = false): { dmg: number; gained: number; killed: boolean } {
+  private hurtBoss(p: PlayerState, dmg: number, now: number, at: Point | null, fromOrb = false): { dmg: number; gained: number; killed: boolean } {
     const boss = this.boss;
-    if (!boss) return { dmg: 0, gained: 0, killed: false };
+    if (!boss || this.shield || this.inRampage(now)) return { dmg: 0, gained: 0, killed: false };
     const { dealt, crossed } = applyRaidDamage(boss, dmg, this.phase);
     const s = this.stat(p.id);
     s.dmg += dealt;
@@ -544,7 +595,7 @@ export class CoopRun {
     const killed = crossed && (boss.hp ?? 0) <= 0;
     if (killed) p.stats.bossKills++;
     else if (crossed) this.beginShield(now);
-    else if (combo && dealt > 0 && this.counter && !this.inBurst(now) && !this.shield) {
+    else if (fromOrb && dealt > 0 && this.counter && !this.inBurst(now) && !this.shield) {
       fillCounter(this.counter, (dealt / (boss.maxHp || 1)) * 100, now, this.level);
       this.host.emit('coop:state', this.state());
     }
@@ -579,8 +630,7 @@ export class CoopRun {
         p.roundMaxCombo = Math.max(p.roundMaxCombo, p.combo);
         break;
       case 'weak': {
-        const a = this.rand() * Math.PI * 2, d = C.bossR * I.weakAt;
-        this.weak = { until: now + I.weakMs, dx: Math.cos(a) * d, dy: Math.sin(a) * d };
+        this.weakUntil = now + I.weakMs;
         this.host.emit('coop:state', this.state());
         break;
       }
@@ -610,25 +660,10 @@ export class CoopRun {
     return false;
   }
 
-  /** 약점 노출 중 약점 안 클릭: 원 기본 피해 × weakDmg (콤보·큰 피해 구간·강화 배율 받음, 연쇄는 아님). 지연 보정 lagWindowMs */
-  hitWeak(p: PlayerState, pt: Point, now: number): { dmg: number; gained: number; killed: boolean } {
-    const w = this.weak, boss = this.boss;
-    const none = { dmg: 0, gained: 0, killed: false };
-    if (!w || !boss || this.shield || p.outAt || now >= w.until) return none;
-    let inside = false;
-    for (let dt = 0; dt <= RULES.lagWindowMs && !inside; dt += 25) {
-      const q = circlePos(boss, now - dt);
-      inside = Math.hypot(pt.x - (q.x + w.dx), pt.y - (q.y + w.dy)) <= I.weakR;
-    }
-    if (!inside) return none;
-    const dmg = orbDamage(p, p.color, this.inBurst(now), I.weakDmg * coopDamageMult(p.coopFx, now));
-    return this.hurtBoss(p, dmg, now, { x: pt.x, y: pt.y }, true);
-  }
-
   /** 보호막: 보스 무적, 원·패턴 멈춤, 살아 있고 연결된 사람·봇마다 자기 색 수정 */
   private beginShield(now: number) {
     const no = (this.phase === 1 ? 0 : 1) as 0 | 1;
-    this.shield = { from: now, until: now + C.levels[this.level].crystalSec * 1000, no, rages: 0 };
+    this.shield = { from: now, until: now + C.levels[this.level].crystalSec * 1000, no };
     this.botNext.clear();
     this.burstUntil = 0;
     // 날아가던 미사일은 보호막에 막힌다 (수정을 빨리 깨도 남은 발은 들어가지 않음)
@@ -642,21 +677,22 @@ export class CoopRun {
     this.clearSlamsSafe();
     const owners = this.host.players().filter((p) => !p.outAt && (p.bot || p.connected));
     const spots = placeCrystals(owners.length, this.rand);
-    const hits = crystalHits(this.level, no);
+    const hp = crystalHp(this.level, no);
     owners.forEach((p, i) => {
       const at = spots[i] ?? { x: 120 + i * 150, y: 980 };
-      this.host.addCircle(makeCrystal(this.host.nextId(), now, at, p.id, p.color, hits));
+      this.host.addCircle(makeCrystal(this.host.nextId(), now, at, p.id, p.color, hp));
     });
     this.host.emit('coop:state', this.state());
     if (!owners.length) this.breakShield(now);
   }
 
-  /** 수정 누르기: 주인만, 보호막 중에만. 깨면 true */
+  /** 수정 누르기: 같은 색은 더 큰 피해를 준다. 수정이 깨지면 true. */
   hitCrystal(p: PlayerState, c: Circle, now: number): boolean {
-    if (!this.shield || c.kind !== 'crystal' || c.target !== p.id || p.outAt) return false;
+    if (!this.shield || now >= this.shield.until || c.kind !== 'crystal' || !c.hp || p.outAt || (c.prism && p.bot)) return false;
+    const damage = !c.prism && c.colorOf === p.color ? C.crystal.sameColorDamage : C.crystal.otherColorDamage;
     this.chargeSpecial(p, C.special.gain.crystal);
     if (!p.bot) this.host.emitPlayers();
-    c.hp = Math.max(0, (c.hp ?? 1) - 1);
+    c.hp = Math.max(0, c.hp - damage);
     this.host.emit('coop:crystal', { id: c.id, hp: c.hp, maxHp: c.maxHp ?? c.hp });
     if (c.hp > 0) return false;
     this.host.removeCircles((x) => x.id === c.id);
@@ -665,33 +701,56 @@ export class CoopRun {
     return true;
   }
 
-  /** 수정이 사라졌을 때: 남은 수정이 없으면 보호막 풀림 */
+  /** 수정이 사라졌을 때 다음 보호막 단계를 처리한다. */
   private crystals: () => Circle[] = () => [];
   /** 방이 지금 판의 수정 목록을 알려 준다 */
   setCrystalSource(fn: () => Circle[]) { this.crystals = fn; }
   private afterCrystalGone(now: number) {
-    if (this.shield && !this.crystals().length) this.breakShield(now);
-    else this.host.emit('coop:state', this.state());
+    const shield = this.shield;
+    if (!shield || now >= shield.until) return;
+    if (!this.crystals().length) {
+      if (this.level !== 'expert' || shield.prism) {
+        this.breakShield(now);
+        return;
+      }
+      shield.prism = true;
+      this.host.addCircle(makePrismCrystal(this.host.nextId(), now));
+    }
+    this.host.emit('coop:state', this.state());
   }
 
-  /** 보호막이 풀림: 큰 피해 구간 (고유 패턴 멈춤, 원이 촘촘), 끝나면 다음 단계 */
-  private breakShield(now: number) {
-    if (!this.shield) return;
-    const burstMs = burstMsFor(this.shield.until - now);
-    this.breaks.push({ ms: now - this.shield.from, rages: this.shield.rages, burstMs });
+  /** 보호막은 구간마다 한 번 종료된다. 성공이면 딜 타임, 실패면 폭주로 넘어간다. */
+  private breakShield(now: number, failed = false) {
+    const shield = this.shield;
+    if (!shield) return;
+    const burstMs = failed ? 0 : burstMsFor(shield.until - now);
+    this.breaks.push({ ms: (failed ? shield.until : now) - shield.from, rages: failed ? 1 : 0, burstMs });
     this.phaseAts.push(now);
     this.shield = null;
     this.rageAt = 0;
-    // 큰 피해는 다음 단계 몫이다 (그 단계의 아래 경계까지만 깎인다). 패턴은 큰 피해 구간이 끝난 뒤 다음 단계 것으로
+    this.botNext.clear();
     this.phase = Math.min(3, this.phase + 1) as CoopPhase;
-    this.burstUntil = now + burstMs;
-    this.afterBurst = true;
-    // 큰 피해 구간 시작: 살아 있는 사람 회복 (엑스퍼트는 없음). 공격력 강화는 단계가 오르면 사라진다
-    if (this.level !== 'expert') for (const p of this.alive()) p.hp = Math.min(C.hpMax, p.hp + C.heal.burstStart[this.level]);
     for (const p of this.host.players()) if (p.coopFx) p.coopFx.power = 0;
+
+    if (failed) {
+      this.rampageUntil = now + C.rampageMs;
+      this.nextSkill = now + C.skillEveryMs;
+      this.nextBullet = now + this.bulletGap();
+      const ids = this.crystals().map((c) => c.id);
+      this.host.removeCircles((c) => c.kind === 'crystal');
+      this.host.emit('coop:crystalFail', { ids });
+      for (const p of this.alive()) {
+        this.damage(p, 'rage', now);
+        if (!this.boss) return;
+      }
+    } else {
+      this.burstUntil = now + burstMs;
+      this.afterBurst = true;
+      if (this.level !== 'expert') for (const p of this.alive()) p.hp = Math.min(C.hpMax, p.hp + C.heal.burstStart[this.level]);
+      this.host.clearLasers();
+      this.clearVolleys(now);
+    }
     this.host.emitPlayers();
-    this.host.clearLasers();
-    this.clearVolleys(now);
     this.host.emit('coop:state', this.state(true));
   }
 
@@ -703,7 +762,8 @@ export class CoopRun {
     for (const c of this.crystals()) {
       const bot = this.host.players().find((p) => p.id === c.target && p.bot);
       if (!bot) continue;
-      const gap = (limit * 0.55) / Math.max(1, c.maxHp ?? 1);
+      const clicks = Math.ceil((c.maxHp ?? 1) / C.crystal.sameColorDamage);
+      const gap = (limit * 0.55) / Math.max(1, clicks);
       const next = this.botNext.get(c.id) ?? now + gap;
       if (now < next) { this.botNext.set(c.id, next); continue; }
       this.botNext.set(c.id, next + gap);
@@ -735,19 +795,7 @@ export class CoopRun {
   }
 
   private tickRage(now: number) {
-    if (!this.rageAt || now < this.rageAt || !this.shield) return;
-    this.rageAt = 0;
-    // 엑스퍼트: 수정 구간을 못 깨면 바로 패배
-    if (!Number.isFinite(C.levels[this.level].hurt.rage)) { this.reason = 'crystal'; this.host.finish(false, 'crystal'); return; }
-    this.shield.rages++;
-    this.botNext.clear();
-    for (const p of this.alive()) this.damage(p, 'rage', now);
-    if (!this.boss || !this.shield) return; // 판이 끝났거나 탈락으로 보호막이 풀림
-    // 남은 수정은 처음 횟수로, 제한 시간 다시
-    const hits = crystalHits(this.level, this.shield.no);
-    for (const c of this.crystals()) { c.hp = c.maxHp = hits; this.host.emit('coop:crystal', { id: c.id, hp: hits, maxHp: hits }); }
-    this.shield.until = now + C.levels[this.level].crystalSec * 1000;
-    this.host.emit('coop:state', this.state());
+    if (this.rageAt && now >= this.rageAt) this.breakShield(now, true);
   }
 
   /** 내려찍기: 살아 있는 사람마다 지금 커서 자리 */
@@ -844,13 +892,16 @@ export class CoopRun {
     const before = p.hp;
     const st = this.stat(p.id);
     st.hits[by] = (st.hits[by] ?? 0) + 1;
-    p.hp = Math.max(0, p.hp - C.levels[this.level].hurt[by]);
+    const cursor = this.wards.length ? this.host.cursorOf(p.id) : null;
+    const warded = cursor && this.wards.some((w) => now < w.until && Math.hypot(cursor.x - w.x, cursor.y - w.y) <= SUPPORT.ward.radius);
+    const damage = C.levels[this.level].hurt[by] * (warded ? 1 - SUPPORT.ward.damageReduction : 1);
+    p.hp = Math.max(0, p.hp - damage);
     p.immuneUntil = now + fx.immuneMs;
     this.host.emit('coop:hit', { playerId: p.id, by, hp: p.hp, dmg: before - p.hp, immuneUntil: p.immuneUntil, ...(circleId !== undefined ? { circleId } : {}) });
     if (fx.stunMs > 0) this.host.stun(p, now, fx.stunMs);
     if (p.hp <= 0) {
       this.host.eliminate(p, now);
-      if (!this.alive().length) { this.host.finish(false, 'wipe'); return true; }
+      if (!this.alive().length) { this.host.finish(false, by === 'rage' ? 'crystal' : 'wipe'); return true; }
       // 보호막 중이면 그 사람 수정은 깬 것으로 친다
       if (this.shield) {
         const ids = new Set(this.crystals().filter((c) => c.target === p.id).map((c) => c.id));
@@ -873,6 +924,11 @@ export class CoopRun {
   /** 일시정지가 끝나 시각을 민다 (delta ms) */
   shift(delta: number) {
     for (const a of this.specials) a.at += delta;
+    for (const w of this.wards) w.until += delta;
+    if (this.bindAt) this.bindAt += delta;
+    if (this.bindUntil) this.bindUntil += delta;
+    if (this.bindImmuneUntil) this.bindImmuneUntil += delta;
+    if (this.linkUntil) this.linkUntil += delta;
     if (this.counter) {
       this.counter.at += delta;
       if (this.counter.fireAt) this.counter.fireAt += delta;
@@ -887,6 +943,7 @@ export class CoopRun {
     this.phaseAts = this.phaseAts.map((t) => t + delta);
     if (this.burstUntil) this.burstUntil += delta;
     if (this.rageAt) this.rageAt += delta;
+    if (this.rampageUntil) this.rampageUntil += delta;
     for (const s of this.slams) s.at += delta;
     if (this.safe) this.safe.at += delta;
     if (this.seal) { this.seal.warnAt += delta; this.seal.at += delta; this.seal.until += delta; }
@@ -898,7 +955,7 @@ export class CoopRun {
     }
     for (const v of this.volleys) v.at += delta;
     if (this.nextBullet) this.nextBullet += delta;
-    if (this.weak) this.weak.until += delta;
+    if (this.weakUntil) this.weakUntil += delta;
     for (const m of this.missiles) m.at += delta;
     if (this.boostUntil) this.boostUntil += delta;
     let barrierShifted = false;
@@ -929,12 +986,14 @@ export class CoopRun {
     return {
       level: this.level, phase: this.phase, bossId: this.boss?.id ?? -1, hp: this.boss?.hp ?? 0, maxHp: this.boss?.maxHp ?? 0,
       threatAt: this.threatAt,
+      wards: this.wards.map((w) => ({ ...w })),
+      bindUntil: this.bindUntil, bindImmuneUntil: this.bindImmuneUntil, linkUntil: this.linkUntil,
       specials: this.specials.map(({ hit: _hit, ...a }) => ({ ...a, from: { ...a.from } })),
-      shield: this.shield ? { until: this.shield.until, no: this.shield.no } : null, burstUntil: this.burstUntil, rageAt: this.rageAt,
+      shield: this.shield ? { until: this.shield.until, no: this.shield.no, ...(this.shield.prism ? { prism: true } : {}) } : null, burstUntil: this.burstUntil, rageAt: this.rageAt, rampageUntil: this.rampageUntil,
       slams: this.slams.map((s) => ({ ...s })), safe: this.safe,
       seal: this.seal ? { ...this.seal, lanes: [...this.seal.lanes] } : null, beam: this.beam ? { ...this.beam } : null,
       homing: this.homing ? { ...this.homing, targets: [...this.homing.targets], shots: this.homing.shots.map((s) => ({ ...s })) } : null,
-      weak: this.weak ? { ...this.weak } : null,
+      weakUntil: this.weakUntil,
       counter: this.counter ? { ...this.counter } : null,
       ...(withVolleys ? { volleys: this.volleys.filter((v) => !volleyDone(v, this.clock)) } : {}),
     };
@@ -950,24 +1009,27 @@ export class CoopRun {
       win, stars: coopStars(win, ratio, C.timeSec * 1000 - timeMs), timeMs,
       bossHpPct: this.boss ? Math.round(((this.boss.hp ?? 0) / (this.boss.maxHp || 1)) * 100) : 0,
       phase: this.phase, maxHp: this.boss?.maxHp ?? 0, players, breaks: [...this.breaks], phaseMs: this.phaseAts.map((t) => Math.max(0, t - startAt)),
-      ...(!win && (reason ?? this.reason) ? { reason: reason ?? this.reason } : {}),
+      ...(!win && reason ? { reason } : {}),
     };
   }
 
   /** 판이 끝남: 아이템 효과도 끝. 보스·보호막·패턴을 모두 지워 끝난 tick의 나머지가 아무것도 보내지 않게 한다 */
   dispose() {
     this.specials = [];
+    this.wards = [];
+    this.bindAt = this.bindUntil = this.bindImmuneUntil = this.linkUntil = 0;
     for (const p of this.host.players()) delete p.coopCharge;
     this.threatAt = 0;
     for (const p of this.host.players()) delete p.coopFx;
     this.boss = null;
     this.shield = null;
     this.rageAt = 0;
+    this.rampageUntil = 0;
     this.burstUntil = 0;
     this.afterBurst = false;
     this.nextSkill = 0;
     this.botNext.clear();
-    this.weak = null;
+    this.weakUntil = 0;
     this.missiles = [];
     this.volleys = [];
     this.hurtSeen.clear();

@@ -8,17 +8,23 @@ import type { CoopPhase } from './coop.ts';
 import type { Volley } from './coopBullets.ts';
 import type { CoopItemId } from './coopItems.ts';
 import type { CoopCounter } from './coopCounter.ts';
-import type { CoopSpecialAttack, CoopSpecialId } from './coopSpecial.ts';
+import type { CoopSpecialAttack, CoopSpecialId, CoopSupportSpecialId, CoopWard } from './coopSpecial.ts';
 
 /** 협력전 진행 상태 */
 export interface CoopState {
   level: CoopLevel; phase: CoopPhase; bossId: number; hp: number; maxHp: number;
-  /** 보호막: 제한 시간 끝, 몇 번째 보호막인지 */
-  shield: { until: number; no: 0 | 1 } | null;
+  /** 보호막: 제한 시간 끝, 몇 번째 보호막인지, 중앙 프리즘 등장 여부 */
+  shield: { until: number; no: 0 | 1; prism?: true } | null;
   /** 큰 피해 구간 끝 (0이면 아님) */
   burstUntil: number;
-  /** 분노 공격 시각 (0이면 없음) */
+  wards?: CoopWard[];
+  bindUntil?: number;
+  bindImmuneUntil?: number;
+  linkUntil?: number;
+  /** 수정 실패 폭발 예정 시각 (0이면 없음) */
   rageAt: number;
+  /** 실패 후 보스가 피해를 받지 않는 종료 시각 */
+  rampageUntil?: number;
   /** 큰 원 발사 예정 시각 (0 또는 생략이면 경고 없음) */
   threatAt?: number;
   specials?: CoopSpecialAttack[];
@@ -30,8 +36,8 @@ export interface CoopState {
   beam: Beam | null;
   /** 엑스퍼트 유도탄 (예고 중이거나 날고 있는 것, 없으면 null) */
   homing: Homing | null;
-  /** 약점 노출 아이템: until까지 보스 중심 + (dx, dy) 자리 (없으면 null) */
-  weak: { until: number; dx: number; dy: number } | null;
+  /** 보스 약점 노출 종료 시각. 비활성 상태는 0. */
+  weakUntil: number;
   /** 폭딜 반격 분노 게이지 (판이 없으면 null) */
   counter: CoopCounter | null;
   /**
@@ -56,7 +62,7 @@ export interface CoopPlayerResult {
 export interface CoopResult {
   win: boolean; stars: 0 | 1 | 2 | 3; timeMs: number; bossHpPct: number; phase: CoopPhase;
   maxHp: number; players: Record<string, CoopPlayerResult>;
-  /** 보호막마다: ms 수정을 다 깬 시간, rages 분노 횟수, burstMs 그 뒤 큰 피해 구간 길이 */
+  /** 보호막마다: ms 수정 구간에 쓴 시간, rages 실패 여부 (0 또는 1), burstMs 성공 뒤 큰 피해 구간 길이 */
   breaks: { ms: number; rages: number; burstMs: number }[];
   /** 각 단계가 끝난 때 (판 시작부터 ms): 1단계 끝, 2단계 끝 */
   phaseMs: number[];
@@ -247,7 +253,7 @@ export interface ServerToClient {
   /** 발사 패턴 예고: at(서버 시각)에 웨이브가 나온다 */
   'wave:warn': (d: { pattern: WavePattern; at: number }) => void;
   /** 시간 정지: 해당 원들에 정지 구간 [at, at + ms] */
-  'circles:hold': (d: { ids: number[]; at: number; ms: number }) => void;
+  'circles:hold': (d: { ids: number[]; at: number; ms: number; bossOnly?: boolean }) => void;
   /** 보스를 때림 (hp: 남은 체력) */
   /** blocked: 방어형 보호막에 막힘 / enraged: 붉은 공격형을 때려 점수를 잃음 (gained가 음수) */
   'boss:hit': (d: { circleId: number; by: string; hp: number; gained: number; jackpot: number; blocked?: boolean; enraged?: boolean; feverStarted?: boolean; comboBonus?: boolean }) => void;
@@ -275,6 +281,7 @@ export interface ServerToClient {
   /** 튜토리얼: 장면이 바뀌거나 멈출 때 */
   'tutorial:beat': (d: TutorialBeatInfo) => void;
   /** 협력전: 단계·체력·카드가 바뀜 */
+  'coop:support': (d: { by: string; kind: CoopSupportSpecialId }) => void;
   'coop:state': (d: CoopState) => void;
   /** 협력전: 누가 무엇에 맞아 체력이 줄었는지 (circleId: 놓친 공격 원) */
   'coop:hit': (d: { playerId: string; by: CoopHitBy; hp: number; dmg: number; immuneUntil: number; circleId?: number; blocked?: true; barrier?: true }) => void;
@@ -289,7 +296,8 @@ export interface ServerToClient {
   'coop:homing': (d: Homing | null) => void;
   /** 협력전: 폭딜 반격 판정 (lost 콤보를 잃은 사람, saved 보호막으로 지킨 사람) */
   'coop:counter': (d: { lost: string[]; saved: string[] }) => void;
-  /** 협력전: 수정 남은 횟수 (0이면 사라짐) */
+  /** 협력전: 수정 남은 체력 (0이면 사라짐) */
+  'coop:crystalFail': (d: { ids: number[] }) => void;
   'coop:crystal': (d: { id: number; hp: number; maxHp: number }) => void;
   /** 협력전: 잡은 원이 보스에게 피해 (연출) */
   'coop:orb': (d: { by: string; x: number; y: number; dmg: number }) => void;

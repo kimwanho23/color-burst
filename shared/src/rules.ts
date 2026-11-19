@@ -50,7 +50,7 @@ export const RULES = {
   survival: { everyMs: 30_000, warnMs: 3_000 },
   /**
    * 협력전: 모두 같은 편, 개인 체력(hpMax)으로 180초 안에 3단계 레이드 보스를 잡는다.
-   * 난이도(levels)는 보스 공격 세기와 공격별 피해(hurt)를 바꾼다. 체력 바·시간·보스 체력은 공통. hurt의 Infinity는 즉시 패배(JSON에 싣지 않는다)
+   * 난이도(levels)는 보스 공격 세기와 공격별 피해(hurt)를 바꾼다. 체력 바·시간·보스 체력은 공통
    */
   coop: {
     timeSec: 180, hpMax: 100,
@@ -65,6 +65,11 @@ export const RULES = {
         laser: { charge: 30, damage: 18, hits: 12, durationMs: 2_400 },
         meteor: { charge: 50, damage: 34, hits: 5, durationMs: 2_000 },
         blades: { charge: 75, damage: 55, hits: 20, durationMs: 4_000 },
+      },
+      support: {
+        ward: { charge: 50, durationMs: 5_000, radius: 175, damageReduction: 0.4 },
+        bind: { charge: 55, durationMs: 3_000, immunityMs: 10_000 },
+        link: { charge: 40, durationMs: 6_000, comboAdd: 1 },
       },
     },
     /**
@@ -102,7 +107,7 @@ export const RULES = {
     /** 피해 콤보 보너스: comboStep마다 +comboPer, 상한 comboCap (1.8배, 40콤보) */
     comboStep: 10, comboPer: 0.2, comboCap: 0.8,
     /**
-     * 폭딜 반격(분노 게이지, 새는 양동이): 원·약점 피해가 보스 최대 체력 대비 %로 차고 초당 drain%씩 빠진다. cap%에 닿으면 warnMs 예고 뒤
+     * 폭딜 반격(분노 게이지, 새는 양동이): 원 획득 피해가 보스 최대 체력 대비 %로 차고 초당 drain%씩 빠진다. cap%에 닿으면 warnMs 예고 뒤
      * 살아 있는 모두의 콤보를 0으로 (우클릭 보호막이면 지킴), 그 뒤 cooldownMs 동안 차지 않는다.
      * 감각: 이지는 강화 아이템 둘이 겹쳐야, 노말은 최대 콤보 + 강화 하나, 하드는 최대 콤보로 거의 다 잡으면, 엑스퍼트는 최대 콤보면 금방 찬다
      */
@@ -124,9 +129,12 @@ export const RULES = {
       wallGap: 20, gapW: 120, wallDy: 190,
     },
     /** 수정: 반지름, 서로 떨어진 거리, 피할 부채꼴(보스 아래로 ±dangerDeg도, 거리 dangerR 안) */
-    crystal: { r: 46, minGap: 140, dangerDeg: 35, dangerR: 1000 },
+    crystal: {
+      r: 46, minGap: 140, dangerDeg: 35, dangerR: 1000,
+      hpMult: 2, sameColorDamage: 2, otherColorDamage: 1, prismHp: 5,
+    },
     /** 수정을 다 못 깼을 때 분노 공격 경고 */
-    rageWarnMs: 2_000,
+    rageWarnMs: 2_000, rampageMs: 5_000,
     /** 내려찍기: 경고 시간, 반지름 */
     slam: { warnMs: 1_500, r: 110 },
     /** 안전지대: 경고 시간, 시작·끝 반지름, 경고 동안 옮겨 가는 최대 거리 */
@@ -164,7 +172,7 @@ export const RULES = {
     /**
      * 보스전 아이템(? 원): 보스가 원 하나를 뿜을 때 chance(%, 난이도별)로 아이템 원. 큰 피해 구간이 끝나고(단계가 오르고) boostMs 동안 × boostMult.
      * weight 종류 가중치(엑스퍼트는 회복 둘 제외). guardMs 방어막(한 번 막음), heal·healAll 회복, fireMs·fireMult 화력 강화,
-     * powerStep·powerMax 공격력 강화(단계가 오르면 0), weakMs·weakR·weakDmg·weakAt 약점(원 기본 피해 × weakDmg, 보스 중심에서 bossR × weakAt),
+     * powerStep·powerMax 공격력 강화(단계가 오르면 0), weakMs·weakMult 약점 노출(보스가 받는 원 피해 배율),
      * chainN·chainMult 연쇄 폭발, comboAdd 콤보, missiles·missileGapMs·missilePct·missileFlyMs 미사일(합계 최대 체력 × missilePct, 첫 발은 missileFlyMs 뒤)
      */
     items: {
@@ -172,14 +180,14 @@ export const RULES = {
       boostMult: 2, boostMs: 10_000,
       weight: { clear: 1, guard: 1, heal: 1, healAll: 1, fire: 1, power: 1, weak: 1, chain: 1, combo: 1, missile: 1 } as Record<CoopItemId, number>,
       guardMs: 3_000, heal: 20, healAll: 10, fireMs: 5_000, fireMult: 1.5, powerStep: 0.2, powerMax: 3,
-      weakMs: 5_000, weakR: 34, weakDmg: 1.5, weakAt: 0.6, chainN: 3, chainMult: 2, comboAdd: 10,
+      weakMs: 5_000, weakMult: 1.2, chainN: 3, chainMult: 2, comboAdd: 10,
       missiles: 8, missileGapMs: 200, missilePct: 0.04, missileFlyMs: 600,
     },
     /** 별: 살아남은 사람 비율 ≥ alive 이고 남은 시간 ≥ leftSec */
     stars: { three: { alive: 1, leftSec: 60 }, two: { alive: 0.5, leftSec: 0 } },
     /**
      * 난이도: laserWidth는 화면 높이 %(RoomRules.laserWidth와 같은 단위), laserWarnMs 레이저 경고(ms), threatCount·threatSpeed 추적 원 수·속도, safeCount 안전지대 수.
-     * crystalHits: [첫 보호막, 두 번째 보호막] 수정 횟수, crystalSec: 보호막 제한 시간(초), orbMult: 원 간격 배율, bulletEveryMs·bulletSpeed: 탄막 간격(ms)·속도(필드/초)
+     * crystalHits: [첫 보호막, 두 번째 보호막] 같은 색으로 수정에 필요한 기본 타격 횟수, crystalSec: 보호막 제한 시간(초), orbMult: 원 간격 배율, bulletEveryMs·bulletSpeed: 탄막 간격(ms)·속도(필드/초)
      */
     levels: {
       easy: {
@@ -205,7 +213,7 @@ export const RULES = {
       },
       expert: {
         hpMult: 1.8,
-        hurt: { bullet: 20, wall: 45, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: Infinity, crush: 100, homing: 30 } as Record<CoopHitBy, number>,
+        hurt: { bullet: 20, wall: 45, threat: 30, beam: 35, laser: 50, slam: 50, seal: 40, safe: 60, rage: 90, crush: 100, homing: 30 } as Record<CoopHitBy, number>,
         laserWarnMs: 900, laserWidth: 36, volleyOdds: { single: 10, parallel: 30, cross: 30, radial: 30 },
         threatCount: 5, threatSpeed: 280,
         crystalHits: [12, 24], crystalSec: 8, safeCount: 1, orbMult: 0.8, bulletEveryMs: 850, bulletSpeed: 320,
@@ -677,6 +685,8 @@ export interface Circle {
   target?: string;
   /** 협력전 수정: 주인의 색 */
   colorOf?: ColorIndex;
+  /** 엑스퍼트 마지막 중앙 수정 */
+  prism?: true;
   /** 협력전 아이템 원 (kind 'item', 무슨 아이템인지는 잡을 때 정해진다) */
   coopItem?: true;
 }

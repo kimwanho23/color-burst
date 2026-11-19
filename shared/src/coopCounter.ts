@@ -1,6 +1,6 @@
 /**
  * 협력전 폭딜 반격의 분노 게이지 (새는 양동이). 단위는 보스 최대 체력 대비 %.
- * 원·약점 피해만큼 차고 초당 drain%씩 빠진다. cap%에 닿으면 warnMs 뒤 반격, 판정은 그 뒤 barrier.lagMs에 한다.
+ * 원 획득 피해만큼 차고 초당 drain%씩 빠진다. cap%에 닿으면 warnMs 뒤 반격, 판정은 그 뒤 barrier.lagMs에 한다.
  * 서버 CoopRun이 상태를 들고, 화면은 counterValue로 지난 시간만큼 빼서 그린다. 수치는 RULES.coop.counter.
  */
 import { RULES, type CoopLevel } from './rules.ts';

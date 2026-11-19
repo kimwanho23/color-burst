@@ -98,10 +98,12 @@ export function makeOrb(id: number, now: number, from: Point, angle: number, kin
   return { id, kind, angle, speed, r: 40 * (0.85 + rand() * 0.3), born: now, from: { x: from.x, y: from.y }, noGuard: true };
 }
 
-/** 수정 횟수: 난이도와 몇 번째 보호막인지 */
+/** 같은 색으로 수정에 필요한 기본 타격 횟수 */
 export function crystalHits(level: CoopLevel, shieldNo: 0 | 1): number {
   return C.levels[level].crystalHits[shieldNo];
 }
+
+export const crystalHp = (level: CoopLevel, shieldNo: 0 | 1) => crystalHits(level, shieldNo) * C.crystal.hpMult;
 
 /** 큰 피해 구간 길이: 수정을 빨리 깰수록(보호막이 많이 남을수록) 길다 */
 export function burstMsFor(shieldLeftMs: number): number {
@@ -133,9 +135,17 @@ export function placeCrystals(n: number, rand: () => number): Point[] {
   return out;
 }
 
-/** 수정: 움직이지 않는 주인 색 큰 원, 체력 = 깨는 데 필요한 횟수 */
-export function makeCrystal(id: number, now: number, at: Point, owner: string, color: ColorIndex, hits: number): Circle {
-  return { id, kind: 'crystal', angle: 0, speed: 0, r: C.crystal.r, born: now, from: { x: at.x, y: at.y }, target: owner, colorOf: color, hp: hits, maxHp: hits, noGuard: true };
+/** 색 수정: 움직이지 않는 색 원, 체력은 색 일치 여부에 따라 깎인다. */
+export function makeCrystal(id: number, now: number, at: Point, owner: string, color: ColorIndex, hp: number): Circle {
+  return { id, kind: 'crystal', angle: 0, speed: 0, r: C.crystal.r, born: now, from: { x: at.x, y: at.y }, target: owner, colorOf: color, hp, maxHp: hp, noGuard: true };
+}
+
+/** 프리즘 수정: 색 수정을 모두 깬 뒤 판 중앙에 나타난다. */
+export function makePrismCrystal(id: number, now: number): Circle {
+  return {
+    id, kind: 'crystal', angle: 0, speed: 0, r: C.crystal.r, born: now, noGuard: true,
+    from: { x: FIELD.w / 2, y: FIELD.h / 2 }, hp: C.crystal.prismHp, maxHp: C.crystal.prismHp, prism: true,
+  };
 }
 
 /** 내려찍기: (x, y) 반지름 r 원을 at에 내려친다 */

@@ -13,7 +13,7 @@ import { renderRules, scoreTable } from './rulesUI.ts';
 import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, counterFlashAt, counterHudLive, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
-import { renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
+import { coopRulesHtml, renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
 import { barrierGuarding, barrierReady, chordPress, pointerAction } from './pointer.ts';
 import { COOP_SPECIAL_IDS, COOP_SPECIALS, specialId } from '@color-burst/shared';
 import { buildCard, pickChips, rankOf, renderPick } from './arcadeUI.ts';
@@ -133,7 +133,7 @@ function setVolleys(vs: Volley[]) {
 }
 function renderCoop() {
   renderCoopHud($('stage'), playing ? coopState : null, viewNow());
-  renderSpecialHud($('stage'), playing && rules.coop ? me() : undefined, !!coopState?.shield, !!coopState?.specials?.some((a) => a.by === myId()));
+  renderSpecialHud($('stage'), playing && rules.coop ? me() : undefined, coopState, viewNow());
   renderBarrier();
 }
 /** 우클릭 보호막: 터치 기기면 화면 버튼으로 쓴다 */
@@ -396,6 +396,8 @@ $('scoreModal').addEventListener('click', (e) => { if (e.target === $('scoreModa
 $('scoreBtn').innerHTML = `${icon(UI.score, 16)}<span>점수표 보기</span>`;
 const RULE_ICON = { coop: UI.coop, timer: UI.timer, fever: UI.fever, speed: UI.speed, mark: UI.mark, miss: UI.miss, boss: UI.boss, item: UI.item, laser: UI.laser, map: UI.map, rainbow: UI.rainbow, up: UI.up } as const;
 
+$('coopRuleList').innerHTML = coopRulesHtml();
+
 function renderLobby() {
   if (!room) return;
   const host = room.hostId === myId();
@@ -416,6 +418,7 @@ function renderLobby() {
   // 준비: 방장 뺀 사람이 모두 준비해야 시작할 수 있다
   const waiting = room.solo ? 0 : room.players.filter((p) => !p.bot && p.id !== room!.hostId && !p.ready).length;
   const meP = room.players.find((p) => p.id === myId());
+  $('coopRules').hidden = !room.rules.coop;
   const picker = $('specialPicker');
   picker.hidden = !room.rules.coop;
   if (room.rules.coop) picker.innerHTML = specialPickerHtml(meP);
@@ -666,6 +669,11 @@ socket.on('game:resuming', ({ at }) => {
   resumeAt = at; lastCount = -1; $('pauseOv').hidden = true;
 });
 // 협력전
+socket.on('coop:support', ({ kind }) => {
+  const skill = COOP_SPECIALS[kind];
+  renderer.banner(skill.name + '!', skill.color);
+  sfx.fever();
+});
 socket.on('coop:state', (s) => {
   const boss = circles.get(s.bossId);
   if (boss) { boss.hp = s.hp; boss.maxHp = s.maxHp; }
@@ -673,13 +681,14 @@ socket.on('coop:state', (s) => {
   if (s.shield && !coopState?.shield) {
     setLasers([]);
     for (const [id, c] of circles) if (c.kind === 'threat') circles.delete(id);
-    renderer.banner('보호막! 내 색 수정을 깨세요', '#7fd3ff'); sfx.patternWarn();
+    renderer.banner('보호막! 수정을 함께 깨세요', '#7fd3ff'); sfx.patternWarn();
   }
+  if (s.shield?.prism && !coopState?.shield?.prism) { renderer.banner('중앙 프리즘 수정을 깨세요!', '#e4d0ff'); sfx.patternWarn(); }
   // 큰 피해 구간 시작
   if (s.burstUntil > (coopState?.burstUntil ?? 0) && !s.shield && !coopState?.burstUntil) { renderer.banner('보스가 무너졌다!', '#ffd43b'); sfx.fever(); }
   // 큰 피해 구간이 끝나 다음 단계가 시작됨
   if (coopState?.burstUntil && !s.burstUntil && !s.shield && s.phase > 1) renderer.banner(`${s.phase}단계`, '#ff8a95');
-  if (s.rageAt && !coopState?.rageAt) renderer.banner('분노!', '#ff5d73');
+  if (s.rageAt && !coopState?.rageAt) renderer.banner('수정 파훼 실패!', '#ff8a76');
   const mySpecial = s.specials?.find((a) => a.by === myId());
   if (mySpecial && !coopState?.specials?.some((a) => a.by === myId())) {
     renderer.banner(`${COOP_SPECIALS[mySpecial.kind].name}!`, COOP_SPECIALS[mySpecial.kind].color);
@@ -777,10 +786,21 @@ socket.on('coop:counter', ({ lost, saved }) => {
   renderScores();
 });
 socket.on('coop:slam', (d) => { coopSlams = d.length ? [...coopSlams.filter((x) => x.at > serverNow()), ...d] : []; if (d.some((x) => x.owner === myId())) sfx.patternWarn(); });
+socket.on('coop:crystalFail', ({ ids }) => {
+  for (const id of ids) circles.delete(id);
+  renderer.crystalFailure();
+  sfx.bomb();
+});
 socket.on('coop:crystal', ({ id, hp, maxHp }) => {
   const c = circles.get(id);
   if (!c) return;
-  if (hp <= 0) { const q = circlePos(c, serverNow()); circles.delete(id); renderer.burst(q.x, q.y, COLORS[c.colorOf ?? 0].hex, true, 1.5); if (c.target === myId()) sfx.legend(); return; }
+  if (hp <= 0) {
+    const q = circlePos(c, serverNow());
+    circles.delete(id);
+    renderer.burst(q.x, q.y, c.prism ? '#e4d0ff' : COLORS[c.colorOf ?? 0].hex, true, 1.5);
+    if (c.prism || c.target === myId()) sfx.legend();
+    return;
+  }
   c.hp = hp; c.maxHp = maxHp;
 });
 socket.on('coop:safe', (d) => { coopSafe = d; if (d) { renderer.banner('안전지대로!', '#78ffaa'); sfx.patternWarn(); } });
@@ -810,7 +830,7 @@ socket.on('coop:item', ({ circleId, by, item, x, y }) => {
     pushFeed($('feed'), coopItemIcon(item, 18), `${who.name}: ${COOP_ITEMS[item].name}`, COLORS[who.color].hex);
   }
   if (item === 'clear') renderer.flash();
-  if (item === 'weak' && by === myId()) renderer.banner('약점을 눌러요!', '#ffd43b');
+  if (item === 'weak') renderer.banner('보스 약점 노출!', '#ffd43b');
 });
 // 미사일: 잡은 자리에서 보스로 gapMs 간격 n발 (닿을 때 작은 폭발)
 socket.on('coop:missile', ({ from, n, gapMs, at }) => {
@@ -1216,9 +1236,10 @@ startCursorSync(() => (cursorOn() ? gameCursor.pos : null), (p) => socket.emit('
 document.addEventListener('visibilitychange', () => { if (document.hidden) gameCursor.leave(); });
 window.addEventListener('blur', () => gameCursor.leave());
 socket.on('wave:warn', ({ at }) => { renderer.waveWarn(Math.max(100, at - serverNow())); sfx.wave(); });
-socket.on('circles:hold', ({ ids, at, ms }) => {
+socket.on('circles:hold', ({ ids, at, ms, bossOnly }) => {
   // 서버와 같은 방식으로 붙인다 (정지 중 또 정지하면 이어 붙임)
   holdCircles(ids.map((id) => circles.get(id)).filter((c): c is Circle => !!c), at, ms);
+  if (bossOnly) return;
   frozenUntil = Math.max(frozenUntil, at + ms);
   // 예고 중인 레이저도 서버처럼 늦춘다 (발사음도 다시 예약)
   holdLasers(lasers, at, ms);
@@ -1362,17 +1383,11 @@ function onCanvasPress(e: PointerEvent) {
   const hit = list.find((c) => c.kind !== 'boss' && !foreign(c) && !pending.has(c.id) && !pulls.has(c.id) && isHit(c, now, x, y))
     ?? list.find((c) => c.kind === 'boss' && isHit(c, now, x, y));
   // 협력전: 레이드 보스는 눌러도 아무 일 없음(헛클릭도 아님). 수정은 남아 있으니 숨기지 않고 두드리는 연출만
-  // 약점 노출 중 약점 안이면 보스 클릭을 보낸다 (서버가 약점 피해)
-  if (hit?.boss === 'raid') {
-    const w = coopState?.weak, q = circlePos(hit, now);
-    if (w && now < w.until && Math.hypot(x - (q.x + w.dx), y - (q.y + w.dy)) <= RULES.coop.items.weakR) {
-      renderer.burst(x, y, '#ffd43b', false, 0.5); sfx.bossHit();
-      socket.emit('game:click', { circleId: hit.id, x, y });
-    }
-    return;
-  }
+  if (hit?.boss === 'raid') return;
   if (hit?.kind === 'crystal') {
-    if (hit.target === myId()) { renderer.burst(x, y, COLORS[hit.colorOf ?? 0].hex, false, 0.6); sfx.bossHit(); }
+    const color = hit.prism ? '#e4d0ff' : COLORS[hit.colorOf ?? 0].hex;
+    renderer.burst(x, y, color, false, hit.prism || hit.colorOf === m?.color ? 0.6 : 0.35);
+    sfx.bossHit();
     socket.emit('game:click', { circleId: hit.id, x, y });
     return;
   }
@@ -1482,7 +1497,7 @@ function renderMyHp(hit = false) {
   const el = $('myhp');
   const m = playing && rules.coop ? me() : undefined;
   el.innerHTML = myHpHtml(m);
-  renderSpecialHud($('stage'), m, !!coopState?.shield, !!coopState?.specials?.some((a) => a.by === myId()));
+  renderSpecialHud($('stage'), m, coopState, viewNow());
   renderBarrier();
   el.classList.toggle('low', !!m && m.hp <= RULES.coop.hpMax * RULES.coop.hpLowRatio);
   if (hit) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
@@ -1497,7 +1512,10 @@ function updateHud(now: number) {
   $('meterFill').style.width = `${Math.max(0, fill)}%`;
   // 협력전: 개인 피버가 없으니 게이지 줄을 숨기고, 보스 체력 바의 남은 초를 갱신한다
   document.body.classList.toggle('coop-on', playing && !!rules.coop);
-  if (coopState && playing && (coopState.shield || coopState.threatAt || coopState.burstUntil > now || counterHudLive(coopState.counter, coopState.level, now)) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250); renderCoopHud($('stage'), coopState, now); }
+  if (coopState && playing && (coopState.shield || (coopState.rampageUntil ?? 0) > now || coopState.threatAt || coopState.burstUntil > now || coopState.weakUntil > now || (coopState.bindImmuneUntil ?? 0) > now || (coopState.linkUntil ?? 0) > now || counterHudLive(coopState.counter, coopState.level, now)) && Math.floor(now / 250) !== lastCoopHud) { lastCoopHud = Math.floor(now / 250);
+    renderCoopHud($('stage'), coopState, now);
+    renderSpecialHud($('stage'), m, coopState, now);
+  }
   const after = !!m && !fever && now < m.afterUntil;
   const fl = fever && m ? `×${feverMultOf(m, G)}` : after ? '여운' : '피버';
   if ($('flabel').dataset.v !== fl) { $('flabel').dataset.v = fl; $('flabel').innerHTML = `${icon(UI.fever, 16)}<span>${fl}</span>`; }
@@ -1615,6 +1633,7 @@ function frame() {
     colorOf: rules.coop ? new Map(players.map((p) => [p.id, p.color])) : undefined,
     coop: !!rules.coop,
     coopShield: rules.coop && !!coopState?.shield,
+    coopRampageUntil: rules.coop ? coopState?.rampageUntil : undefined,
     counterFireAt: rules.coop ? counterFireAt : 0,
     counterWarn: rules.coop && counterFireAt > now,
     coopPhase: rules.coop ? coopState?.phase : undefined,
@@ -1624,7 +1643,9 @@ function frame() {
     beam: rules.coop && coopBeam ? { b: coopBeam, from: coopBossPos(now) } : undefined,
     homing: rules.coop && coopHoming ? { h: coopHoming, from: coopBossPos(now), still: !!pausedView } : undefined,
     volleys: rules.coop ? coopVolleys : undefined,
-    coopWeak: rules.coop ? coopState?.weak : undefined,
+    coopWeakUntil: rules.coop ? coopState?.weakUntil : undefined,
+    coopBindUntil: rules.coop ? coopState?.bindUntil : undefined,
+    coopWards: rules.coop ? coopState?.wards : undefined,
     specials: rules.coop ? { attacks: coopState?.specials ?? [], to: coopBossPos(now) } : undefined,
     missiles: rules.coop && coopMissiles.length ? { list: coopMissiles, to: coopBossPos(now), flyMs: RULES.coop.items.missileFlyMs } : undefined,
     meId: myId(),

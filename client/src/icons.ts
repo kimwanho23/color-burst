@@ -18,6 +18,9 @@ import type { AbilityCategory, AbilityId, ComboId, CoopItemId, CoopSpecialId, Ev
 const SPECIAL_PATH: Record<CoopSpecialId, string> = {
   laser: '<circle cx="10" cy="24" r="6"/><path d="M16 24h26M20 17h18M20 31h18M35 10l3 4M35 38l3-4"/>',
   meteor: '<circle cx="29" cy="30" r="10"/><path d="M8 6l17 14M5 16l14 12M19 5l14 15M26 32l4-5"/>',
+  ward: '<circle cx="24" cy="24" r="19"/><circle cx="24" cy="24" r="15"/><path d="M24 13l9 16H15zM24 35l9-16H15z"/>',
+  bind: '<path d="M16 13h-5a6 6 0 0 0 0 12h7m14-2h5a6 6 0 0 0 0-12h-7M14 20l6-6m8 10 6-6M24 24v13m-5-5 5 5 5-5"/><circle cx="24" cy="16" r="4"/>',
+  link: '<path d="M9 32 24 17l15 15M9 23 24 8l15 15M9 41l15-15 15 15"/>',
   blades: '<circle cx="24" cy="24" r="4"/><path d="M24 20C12 20 10 9 20 5l4 15ZM28 24c0-12 11-14 15-4l-15 4ZM24 28c12 0 14 11 4 15l-4-15ZM20 24C20 36 9 38 5 28l15-4Z"/>',
 };
 export const coopSpecialIcon = (id: CoopSpecialId, size = 24) => `<svg width="${size}" height="${size}" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SPECIAL_PATH[id]}</svg>`;

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newPlayer, type CoopResult } from '../src/index.ts';
+import { RULES, newPlayer, type CoopResult } from '../src/index.ts';
 import { coopBreaksText, coopResultRows } from '../../client/src/coopUI.ts';
-import { specialPickerHtml } from '../../client/src/coopUI.ts';
+import { coopRulesHtml, specialPickerHtml } from '../../client/src/coopUI.ts';
 
 test('스페셜 어택 선택: 기본 레이저, 공격별 충전량·위력과 선택 표시', () => {
   const p = newPlayer('a', 'A', 0);
@@ -13,6 +13,18 @@ test('스페셜 어택 선택: 기본 레이저, 공격별 충전량·위력과 
   assert.match(html, /충전 30 · 기본 총피해 18/);
   assert.match(html, /충전 50 · 기본 총피해 34/);
   assert.match(html, /충전 75 · 기본 총피해 55/);
+  assert.match(html, /수호 결계[\s\S]*?모든 피해 40% 감소[\s\S]*?충전 50 · 5초/);
+  assert.match(html, /중력 족쇄[\s\S]*?충전 55 · 3초/);
+  assert.match(html, /연계 신호[\s\S]*?충전 40 · 6초/);
+});
+
+test('협력전 규칙 설명은 별도 카드에 있고 스페셜 선택은 기술 카드만 표시한다', () => {
+  const html = coopRulesHtml();
+  const { special, burst } = RULES.coop;
+  assert.ok(html.includes('수정 타격 +' + special.gain.crystal));
+  assert.ok(html.includes('원 획득 피해 ' + burst.mult + '배'));
+  assert.ok(html.includes('<dt>보스 반격</dt>'));
+  assert.doesNotMatch(specialPickerHtml(undefined), /우클릭|딜 타임에는|피해를 너무 몰아/);
 });
 
 const res = (players: CoopResult['players'], breaks: CoopResult['breaks'] = []): CoopResult =>
@@ -38,7 +50,7 @@ test('coopResultRows: 아무도 대미지가 없으면 최다 대미지 표시 �
 });
 
 test('coopBreaksText: 보호막마다 걸린 초, 분노 횟수', () => {
-  assert.deepEqual(coopBreaksText([{ ms: 6200, rages: 0 }, { ms: 21800, rages: 1 }]), ['1번째 보호막 6.2초', '2번째 보호막 21.8초 (분노 1번)']);
+  assert.deepEqual(coopBreaksText([{ ms: 6200, rages: 0 }, { ms: 21800, rages: 1 }]), ['1번째 보호막 6.2초', '2번째 보호막 21.8초 (파훼 실패)']);
 });
 
 test('counterFlashAt: 예고 시작은 경고, 취소되면 번쩍임 지움, 발동 뒤 판정으로 0이 와도 번쩍임 유지, 재개·재접속은 새 시각으로', async () => {
