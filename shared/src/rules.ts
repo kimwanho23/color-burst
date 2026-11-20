@@ -1129,6 +1129,10 @@ export function rollJackpot(p: PlayerState, m: Mods, rand: () => number = Math.r
   if (j > 1) addStack(p, 'luckStack');
   return j;
 }
+/** 역습 조합: 견제당한 사람의 피버 게이지 (고정값) */
+function riposteGain(owner: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
+  if (combosFor(owner).has('riposteCombo') && addFever(owner, RULES.combos.riposteFever, now, G, players, true)) owner.stats.fevers++;
+}
 /** 잭팟이 터진 뒤: 타짜 조합이면 피버 게이지(고정값)와 다음 원 속사 허용 시간 연장. 피버가 시작되면 true */
 export function jackpotHit(p: PlayerState, now: number, G: GameRules, players: PlayerState[]): boolean {
   if (!combosFor(p).has('gambit')) return false;
@@ -1692,6 +1696,7 @@ export function resolveClaim(
       if (!hasLegend(owner, 'reflect')) owner.reflectLeft--;
       res.type = 'steal'; res.reflectedTo = owner.id;
       res.reflected = resolveClaim(owner, kind, players, now, G, { ...opts, precise: false, reflected: true });
+      riposteGain(owner, now, G, players);
       const shield = claimer.shieldLeft;
       const reflectedMods = modsFor(claimer);
       if (breakCombo(claimer, reflectedMods, now)) res.brokeComboOf = claimer.id;
@@ -1725,6 +1730,8 @@ export function resolveClaim(
       // 아이템 보호막과 철벽으로 이미 막을 수 있으면 충전을 아낀다.
       const generatorBlocked = !!owner?.generatorGuard && !!ownerMods?.autoGuard && !existingGuard;
       const guarded = existingGuard || generatorBlocked;
+      // 역습: 일반·피버 중 견제만 (반격·폭죽·막힌 견제 제외)
+      if (owner && !owner.outAt && res.type !== 'counter' && !guarded) riposteGain(owner, now, G, players);
       if (owner && generatorBlocked) {
         owner.generatorGuard = false;
         if (combosFor(owner).has('counterStance')) owner.counterReady = true;

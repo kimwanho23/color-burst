@@ -224,3 +224,21 @@ test('만능 손: 자기장으로 끌어온 원만 콤보·피버(잭팟 없음)
   const b = resolveClaim(t, 0, [t], 99_000, G, { via: 'range', rand: () => 0.99 });
   assert.equal(b.gained, a.gained + RULES.combos.allHandsPts);
 });
+
+test('역습: 일반·피버 중 견제와 반사는 게이지 +15, 반격·폭죽·막힌 견제는 없음', () => {
+  const run = (setup: (a: ReturnType<typeof pl>, b: ReturnType<typeof pl>) => void, via?: 'blast', ids: AbilityId[] = ['laserProof', 'reflect', 'taunt']) => {
+    const a = pl(0, ...ids), b = pl(1);
+    a.reflectLeft = 0;
+    setup(a, b);
+    resolveClaim(b, 0, [a, b], 1000, G, { rand: () => 0.99, ...(via ? { via } : {}) });
+    return a.fever;
+  };
+  const F = RULES.combos.riposteFever;
+  assert.equal(run(() => {}), F, '일반 견제');
+  assert.equal(run(() => {}, undefined, ['synergyLink', 'reflect', 'taunt']), F, '연결 + 2장');
+  assert.equal(run((_a, b) => { b.feverUntil = 5000; }), F, '피버 중 견제');
+  assert.equal(run((a) => { a.reflectLeft = 1; }), RULES.fever.own + F, '반사');
+  assert.equal(run((a) => { a.markedUntil = 5000; }), 0, '반격');
+  assert.equal(run(() => {}, 'blast'), 0, '폭죽');
+  assert.equal(run((a) => { a.buffs.guard = 5000; }), 0, '보호막');
+});
