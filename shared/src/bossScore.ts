@@ -5,7 +5,7 @@
 import { AUG, COMBO, GROWTH, LEGEND, SOLO_SYNERGY, UNIQUE, combosFor, hasLegend, modsFor } from './arcade.ts';
 import {
   RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
-  addStack, addUniqueStack, growthScoreMult, uniqueStacks, drillCheck, ragePenalty, rollJackpot, settleFever, type Circle, type GameRules, type PlayerState,
+  addStack, addUniqueStack, growthScoreMult, uniqueStacks, drillCheck, ragePenalty, rollJackpot, jackpotHit, settleFever, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 
 export interface BossStrike {
@@ -93,6 +93,7 @@ export function strikeBoss(
   const mult = capMult((fever ? bossFeverMult(p, G) : after ? afterMultOf(p) : 1) * info.boost * itemMult(p, now, true)
     * extraMult(p, now, players) * huntMult(p)); // 점수 구역 배율은 보스에 곱하지 않는다 (큰 보스가 가장자리 ×3을 너무 쉽게 받음)
   out.jackpot = rollJackpot(p, m, rand);
+  if (out.jackpot > 1 && jackpotHit(p, now, G, players)) out.feverStarted = true;
   const vanguard = first && m.vanguard > 0 ? m.vanguard : 1;
   // 타격 점수는 클릭 한 번당 (피해와 곱하지 않음: 파쇄·막타 독식의 피해는 처치·막타·독식 경쟁에만)
   const hitScore = Math.round((info.hit * vanguard + bonus) * mult * out.jackpot);
@@ -117,6 +118,7 @@ export function strikeBoss(
     const isSolo = (id: string) => (hits.get(id) ?? 0) * 100 >= maxHp * S.pct;
     out.solo = isSolo(p.id);
     out.killJackpot = rollJackpot(p, m, rand);
+    if (out.killJackpot > 1 && jackpotHit(p, now, G, players)) out.feverStarted = true;
     out.killGained = Math.round(info.kill * (out.solo ? S.killMult : 1) * mult * out.killJackpot);
     p.score += out.killGained;
     addSrc(p, 'boss', out.killGained, { fever, jackpot: out.killJackpot });

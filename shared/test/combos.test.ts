@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMBO, COMBOS, SYN, WEIGHT, buildWeight,
+import { COMBO, COMBOS, RULES, SYN, WEIGHT, buildWeight, goldGain,
   ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
   resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type ComboId, type EventId, type Pick,
 } from '../src/index.ts';
@@ -132,4 +132,41 @@ test('새 3장 조합: 구성과 연결 2장 완성', () => {
     assert.ok(combosOf(picks('synergyLink', needs[0], needs[2])).has(id));
   }
   assert.deepEqual(want.map(([id]) => COMBOS.find((c) => c.id === id)?.name), ['타짜', '앙코르', '명사수', '토벌대', '만능 손', '역습']);
+});
+
+test('행운 축적: 황금·무지개 원으로도 1칸, 무지개를 잡고 잭팟도 터지면 1칸만', () => {
+  const p = pl(0, 'luckStack');
+  resolveClaim(p, 'rainbow', [p], 1000, G, { rand: () => 0.99 });
+  assert.equal(p.stacks.luckStack, 1);
+  goldGain(p, 2000, [p], G, 1, () => 0.99);
+  assert.equal(p.stacks.luckStack, 2);
+  const q = pl(0, 'jackpot', 'luckStack');
+  resolveClaim(q, 'rainbow', [q], 1000, G, { rand: () => 0 });
+  assert.equal(q.stacks.luckStack, 1);
+});
+
+test('타짜: 잭팟이 터지면 피버 게이지 +10, 다음 원 1개는 1초 안이면 속사 연속', () => {
+  const p = pl(0, 'jackpot', 'rapid', 'luckStack');
+  resolveClaim(p, 0, [p], 1000, G, { rand: () => 0 });
+  assert.ok(p.rapidLongNext);
+  assert.equal(p.fever, RULES.fever.own + RULES.combos.gambitFever);
+  resolveClaim(p, 0, [p], 1900, G, { rand: () => 0.99 });
+  assert.equal(p.rapidStreak, 2);
+  assert.ok(!p.rapidLongNext);
+  const q = pl(0, 'jackpot', 'rapid');
+  resolveClaim(q, 0, [q], 1000, G, { rand: () => 0 });
+  resolveClaim(q, 0, [q], 1900, G, { rand: () => 0.99 });
+  assert.equal(q.rapidStreak, 1, '타짜가 없으면 0.4초');
+});
+
+test('타짜: 잭팟 증강 없이 연결 + 행운 축적 + 속사, 황금 원 잭팟에서도 동작', () => {
+  const p = pl(0, 'synergyLink', 'luckStack', 'rapid');
+  p.stacks.luckStack = 5;
+  resolveClaim(p, 0, [p], 1000, G, { rand: () => 0 });
+  assert.ok(p.rapidLongNext);
+  const q = pl(0, 'jackpot', 'luckStack', 'rapid');
+  const fever = q.fever;
+  goldGain(q, 1000, [q], G, 1, () => 0);
+  assert.ok(q.rapidLongNext);
+  assert.equal(q.fever, fever + RULES.combos.gambitFever);
 });

@@ -1887,7 +1887,8 @@ export class Room {
     const { x, y } = circlePos(c, now);
     p.previousOwnZone = null;
     // 일반 원과 같은 배율 (잡은 자리의 점수 구역 포함)
-    const { gained, jackpot } = goldGain(p, now, this.players, this.G, zoneOf({ x, y }));
+    const { gained, jackpot, feverStarted } = goldGain(p, now, this.players, this.G, zoneOf({ x, y }));
+    if (feverStarted) p.stats.fevers++;
     p.score += gained;
     addSrc(p, 'gold', gained, { fever: isFever(p, now), jackpot });
     this.io.to(this.code).emit('gold:got', { circleId: c.id, by: p.id, gained, x, y, jackpot });

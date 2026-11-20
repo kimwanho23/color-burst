@@ -206,7 +206,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   // 성장: 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 (수치 = 최대 칸)
   { id: 'drill', name: '단련', cat: '성장', values: [2, 3, 5, 8], cap: 12, desc: (v) => `${GROWTH.drillEvery}콤보마다 내 색 +${GROWTH.drillPts}점이 쌓임 (최대 ${v}칸)` },
   { id: 'crownMark', name: '왕의 증표', cat: '성장', values: [2, 3, 4, 5], cap: 5, desc: (v) => `보스 체력 ${GROWTH.crown.assistPct}% 이상 피해 또는 막타 시 1칸 (최대 ${v}칸). 피버 배율은 칸당 +${GROWTH.crown.feverPerStack}, 3칸에서 +${GROWTH.crown.atThree}, 5칸에서 추가 +${GROWTH.crown.atFive}` },
-  { id: 'luckStack', name: '행운 축적', cat: '성장', values: [3, 5, 7, 10], cap: 15, desc: (v) => `잭팟이 터질 때마다 잭팟 확률 +${GROWTH.luckPct}%가 쌓임 (최대 ${v}칸)` },
+  { id: 'luckStack', name: '행운 축적', cat: '성장', values: [3, 5, 7, 10], cap: 15, desc: (v) => `잭팟이 터지거나 황금 원·무지개 원을 잡을 때마다 잭팟 확률 +${GROWTH.luckPct}%가 쌓임 (최대 ${v}칸)` },
 ];
 
 /** 봇은 고르지 않는 능력 (봇은 원을 정확히 눌러서 효과가 없음) */

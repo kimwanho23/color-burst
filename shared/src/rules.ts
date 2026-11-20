@@ -842,6 +842,8 @@ export interface PlayerState {
   stacks: Partial<Record<StackId | UniqueStackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */
   autoAt: Partial<Record<AutoId, number>>;
+  /** 타짜: 다음 원 1개의 속사 허용 시간이 늘어남 */
+  rapidLongNext: boolean;
   /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
   lastClaimAt: number;
   rapidStreak: number;
@@ -983,7 +985,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
-    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
+    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, rapidLongNext: false,
     pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
   };
 }
@@ -1024,7 +1026,7 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.roundEnd = endAt || startAt + G.roundMs;
   p.roundBegin = startAt; p.firstFever = true; p.feverBonus = 0; p.feverCarry = 0;
-  p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false;
+  p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false; p.rapidLongNext = false;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
   // 표적 자처: 라운드 내내 표적
   if (m.selfTarget) p.markedUntil = endAt || startAt + G.roundMs;
@@ -1126,6 +1128,12 @@ export function rollJackpot(p: PlayerState, m: Mods, rand: () => number = Math.r
   const j = jackpotMult(forced ? { ...m, jackpot: 100 } : luckyMods(p, m), rand, hasLegend(p, 'jackpot'), hasLegend(p, 'luckStack') ? LEGEND.luckHighMult : 1);
   if (j > 1) addStack(p, 'luckStack');
   return j;
+}
+/** 잭팟이 터진 뒤: 타짜 조합이면 피버 게이지(고정값)와 다음 원 속사 허용 시간 연장. 피버가 시작되면 true */
+export function jackpotHit(p: PlayerState, now: number, G: GameRules, players: PlayerState[]): boolean {
+  if (!combosFor(p).has('gambit')) return false;
+  p.rapidLongNext = true;
+  return addFever(p, RULES.combos.gambitFever, now, G, players, true);
 }
 /** 콤보가 단련 주기를 넘으면 한 칸. 레전드면 그때 콤보 보너스 점수를 돌려준다 (이미 콤보 보너스가 터졌으면 0) */
 export function drillCheck(p: PlayerState, before: number, bonus: number) {
@@ -1776,7 +1784,9 @@ export function resolveClaim(
     }
     // 속사: 짧은 간격으로 연달아 잡으면 보너스, 레전드는 5연속에 다음 잭팟 확정 (자동 획득·폭죽은 세지 않음)
     if (!claimer.silenced && (via === 'click' || via === 'save')) {
-      claimer.rapidStreak = now - claimer.lastClaimAt <= AUG.rapidMs ? claimer.rapidStreak + 1 : 1;
+      const rapidMs = claimer.rapidLongNext ? RULES.combos.gambitRapidMs : AUG.rapidMs;
+      claimer.rapidLongNext = false;
+      claimer.rapidStreak = now - claimer.lastClaimAt <= rapidMs ? claimer.rapidStreak + 1 : 1;
       claimer.lastClaimAt = now;
       if (claimer.rapidStreak >= 2) pts += m.rapid;
       if (L.has('rapid') && claimer.rapidStreak >= LEGEND.rapidStreak) { claimer.rapidJackpot = true; claimer.rapidStreak = 0; }
@@ -1811,6 +1821,9 @@ export function resolveClaim(
     const forced = rapidForced && pts > 0;
     if (forced) claimer.rapidJackpot = false;
     res.jackpot = rollJackpot(claimer, m, opts.rand, forced);
+    if (res.jackpot > 1 && jackpotHit(claimer, now, G, players)) res.feverStarted = true;
+    // 행운 축적: 무지개 원도 한 칸 (잭팟이 터졌으면 이미 쌓음)
+    else if (res.jackpot === 1 && kind === 'rainbow') addStack(claimer, 'luckStack');
   }
   const magnetMult = magnet && !opts.magneticField ? AUG.magnetPointPct / 100 : 1;
   const earned = Math.round(pts * mult * res.jackpot * magnetMult);
@@ -1874,9 +1887,11 @@ export function goldGain(p: PlayerState, now: number, players: PlayerState[], G:
   const mult = capMult((fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * scoreBoostOf(m) * itemMult(p, now, true)
     * zoneMult(zone, m) * extraMult(p, now, players));
   const jackpot = rollJackpot(p, m, rand);
+  // 행운 축적: 황금 원도 한 칸 (잭팟이 터졌으면 이미 쌓음)
+  const feverStarted = jackpot > 1 ? jackpotHit(p, now, G, players) : (addStack(p, 'luckStack'), false);
   const gained = Math.round((RULES.gold.points + (m.goldCollector ? UNIQUE.gold.points : 0)) * mult * jackpot);
   addUniqueStack(p, 'goldCollector');
-  return { gained, jackpot };
+  return { gained, jackpot, feverStarted };
 }
 
 /** 빈 공간 클릭 */
