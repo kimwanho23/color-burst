@@ -190,7 +190,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'taunt', name: '도발', cat: '견제', values: [5, 10, 15, 25], cap: 50, desc: (v) => `견제하면 상대 피버 게이지 ${v}%를 빼앗아 내 게이지에` },
   // 보조
   { id: 'treasure', name: '보물 상자', cat: '보조', values: [50, 67, 83, 125], cap: 167, desc: (v) => `${treasureEvery(v)}콤보마다 무작위 아이템이 바로 발동 (아이템으로 잡은 원 제외)` },
-  { id: 'itemLover', name: '아이템 애호가', cat: '보조', values: [40, 60, 80, 100], cap: 100, desc: (v) => `아이템이 발동하면 ${v}% 확률로 새 아이템이 한 번 더` },
+  { id: 'itemLover', name: '아이템 애호가', cat: '보조', values: [40, 60, 80, 100], cap: 100, desc: (v) => `라운드 시작 후 ${RULES.itemLoverDelayMs / 1000}초에 무작위 아이템 1개 발동. 아이템이 발동하면 ${v}% 확률로 새 아이템이 한 번 더` },
   { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 70], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
   { id: 'magnet', name: '자석', cat: '보조', values: [45, 65, 90, 180], cap: 180, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (무지개 제외, 점수 ${AUG.magnetPointPct}%만)` },
   { id: 'missSave', name: '헛손질 보정', cat: '보조', values: [40, 60, 80, 120], cap: 160, desc: (v) => `빈 곳을 클릭하면 반경 ${v} 안의 가장 가까운 내 원을 대신 잡음` },

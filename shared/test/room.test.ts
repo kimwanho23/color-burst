@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
-import { AUG, COMBO, UNIQUE, FIELD, RULES, clearCombo, buffOn, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, isUnique, type Circle, type MapPattern, type Pick, type Pull, type ServerToClient } from '../src/index.ts';
+import { AUG, COMBO, UNIQUE, FIELD, RULES, clearCombo, buffOn, blockedAt as blockedAtPub, circlePos as circlePosOf, isCurse, isSpecial, isUnique, shiftTimes, startRound, type Circle, type GameRules, type MapPattern, type Pick, type Pull, type ServerToClient } from '../src/index.ts';
 
 /** 소켓 없이 방을 돌리기 위한 가짜 io (보낸 이벤트 이름만 기록) */
 const sent: string[] = [];
@@ -1659,5 +1659,33 @@ test('토벌대: 보스가 나오면 피버 게이지 +25', () => {
   me.fever = 0;
   (room as unknown as { spawnBosses(now: number): void }).spawnBosses(1000);
   assert.equal(me.fever, RULES.combos.raidFever);
+  room.destroy();
+});
+
+test('아이템 애호가: 라운드 시작 3초 뒤 아이템 1개, 여러 장이어도 1개', () => {
+  const { room, me } = playingRoom();
+  const r = room as unknown as { G: GameRules; updateAuto(now: number): void };
+  me.picks = [{ id: 'itemLover', tier: 0 }, { id: 'itemLover', tier: 0 }];
+  startRound(me, 0, r.G);
+  assert.equal(me.itemLoverAt, RULES.itemLoverDelayMs);
+  itemEvents.length = 0;
+  const mine = () => itemEvents.filter((e) => e.by === me.id && !e.extra).length;
+  r.updateAuto(RULES.itemLoverDelayMs - 1);
+  assert.equal(mine(), 0);
+  r.updateAuto(RULES.itemLoverDelayMs);
+  r.updateAuto(RULES.itemLoverDelayMs + 5000);
+  assert.equal(mine(), 1);
+  room.destroy();
+});
+
+test('아이템 애호가: 아이템이 꺼진 방은 없음, 일시정지하면 발동 시각도 밀림', () => {
+  const { room, me } = playingRoom();
+  const r = room as unknown as { G: GameRules };
+  me.picks = [{ id: 'itemLover', tier: 0 }];
+  startRound(me, 0, { ...r.G, items: false });
+  assert.equal(me.itemLoverAt, 0);
+  startRound(me, 0, r.G);
+  shiftTimes(me, 1000, 2000);
+  assert.equal(me.itemLoverAt, RULES.itemLoverDelayMs + 2000);
   room.destroy();
 });

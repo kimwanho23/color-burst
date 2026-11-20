@@ -1720,6 +1720,13 @@ export class Room {
     let changed = false;
     for (const p of this.players) {
       if (p.outAt || p.silenced) continue;
+      // 아이템 애호가: 라운드 시작 후 한 번, 커서 위치(모르면 가운데)에서 아이템 발동
+      if (p.itemLoverAt && now >= p.itemLoverAt) {
+        p.itemLoverAt = 0;
+        const { x, y } = this.cursors.get(p.id) ?? { x: FIELD.w / 2, y: FIELD.h / 2 };
+        this.activateItem(p, rollItemTier(), x, y, now, null);
+        changed = true;
+      }
       for (const id of AUTO_IDS) {
         const at = p.autoAt[id];
         if (at === undefined || now < at) continue;

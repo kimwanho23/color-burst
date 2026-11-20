@@ -842,6 +842,8 @@ export interface PlayerState {
   stacks: Partial<Record<StackId | UniqueStackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */
   autoAt: Partial<Record<AutoId, number>>;
+  /** 아이템 애호가: 라운드 시작 아이템을 발동할 서버 시각 (0이면 없음) */
+  itemLoverAt: number;
   /** 타짜: 다음 원 1개의 속사 허용 시간이 늘어남 */
   rapidLongNext: boolean;
   /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
@@ -877,7 +879,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number, sou
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'itemLoverAt'] as const) if (p[k] > since) p[k] += delta;
   // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
   if (p.roundBegin + headStartMsOf({ ...p, silenced: false }) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.autoBuffs ?? {}) as BuffId[]) if (p.autoBuffs[k]! > since) p.autoBuffs[k]! += delta;
@@ -985,7 +987,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
-    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, rapidLongNext: false,
+    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, rapidLongNext: false, itemLoverAt: 0,
     pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
   };
 }
@@ -1021,6 +1023,7 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.firstFlameReady = p.regularCustomerReady = false;
   p.previousOwnZone = null;
   p.riposteUntil = 0;
+  p.itemLoverAt = G.items && m.itemLover > 0 ? startAt + RULES.itemLoverDelayMs : 0;
   p.debuffs = {}; p.blind = null;
   p.buffs = {}; p.autoBuffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
