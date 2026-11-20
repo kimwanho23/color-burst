@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMBO, SYN,
+import { COMBO, COMBOS, SYN, WEIGHT, buildWeight,
   ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
   resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type EventId, type Pick,
 } from '../src/index.ts';
@@ -101,4 +101,18 @@ test('대평등은 3라운드가 끝난 뒤부터, 한 게임 한 번', () => {
   assert.equal(roll(3, []), true);
   assert.equal(roll(4, ['equality']), false);
   assert.equal(rollEvent([a, b], 0, () => 0.5, 1) === 'equality', false, '라운드 정보가 없으면 안 나옴');
+});
+
+test('연결: 3장 조합은 2장으로 완성, 2장 조합은 그대로', () => {
+  assert.ok(combosOf(picks('synergyLink', 'hammer', 'hunter')).has('bossHunter'));
+  assert.ok(!combosOf(picks('hammer', 'hunter')).has('bossHunter'));
+  assert.ok(!combosOf(picks('synergyLink', 'hammer')).has('bossHunter'));
+  assert.ok(!combosOf(picks('synergyLink', 'jackpot')).has('lucky'));
+  assert.deepEqual(comboProgress(picks('synergyLink', 'hammer')).find((c) => c.id === 'bossHunter'),
+    { id: 'bossHunter', name: '보스 헌터', text: COMBOS.find((c) => c.id === 'bossHunter')!.text, have: 1, need: 2 });
+});
+
+test('봇 가중치: 연결로 완성된 3장 조합의 남은 1장에는 조합 가중치 없음', () => {
+  assert.equal(buildWeight('crusher', picks('synergyLink', 'hammer', 'hunter')), WEIGHT.sameCat);
+  assert.equal(buildWeight('crusher', picks('hammer', 'hunter')), WEIGHT.sameCat * WEIGHT.comboPart);
 });

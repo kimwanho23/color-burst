@@ -259,14 +259,19 @@ export const COMBOS: readonly { id: ComboId; name: string; needs: readonly Abili
 /** 완성한 조합 */
 export function combosOf(picks: readonly Pick[] | undefined): Set<ComboId> {
   const have = new Set((picks ?? []).map((p) => p.id));
-  return new Set(COMBOS.filter((c) => c.needs.every((n) => have.has(n))).map((c) => c.id));
+  return new Set(COMBOS.filter((c) => comboHave(c, have) >= comboNeed(c, have)).map((c) => c.id));
 }
+
+/** 연결: 필요 증강이 3장인 조합은 2장으로 완성 */
+const comboNeed = (c: { needs: readonly AbilityId[] }, have: ReadonlySet<AbilityId>) =>
+  have.has('synergyLink') && c.needs.length === 3 ? 2 : c.needs.length;
+const comboHave = (c: { needs: readonly AbilityId[] }, have: ReadonlySet<AbilityId>) => c.needs.filter((n) => have.has(n)).length;
 
 /** 조합 진행도: 하나 이상 가진 조합만. 완성한 조합이 먼저, 그다음 많이 모은 순 (같으면 COMBOS 순서) */
 export function comboProgress(picks: readonly Pick[] | undefined) {
   const have = new Set((picks ?? []).map((p) => p.id));
   const rate = (c: { have: number; need: number }) => (c.have >= c.need ? 2 : c.have / c.need);
-  return COMBOS.map((c) => ({ id: c.id, name: c.name, text: c.text, have: c.needs.filter((n) => have.has(n)).length, need: c.needs.length }))
+  return COMBOS.map((c) => ({ id: c.id, name: c.name, text: c.text, have: comboHave(c, have), need: comboNeed(c, have) }))
     .filter((c) => c.have > 0)
     .sort((a, b) => rate(b) - rate(a));
 }
@@ -283,7 +288,8 @@ export function buildWeight(id: AbilityId, owned: readonly Pick[] | undefined) {
   const have = new Set(owned.map((p) => p.id));
   const cats = new Set(owned.map((p) => ABILITY[p.id]?.aim ?? ABILITY[p.id]?.cat));
   let w = cats.has(ABILITY[id].aim ?? ABILITY[id].cat) ? WEIGHT.sameCat : 1;
-  if (COMBOS.some((c) => !c.needs.every((n) => have.has(n)) && c.needs.some((n) => have.has(n)) && c.needs.includes(id) && !have.has(id))) w *= WEIGHT.comboPart;
+  const done = combosOf(owned);
+  if (COMBOS.some((c) => !done.has(c.id) && c.needs.some((n) => have.has(n)) && c.needs.includes(id) && !have.has(id))) w *= WEIGHT.comboPart;
   // 진화를 노릴 수 있게: 진화 한 장 전인 증강
   if (owned.filter((p) => p.id === id).length === EVOLVE.count - 1) w *= EVOLVE.weight;
   return w;
@@ -360,7 +366,7 @@ export const UNIQUES: readonly AbilityDef[] = ([
   { id: 'harvest', name: '수확', aim: '점수', desc: () => `원 ${UNIQUE.harvest.every}개 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.harvest.pct}% (최대 ${UNIQUE.harvest.max}칸)` },
   { id: 'ember', name: '불씨', aim: '피버', desc: () => `피버가 끝날 때마다 한 칸. 칸당 피버 시간 +${sec(UNIQUE.ember.ms)} (최대 ${UNIQUE.ember.max}칸)` },
   { id: 'goldCollector', name: '황금 수집가', aim: '점수', desc: () => `황금 원 +${UNIQUE.gold.points}점, 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.gold.pct}% (최대 ${UNIQUE.gold.max}칸)` },
-  { id: 'synergyLink', name: '연결', aim: '보조', desc: () => '모든 분류 시너지에서 보유한 증강 종류 수를 각각 +1로 계산' },
+  { id: 'synergyLink', name: '연결', aim: '보조', desc: () => '필요한 증강이 3장인 조합을 2장만 모아도 완성' },
 ] satisfies { id: UniqueId; name: string; aim: AbilityCategory; desc: () => string }[]).map((a) => ({
   ...a, cat: '유니크', values: [1, 1, 1, 1], cap: 1, unique: true,
 }));
@@ -471,13 +477,12 @@ export const SYNERGY: Record<SynergyCat, { need: number; text: string }> = {
 };
 const SYN_CATS = Object.keys(SYNERGY) as SynergyCat[];
 
-/** 시너지 진행도: 분류별 서로 다른 증강 수에 연결 보너스를 더한다. */
+/** 시너지 진행도: 분류별 서로 다른 증강 수 */
 export function synergyProgress(picks: readonly Pick[] | undefined) {
   const ids = new Set((picks ?? []).map((p) => p.id));
-  const linkBonus = ids.has('synergyLink') ? 1 : 0;
   const categories = [...ids].map((id) => ABILITY[id]?.cat);
   return SYN_CATS.map((cat) => ({
-    cat, have: categories.filter((category) => category === cat).length + linkBonus, need: SYNERGY[cat].need, text: SYNERGY[cat].text,
+    cat, have: categories.filter((category) => category === cat).length, need: SYNERGY[cat].need, text: SYNERGY[cat].text,
   })).filter((x) => x.have > 0);
 }
 
