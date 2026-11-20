@@ -29,6 +29,10 @@ export const RULES = {
   comboBonusEvery: 10,
   comboBonus: 5,
   comboMachineMult: 1.5,
+  /** 3장 조합 효과 수치: 타짜 피버 게이지·속사 허용 시간, 앙코르 피버 게이지, 명사수 직접 클릭 점수 %, 토벌대 피버 게이지·왕의 증표 기여도 배율, 만능 손 범위 획득 점수, 역습 피버 게이지 */
+  combos: { gambitFever: 10, gambitRapidMs: 1_000, encoreFever: 30, marksmanPct: 15, raidFever: 25, raidCrownMult: 1.5, allHandsPts: 1, riposteFever: 15 },
+  /** 아이템 애호가: 라운드 시작 후 이 시간이 지나면 아이템 1개 발동 */
+  itemLoverDelayMs: 3_000,
   points: { own: 3, yellow: 2, rainbow: 5, stealCalm: 1, counter: 6 },
   fever: { own: 12, yellow: 6, rainbow: 25, stealCalm: -20, miss: -10 },
   yellowChance: 0.33,
@@ -865,6 +869,10 @@ export interface PlayerState {
   stacks: Partial<Record<StackId | UniqueStackId, number>>;
   /** 자동 시전형 증강: 다음 발동 서버 시각 */
   autoAt: Partial<Record<AutoId, number>>;
+  /** 아이템 애호가: 라운드 시작 아이템을 발동할 서버 시각 (0이면 없음) */
+  itemLoverAt: number;
+  /** 타짜: 다음 원 1개의 속사 허용 시간이 늘어남 */
+  rapidLongNext: boolean;
   /** 속사: 마지막 획득 시각, 연속 수, 다음 잭팟 확정 (레전드) */
   lastClaimAt: number;
   rapidStreak: number;
@@ -898,7 +906,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number, sou
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'frostAt'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'frostAt', 'itemLoverAt'] as const) if (p[k] > since) p[k] += delta;
   // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
   if (p.roundBegin + headStartMsOf({ ...p, silenced: false }) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.autoBuffs ?? {}) as BuffId[]) if (p.autoBuffs[k]! > since) p.autoBuffs[k]! += delta;
@@ -1006,7 +1014,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
     roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
-    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false,
+    reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, rapidLongNext: false, itemLoverAt: 0,
     pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
   };
 }
@@ -1042,12 +1050,13 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.firstFlameReady = p.regularCustomerReady = false;
   p.previousOwnZone = null;
   p.riposteUntil = 0;
+  p.itemLoverAt = G.items && m.itemLover > 0 ? startAt + RULES.itemLoverDelayMs : 0;
   p.debuffs = {}; p.frostAt = 0; p.blind = null;
   p.buffs = {}; p.autoBuffs = {}; p.goldLeft = 0;
   p.roundStart = p.score; p.roundMaxCombo = 0; p.rageHits = 0;
   p.roundEnd = endAt || startAt + G.roundMs;
   p.roundBegin = startAt; p.firstFever = true; p.feverBonus = 0; p.feverCarry = 0;
-  p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false;
+  p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false; p.rapidLongNext = false;
   if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
   // 표적 자처: 라운드 내내 표적
   if (m.selfTarget) p.markedUntil = endAt || startAt + G.roundMs;
@@ -1151,6 +1160,16 @@ export function rollJackpot(p: PlayerState, m: Mods, rand: () => number = Math.r
   if (j > 1) addStack(p, 'luckStack');
   return j;
 }
+/** 역습 조합: 견제당한 사람의 피버 게이지 (고정값) */
+function riposteGain(owner: PlayerState, now: number, G: GameRules, players: PlayerState[]) {
+  if (combosFor(owner).has('riposteCombo') && addFever(owner, RULES.combos.riposteFever, now, G, players, true)) owner.stats.fevers++;
+}
+/** 잭팟이 터진 뒤: 타짜 조합이면 피버 게이지(고정값)와 다음 원 속사 허용 시간 연장. 피버가 시작되면 true */
+export function jackpotHit(p: PlayerState, now: number, G: GameRules, players: PlayerState[]): boolean {
+  if (!combosFor(p).has('gambit')) return false;
+  p.rapidLongNext = true;
+  return addFever(p, RULES.combos.gambitFever, now, G, players, true);
+}
 /** 콤보가 단련 주기를 넘으면 한 칸. 레전드면 그때 콤보 보너스 점수를 돌려준다 (이미 콤보 보너스가 터졌으면 0) */
 export function drillCheck(p: PlayerState, before: number, bonus: number) {
   if (!crossedCombo(Math.max(before, p.comboPaidTo ?? 0), p.combo, GROWTH.drillEvery) || !addStack(p, 'drill')) return 0;
@@ -1170,9 +1189,11 @@ export function settleFever(p: PlayerState, now: number) {
   p.feverBonus = 0;
   p.firstFlameReady = false;
   const carry = p.silenced ? 0 : p.feverCarry;
-  p.fever = Math.min(100, p.fever + carry);
+  // 앙코르 조합: 피버가 끝나면 게이지 (고정값)
+  const encore = !p.silenced && combosFor(p).has('encore') ? RULES.combos.encoreFever : 0;
+  p.fever = Math.min(100, p.fever + carry + encore);
   p.feverCarry = 0;
-  return addUniqueStack(p, 'ember') || carry > 0;
+  return addUniqueStack(p, 'ember') || carry + encore > 0;
 }
 
 /** 판 뒤집기: 라운드가 끝날 때 1등과의 점수 차의 일부를 내 점수에 더한다 (1등 점수는 그대로) */
@@ -1664,6 +1685,8 @@ export function resolveClaim(
   const area = blast || via === 'cross';
   // 자석으로 끌어온 원: 점수만 (콤보·콤보 보너스·잭팟·피버 게이지 없음)
   const magnet = via === 'magnet';
+  // 만능 손 조합: 자기장으로 끌어온 원은 콤보·피버 게이지를 채움 (잭팟·자석 점수 출처는 그대로)
+  const noGain = magnet && !(opts.magneticField && combosFor(claimer).has('allHandsCombo'));
   const fever = isFever(claimer, now);
   const after = !fever && now < claimer.afterUntil;
   settleFever(claimer, now);
@@ -1679,8 +1702,8 @@ export function resolveClaim(
   const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1, zone: 0 };
   let pts = 0;
   let steal = false;
-  const bump = () => { if (!magnet) claimer.combo++; };
-  const gauge = (amt: number, raw = false) => !magnet && addFever(claimer, amt, now, G, players, raw);
+  const bump = () => { if (!noGain) claimer.combo++; };
+  const gauge = (amt: number, raw = false) => !noGain && addFever(claimer, amt, now, G, players, raw);
 
   // 외길: 내 색 ×3, 노란색·무지개 0점
   const SY = synergiesFor(claimer);
@@ -1704,7 +1727,7 @@ export function resolveClaim(
     // 노란 맛 레전드: 피버 게이지가 내 색만큼
     res.feverStarted = gauge(L.has('yellowTaste') ? RULES.fever.own : RULES.fever.yellow);
   } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands) || (G.team && ownsKind(kind, claimer, players, true))) {
-    // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
+    // 탐욕: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
     res.type = 'own'; pts = own; bump();
     res.feverStarted = gauge(RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1));
   } else {
@@ -1719,6 +1742,7 @@ export function resolveClaim(
       if (!hasLegend(owner, 'reflect')) owner.reflectLeft--;
       res.type = 'steal'; res.reflectedTo = owner.id;
       res.reflected = resolveClaim(owner, kind, players, now, G, { ...opts, precise: false, reflected: true });
+      riposteGain(owner, now, G, players);
       const shield = claimer.shieldLeft;
       const reflectedMods = modsFor(claimer);
       if (breakCombo(claimer, reflectedMods, now)) res.brokeComboOf = claimer.id;
@@ -1752,6 +1776,8 @@ export function resolveClaim(
       // 아이템 보호막과 철벽으로 이미 막을 수 있으면 충전을 아낀다.
       const generatorBlocked = !!owner?.generatorGuard && !!ownerMods?.autoGuard && !existingGuard;
       const guarded = existingGuard || generatorBlocked;
+      // 역습: 일반·피버 중 견제만 (반격·폭죽·막힌 견제 제외)
+      if (owner && !owner.outAt && res.type !== 'counter' && !guarded) riposteGain(owner, now, G, players);
       if (owner && generatorBlocked) {
         owner.generatorGuard = false;
         if (combosFor(owner).has('counterStance')) owner.counterReady = true;
@@ -1815,7 +1841,9 @@ export function resolveClaim(
     }
     // 속사: 짧은 간격으로 연달아 잡으면 보너스, 레전드는 5연속에 다음 잭팟 확정 (자동 획득·폭죽은 세지 않음)
     if (!claimer.silenced && (via === 'click' || via === 'save')) {
-      claimer.rapidStreak = now - claimer.lastClaimAt <= AUG.rapidMs ? claimer.rapidStreak + 1 : 1;
+      const rapidMs = claimer.rapidLongNext ? RULES.combos.gambitRapidMs : AUG.rapidMs;
+      claimer.rapidLongNext = false;
+      claimer.rapidStreak = now - claimer.lastClaimAt <= rapidMs ? claimer.rapidStreak + 1 : 1;
       claimer.lastClaimAt = now;
       if (claimer.rapidStreak >= 2) pts += m.rapid;
       if (L.has('rapid') && claimer.rapidStreak >= LEGEND.rapidStreak) { claimer.rapidJackpot = true; claimer.rapidStreak = 0; }
@@ -1824,10 +1852,12 @@ export function resolveClaim(
   if (precise) {
     res.precise = true;
     if (L.has('precise')) claimer.combo += LEGEND.preciseComboAdd + (steal ? 1 : 0);
+    // 명사수 조합: 정밀 사격 판정이면 콤보 +1
+    if (K.has('marksman')) claimer.combo += 1;
   }
   let bonus = steal ? 0 : comboBonusOf(claimer, comboBefore, fever);
   // 단련: 콤보 주기마다 한 칸 (레전드면 콤보 보너스도)
-  if (!steal && !magnet) {
+  if (!steal && !noGain) {
     bonus += drillCheck(claimer, comboBefore, bonus);
     claimer.comboPaidTo = Math.max(claimer.comboPaidTo ?? 0, claimer.combo);
   }
@@ -1840,16 +1870,23 @@ export function resolveClaim(
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준). 점수 구역 배율도 곱한다
+  // 만능 손 조합: 넓은 손·헛손질 보정으로 잡은 원 +점
+  if (!steal && (via === 'range' || via === 'save') && K.has('allHandsCombo')) pts += RULES.combos.allHandsPts;
+  // 명사수 조합: 직접 클릭한 원 점수 +%
+  const marksman = direct && !steal && K.has('marksman') ? 1 + RULES.combos.marksmanPct / 100 : 1;
   const rebound = now < claimer.reboundUntil ? 1 + m.rebound / 100 : 1;
   const viaLegend = (via === 'range' && L.has('wideHand')) ? LEGEND.wideHandMult : (via === 'save' && L.has('missSave')) ? LEGEND.missSaveMult : 1;
   const feverMult = fever ? feverMultOf(claimer, G) : 1;
   const mult = capMult((after ? afterMultOf(claimer) : feverMult) * scoreBoostOf(m) * itemMult(claimer, now, true, !area && !magnet && pts > 0)
-    * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend * (precise ? 1 + m.precise : 1));
+    * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend * marksman * (precise ? 1 + m.precise : 1));
   // 잭팟은 맨 마지막에 곱한다. 자석은 없음, 블라스트는 아이템(폭죽·필드 클리어)일 때만 (점화·사냥꾼·연쇄 폭발 자동 획득은 없음). 십자는 굴림. 속사 레전드면 이번 잭팟 확정
   if (!magnet && (!blast || opts.fromItem)) {
     const forced = rapidForced && pts > 0;
     if (forced) claimer.rapidJackpot = false;
     res.jackpot = rollJackpot(claimer, m, opts.rand, forced);
+    if (res.jackpot > 1 && jackpotHit(claimer, now, G, players)) res.feverStarted = true;
+    // 행운 축적: 무지개 원도 한 칸 (잭팟이 터졌으면 이미 쌓음)
+    else if (res.jackpot === 1 && kind === 'rainbow') addStack(claimer, 'luckStack');
   }
   const magnetMult = magnet && !opts.magneticField ? AUG.magnetPointPct / 100 : 1;
   const earned = Math.round(pts * mult * res.jackpot * magnetMult);
@@ -1917,9 +1954,11 @@ export function goldGain(p: PlayerState, now: number, players: PlayerState[], G:
   const mult = capMult((fever ? feverMultOf(p, G) : after ? afterMultOf(p) : 1) * scoreBoostOf(m) * itemMult(p, now, true)
     * zoneMult(zone, m) * extraMult(p, now, players));
   const jackpot = rollJackpot(p, m, rand);
+  // 행운 축적: 황금 원도 한 칸 (잭팟이 터졌으면 이미 쌓음)
+  const feverStarted = jackpot > 1 ? jackpotHit(p, now, G, players) : (addStack(p, 'luckStack'), false);
   const gained = Math.round((RULES.gold.points + (m.goldCollector ? UNIQUE.gold.points : 0)) * mult * jackpot);
   addUniqueStack(p, 'goldCollector');
-  return { gained, jackpot };
+  return { gained, jackpot, feverStarted };
 }
 
 /** 빈 공간 클릭 */

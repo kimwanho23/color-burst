@@ -1539,6 +1539,15 @@ export class Room {
       this.circles.set(b.id, b);
       this.io.to(this.code).emit('circle:spawn', b);
     }
+    if (n <= 0) return;
+    // 토벌대 조합: 보스가 나오면 피버 게이지 (고정값)
+    let changed = false;
+    for (const p of this.players) {
+      if (p.outAt || !combosFor(p).has('raidParty')) continue;
+      if (addFever(p, RULES.combos.raidFever, now, this.G, this.players, true)) p.stats.fevers++;
+      changed = true;
+    }
+    if (changed) this.emitPlayers();
   }
 
   /** 게임 커서 위치 (필드 안으로 자름) */
@@ -1732,6 +1741,13 @@ export class Room {
     let changed = false;
     for (const p of this.players) {
       if (p.outAt || p.silenced) continue;
+      // 아이템 애호가: 라운드 시작 후 한 번, 커서 위치(모르면 가운데)에서 아이템 발동
+      if (p.itemLoverAt && now >= p.itemLoverAt) {
+        p.itemLoverAt = 0;
+        const { x, y } = this.cursors.get(p.id) ?? { x: FIELD.w / 2, y: FIELD.h / 2 };
+        this.activateItem(p, rollItemTier(), x, y, now, null);
+        changed = true;
+      }
       for (const id of AUTO_IDS) {
         const at = p.autoAt[id];
         if (at === undefined || now < at) continue;
@@ -2056,7 +2072,8 @@ export class Room {
     const { x, y } = circlePos(c, now);
     p.previousOwnZone = null;
     // 일반 원과 같은 배율 (잡은 자리의 점수 구역 포함)
-    const { gained, jackpot } = goldGain(p, now, this.players, this.G, zoneOf({ x, y }));
+    const { gained, jackpot, feverStarted } = goldGain(p, now, this.players, this.G, zoneOf({ x, y }));
+    if (feverStarted) p.stats.fevers++;
     p.score += gained;
     addSrc(p, 'gold', gained, { fever: isFever(p, now), jackpot });
     this.io.to(this.code).emit('gold:got', { circleId: c.id, by: p.id, gained, x, y, jackpot });

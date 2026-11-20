@@ -20,22 +20,9 @@ test('시너지: 피버 2종이면 활성, 같은 증강 2번은 1종, 저주·�
   assert.deepEqual(synergyProgress(P('overtime', 'hammer')).map((x) => [x.cat, x.have, x.need]), [['피버', 1, 2], ['보스', 1, 2]]);
 });
 
-test('연결: 모든 분류에 한 종류를 더하고 실제 증강이 필요한 조합에는 세지 않는다', () => {
-  const onlyLink = P('synergyLink');
-  assert.deepEqual(synergyProgress(onlyLink).map((x) => [x.cat, x.have]), [
-    ['점수', 1], ['피버', 1], ['보스', 1], ['유지', 1], ['견제', 1], ['보조', 1],
-  ]);
-  assert.equal(synergiesOf(P('synergyLink', 'synergyLink')).size, 0);
-
-  const picks = P('synergyLink', 'comboArtist', 'jackpot', 'frenzy', 'hammer', 'shield', 'taunt', 'autoCharge');
-  const p = withPicks(picks);
-  assert.deepEqual([...synergiesFor(p)], ['점수', '피버', '보스', '유지', '견제', '보조']);
-  assert.equal(combosOf(picks).has('comboMachine'), false);
-  assert.equal(combosOf(picks).has('bossHunter'), false);
-  addFever(p, 20, 1000, G, [p]);
-  assert.equal(p.fever, 20 * 1.15);
-  p.silenced = true;
-  assert.equal(synergiesFor(p).size, 0);
+test('연결: 분류 시너지에는 영향 없음', () => {
+  assert.deepEqual(synergyProgress(P('synergyLink')), []);
+  assert.ok(!synergiesOf(P('synergyLink', 'overtime')).has('피버'));
 });
 
 test('독주: 한 종류의 중첩은 유지하고 연결, 다른 독주, 분류 시너지, 조합은 비활성화한다', () => {

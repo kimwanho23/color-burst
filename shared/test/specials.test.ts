@@ -47,7 +47,7 @@ test('기세: 견제당해도 콤보 유지, 콤보 보너스 5콤보마다', ()
   assert.equal(resolveClaim(b, 1, [a, b], 200, G).comboBonus, true);
 });
 
-test('만능 손: 남의 색도 내 색처럼 +3, 표적 없음', () => {
+test('탐욕: 남의 색도 내 색처럼 +3, 표적 없음', () => {
   const a = withCard(newPlayer('a', 'A', 0), 'allHands'), b = newPlayer('b', 'B', 1);
   b.combo = 7;
   const r = resolveClaim(a, 1, [a, b], 100, G);

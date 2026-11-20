@@ -190,7 +190,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'taunt', name: '도발', cat: '견제', values: [5, 10, 15, 25], cap: 50, desc: (v) => `견제하면 상대 피버 게이지 ${v}%를 빼앗아 내 게이지에` },
   // 보조
   { id: 'treasure', name: '보물 상자', cat: '보조', values: [50, 67, 83, 125], cap: 167, desc: (v) => `${treasureEvery(v)}콤보마다 무작위 아이템이 바로 발동 (아이템으로 잡은 원 제외)` },
-  { id: 'itemLover', name: '아이템 애호가', cat: '보조', values: [40, 60, 80, 100], cap: 100, desc: (v) => `아이템이 발동하면 ${v}% 확률로 새 아이템이 한 번 더` },
+  { id: 'itemLover', name: '아이템 애호가', cat: '보조', values: [40, 60, 80, 100], cap: 100, desc: (v) => `라운드 시작 후 ${RULES.itemLoverDelayMs / 1000}초에 무작위 아이템 1개 발동. 아이템이 발동하면 ${v}% 확률로 새 아이템이 한 번 더` },
   { id: 'wideHand', name: '넓은 손', cat: '보조', values: [15, 25, 35, 70], cap: 80, desc: (v) => `클릭 둘레 ${v} 안의 내 원을 한 번에` },
   { id: 'magnet', name: '자석', cat: '보조', values: [45, 65, 90, 180], cap: 180, desc: (v) => `커서 둘레 ${v} 안의 내 원을 끌어당겨 잡음 (무지개 제외, 점수 ${AUG.magnetPointPct}%만)` },
   { id: 'missSave', name: '헛손질 보정', cat: '보조', values: [40, 60, 80, 120], cap: 160, desc: (v) => `빈 곳을 클릭하면 반경 ${v} 안의 가장 가까운 내 원을 대신 잡음` },
@@ -206,7 +206,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   // 성장: 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 (수치 = 최대 칸)
   { id: 'drill', name: '단련', cat: '성장', values: [2, 3, 5, 8], cap: 12, desc: (v) => `${GROWTH.drillEvery}콤보마다 내 색 +${GROWTH.drillPts}점이 쌓임 (최대 ${v}칸)` },
   { id: 'crownMark', name: '왕의 증표', cat: '성장', values: [2, 3, 4, 5], cap: 5, desc: (v) => `보스 체력 ${GROWTH.crown.assistPct}% 이상 피해 또는 막타 시 1칸 (최대 ${v}칸). 피버 배율은 칸당 +${GROWTH.crown.feverPerStack}, 3칸에서 +${GROWTH.crown.atThree}, 5칸에서 추가 +${GROWTH.crown.atFive}` },
-  { id: 'luckStack', name: '행운 축적', cat: '성장', values: [3, 5, 7, 10], cap: 15, desc: (v) => `잭팟이 터질 때마다 잭팟 확률 +${GROWTH.luckPct}%가 쌓임 (최대 ${v}칸)` },
+  { id: 'luckStack', name: '행운 축적', cat: '성장', values: [3, 5, 7, 10], cap: 15, desc: (v) => `잭팟이 터지거나 황금 원·무지개 원을 잡을 때마다 잭팟 확률 +${GROWTH.luckPct}%가 쌓임 (최대 ${v}칸)` },
 ];
 
 /** 봇은 고르지 않는 능력 (봇은 원을 정확히 눌러서 효과가 없음) */
@@ -240,7 +240,8 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   taunt: `피버 중인 상대를 견제하면 그 피버가 ${sec(L_.tauntMs)} 짧아짐`,
 };
 
-export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall' | 'bazaar' | 'counterStance' | 'shieldBash';
+export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall' | 'bazaar' | 'counterStance' | 'shieldBash'
+  | 'gambit' | 'encore' | 'marksman' | 'raidParty' | 'allHandsCombo' | 'riposteCombo';
 /** 증강 조합: 필요한 증강을 모두 가지면(등급 무관) 보너스. 같은 조합은 한 번 */
 export const COMBOS: readonly { id: ComboId; name: string; needs: readonly AbilityId[]; text: string }[] = [
   { id: 'feverMaster', name: '피버 마스터', needs: ['preheat', 'overtime', 'frenzy'], text: `피버 배율 +${COMBO.feverAdd}` },
@@ -254,19 +255,30 @@ export const COMBOS: readonly { id: ComboId; name: string; needs: readonly Abili
   { id: 'shieldBash', name: '보호막 강타', needs: ['autoGuard', 'shield'], text: `반격에 성공하면 보호막 발생기의 충전 1회를 써서 +${COMBO.shieldBashPoints}점. 추가 점수에는 피버 배율만 적용` },
   { id: 'counterStance', name: '반격 태세', needs: ['autoGuard', 'counterPro'], text: '보호막 발생기로 견제를 막으면 반격권 1회. 표적이 아닌 상대 색 원을 직접 누르면 반격권을 써서 반격' },
   { id: 'ironWall', name: '철옹성', needs: ['shield', 'insurance', 'rebound'], text: `콤보가 끊기지 않고 ${100 - COMBO.ironKeepPct}%만 줄어듦` },
+  { id: 'gambit', name: '타짜', needs: ['jackpot', 'luckStack', 'rapid'], get text() { return `잭팟이 터지면 피버 게이지 +${RULES.combos.gambitFever}, 다음 원 1개는 속사 허용 시간 ${RULES.combos.gambitRapidMs / 1000}초`; } },
+  { id: 'encore', name: '앙코르', needs: ['overcharge', 'afterglow', 'ignite'], get text() { return `피버가 끝날 때 피버 게이지 +${RULES.combos.encoreFever}`; } },
+  { id: 'marksman', name: '명사수', needs: ['precise', 'centerKing', 'headStart'], get text() { return `직접 클릭한 원 점수 +${RULES.combos.marksmanPct}%, 정밀 사격 판정이면 콤보 +1`; } },
+  { id: 'raidParty', name: '토벌대', needs: ['vanguard', 'crownMark', 'hunter'], get text() { return `보스가 나오면 피버 게이지 +${RULES.combos.raidFever}, 왕의 증표 기여도 계산에서 내 보스 피해 ×${RULES.combos.raidCrownMult}`; } },
+  { id: 'allHandsCombo', name: '만능 손', needs: ['wideHand', 'missSave', 'autoMagnet'], get text() { return `자기장으로 끌어온 원도 콤보·피버 게이지를 채움, 넓은 손·헛손질 보정으로 잡은 원 +${RULES.combos.allHandsPts}점`; } },
+  { id: 'riposteCombo', name: '역습', needs: ['laserProof', 'reflect', 'taunt'], get text() { return `견제당할 때마다 피버 게이지 +${RULES.combos.riposteFever} (반격·폭죽·막힌 견제 제외)`; } },
 ];
 
 /** 완성한 조합 */
 export function combosOf(picks: readonly Pick[] | undefined): Set<ComboId> {
   const have = new Set((picks ?? []).map((p) => p.id));
-  return new Set(COMBOS.filter((c) => c.needs.every((n) => have.has(n))).map((c) => c.id));
+  return new Set(COMBOS.filter((c) => comboHave(c, have) >= comboNeed(c, have)).map((c) => c.id));
 }
+
+/** 연결: 필요 증강이 3장인 조합은 2장으로 완성 */
+export const comboNeed = (c: { needs: readonly AbilityId[] }, have: ReadonlySet<AbilityId>) =>
+  have.has('synergyLink') && c.needs.length === 3 ? 2 : c.needs.length;
+const comboHave = (c: { needs: readonly AbilityId[] }, have: ReadonlySet<AbilityId>) => c.needs.filter((n) => have.has(n)).length;
 
 /** 조합 진행도: 하나 이상 가진 조합만. 완성한 조합이 먼저, 그다음 많이 모은 순 (같으면 COMBOS 순서) */
 export function comboProgress(picks: readonly Pick[] | undefined) {
   const have = new Set((picks ?? []).map((p) => p.id));
   const rate = (c: { have: number; need: number }) => (c.have >= c.need ? 2 : c.have / c.need);
-  return COMBOS.map((c) => ({ id: c.id, name: c.name, text: c.text, have: c.needs.filter((n) => have.has(n)).length, need: c.needs.length }))
+  return COMBOS.map((c) => ({ id: c.id, name: c.name, text: c.text, have: comboHave(c, have), need: comboNeed(c, have) }))
     .filter((c) => c.have > 0)
     .sort((a, b) => rate(b) - rate(a));
 }
@@ -283,7 +295,8 @@ export function buildWeight(id: AbilityId, owned: readonly Pick[] | undefined) {
   const have = new Set(owned.map((p) => p.id));
   const cats = new Set(owned.map((p) => ABILITY[p.id]?.aim ?? ABILITY[p.id]?.cat));
   let w = cats.has(ABILITY[id].aim ?? ABILITY[id].cat) ? WEIGHT.sameCat : 1;
-  if (COMBOS.some((c) => !c.needs.every((n) => have.has(n)) && c.needs.some((n) => have.has(n)) && c.needs.includes(id) && !have.has(id))) w *= WEIGHT.comboPart;
+  const done = combosOf(owned);
+  if (COMBOS.some((c) => !done.has(c.id) && c.needs.some((n) => have.has(n)) && c.needs.includes(id) && !have.has(id))) w *= WEIGHT.comboPart;
   // 진화를 노릴 수 있게: 진화 한 장 전인 증강
   if (owned.filter((p) => p.id === id).length === EVOLVE.count - 1) w *= EVOLVE.weight;
   return w;
@@ -326,7 +339,7 @@ export const SPECIALS: readonly AbilityDef[] = ([
   ['hyena', '하이에나', `1등이 원을 잡아 점수를 얻을 때마다 ${Math.round(S.hyenaChance * 100)}% 확률로 내 점수 +${S.hyenaGain}`],
   ['chaser', '추격자', `모든 구역 점수 배율 +${S.chaserAdd}`],
   ['momentum', '기세', `콤보가 끊기지 않고, 콤보 보너스가 ${S.momentumEvery}콤보마다`],
-  ['allHands', '만능 손', '남의 색 원도 내 색 원처럼 점수, 견제 페널티·표적 없음'],
+  ['allHands', '탐욕', '남의 색 원도 내 색 원처럼 점수, 견제 페널티·표적 없음'],
   ['fortress', '철벽', '견제(콤보 끊김·강탈·흡혈)·레이저·위험 패턴·방해 아이템에 걸리지 않음'],
   ['chainBlast', '연쇄 폭발', `원을 잡으면 ${Math.round(S.chainChance * 100)}% 확률로 반지름 ${S.chainR} 안의 내 원도 함께`],
   ['bossFeast', '막타 독식', `보스에게 주는 피해 ${S.feastMult}배, 막타 점수 ${S.feastMult}배`],
@@ -360,7 +373,7 @@ export const UNIQUES: readonly AbilityDef[] = ([
   { id: 'harvest', name: '수확', aim: '점수', desc: () => `원 ${UNIQUE.harvest.every}개 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.harvest.pct}% (최대 ${UNIQUE.harvest.max}칸)` },
   { id: 'ember', name: '불씨', aim: '피버', desc: () => `피버가 끝날 때마다 한 칸. 칸당 피버 시간 +${sec(UNIQUE.ember.ms)} (최대 ${UNIQUE.ember.max}칸)` },
   { id: 'goldCollector', name: '황금 수집가', aim: '점수', desc: () => `황금 원 +${UNIQUE.gold.points}점, 획득마다 한 칸. 칸당 모든 점수 +${UNIQUE.gold.pct}% (최대 ${UNIQUE.gold.max}칸)` },
-  { id: 'synergyLink', name: '연결', aim: '보조', desc: () => '모든 분류 시너지에서 보유한 증강 종류 수를 각각 +1로 계산' },
+  { id: 'synergyLink', name: '연결', aim: '보조', desc: () => '필요한 증강이 3장인 조합을 2장만 모아도 완성' },
 ] satisfies { id: UniqueId; name: string; aim: AbilityCategory; desc: () => string }[]).map((a) => ({
   ...a, cat: '유니크', values: [1, 1, 1, 1], cap: 1, unique: true,
 }));
@@ -471,13 +484,12 @@ export const SYNERGY: Record<SynergyCat, { need: number; text: string }> = {
 };
 const SYN_CATS = Object.keys(SYNERGY) as SynergyCat[];
 
-/** 시너지 진행도: 분류별 서로 다른 증강 수에 연결 보너스를 더한다. */
+/** 시너지 진행도: 분류별 서로 다른 증강 수 */
 export function synergyProgress(picks: readonly Pick[] | undefined) {
   const ids = new Set((picks ?? []).map((p) => p.id));
-  const linkBonus = ids.has('synergyLink') ? 1 : 0;
   const categories = [...ids].map((id) => ABILITY[id]?.cat);
   return SYN_CATS.map((cat) => ({
-    cat, have: categories.filter((category) => category === cat).length + linkBonus, need: SYNERGY[cat].need, text: SYNERGY[cat].text,
+    cat, have: categories.filter((category) => category === cat).length, need: SYNERGY[cat].need, text: SYNERGY[cat].text,
   })).filter((x) => x.have > 0);
 }
 

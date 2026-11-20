@@ -1,6 +1,6 @@
 /** 아케이드 화면: 능력 선택 카드, 내 빌드, 점수판·결과의 능력 아이콘 */
 import {
-  ABILITY, ARCADE, COMBOS, EVENTS, LEGEND_TEXT, THEMES, TIERS, EVOLVE, STACK_IDS, SYNERGY, SOLO_SYNERGY, UNIQUE_STACK_MAX, abilityText, comboProgress, evolvedOf, synergiesOf, synergyProgress, soloSynergyActive, combosCompletedBy, combosOf, groupPicks, modsOf, isSpecial,
+  ABILITY, ARCADE, COMBOS, EVENTS, LEGEND_TEXT, THEMES, TIERS, EVOLVE, STACK_IDS, SYNERGY, SOLO_SYNERGY, UNIQUE_STACK_MAX, abilityText, comboProgress, evolvedOf, synergiesOf, synergyProgress, soloSynergyActive, combosCompletedBy, combosOf, comboNeed, groupPicks, modsOf, isSpecial,
   type ArcadeOffer, type ArcadeState, type Pick, type PlayerState, type RoundEffect, type StackId, type UniqueStackId,
 } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, comboIcon, eventIcon, icon } from './icons.ts';
@@ -43,8 +43,9 @@ function comboLine(cid: string, picks: readonly Pick[], card?: Pick) {
   const have = new Set(picks.map((p) => p.id));
   const n = c.needs.filter((x) => have.has(x)).length;
   const up = card && !have.has(card.id) && (c.needs as readonly string[]).includes(card.id) ? n + 1 : n;
-  const done = up >= c.needs.length;
-  return `<span class="${done ? 'done' : ''}">${comboIcon(c.id, 12)}${esc(c.name)} ${up !== n ? `${n}→${up}` : n}/${c.needs.length}</span>`;
+  const need = comboNeed(c, card ? new Set([...have, card.id]) : have);
+  const done = up >= need;
+  return `<span class="${done ? 'done' : ''}">${comboIcon(c.id, 12)}${esc(c.name)} ${up !== n ? `${n}→${up}` : n}/${need}</span>`;
 }
 
 /** 조합 설명 카드: 이름·효과, 필요한 증강 (가진 것 ✓ 밝게, 없는 것 흐리게), 진행 */
@@ -53,10 +54,11 @@ export function comboTip(cid: string, picks: readonly Pick[] = [], card?: Pick) 
   const have = new Set(picks.map((p) => p.id));
   if (card) have.add(card.id);
   const n = c.needs.filter((x) => have.has(x)).length;
-  return `<div class="tip-h combo">${comboIcon(c.id, 16)}<b>${esc(c.name)}</b><span>${n >= c.needs.length ? '완성' : `${n}/${c.needs.length}`}</span></div>
+  const need = comboNeed(c, have);
+  return `<div class="tip-h combo">${comboIcon(c.id, 16)}<b>${esc(c.name)}</b><span>${n >= need ? '완성' : `${n}/${need}`}</span></div>
     <p>${esc(c.text)}</p>
     <ul class="tip-needs">${c.needs.map((x) => `<li class="${have.has(x) ? 'have' : ''}">${have.has(x) ? '✓' : '·'} ${abilityIcon(x, 14)} ${esc(ABILITY[x].name)}${card?.id === x && !picks.some((p) => p.id === x) ? ' <em>이 카드</em>' : ''}</li>`).join('')}</ul>
-    <p class="tip-note">필요한 증강을 모두 가지면(등급 무관) 완성</p>`;
+    <p class="tip-note">필요한 증강을 모두 가지면(등급 무관) 완성${c.needs.length === 3 ? '. 연결이 있으면 2장으로 완성' : ''}</p>`;
 }
 
 /** 완성한 조합 목록 설명 카드 (점수판 "조합 N" 배지) */
@@ -189,14 +191,17 @@ function cardGrowth(o: Pick, picks: readonly Pick[]) {
 
 /** 카드의 조합 배지: 이 증강이 들어가는 조합마다. 고르면 진행이 오르면 2→3/3 강조, 완성되면 "조합 완성" */
 function cardCombos(o: Pick, picks: readonly Pick[]) {
-  const list = COMBO_OF(o.id);
+  const completed = combosCompletedBy(picks, o);
+  // 연결처럼 조합의 재료가 아닌 카드도, 고르면 완성되는 조합은 보여 준다
+  const list = [...COMBO_OF(o.id), ...completed.filter((c) => !(c.needs as readonly string[]).includes(o.id))];
   if (!list.length) return '';
-  const completes = new Set(combosCompletedBy(picks, o).map((c) => c.id));
+  const completes = new Set(completed.map((c) => c.id));
+  const have = new Set(picks.map((p) => p.id));
+  const need = (c: (typeof COMBOS)[number]) => comboNeed(c, new Set([...have, o.id]));
   return `<span class="ctags">${list.map((c) => {
-    const have = new Set(picks.map((p) => p.id));
     const n = c.needs.filter((x) => have.has(x)).length;
-    const up = !have.has(o.id);
-    const label = completes.has(c.id) ? `조합 완성: ${esc(c.name)}` : `${esc(c.name)} ${up ? `${n}→${n + 1}` : n}/${c.needs.length}`;
+    const up = !have.has(o.id) && (c.needs as readonly string[]).includes(o.id);
+    const label = completes.has(c.id) ? `조합 완성: ${esc(c.name)}` : `${esc(c.name)} ${up ? `${n}→${n + 1}` : n}/${need(c)}`;
     return `<span class="ctag${completes.has(c.id) ? ' done' : up && n > 0 ? ' up' : ''}" ${tipAttr(comboTip(c.id, picks, o))}>${comboIcon(c.id, 11)}${label}</span>`;
   }).join('')}</span>`;
 }
@@ -225,7 +230,8 @@ function comboList(me: PlayerState | undefined) {
   const picks = me?.picks ?? [];
   const prog = comboProgress(picks);
   const seen = new Set(prog.map((c) => c.id));
-  const rest = COMBOS.filter((c) => !seen.has(c.id)).map((c) => ({ id: c.id, name: c.name, have: 0, need: c.needs.length }));
+  const owned = new Set(picks.map((p) => p.id));
+  const rest = COMBOS.filter((c) => !seen.has(c.id)).map((c) => ({ id: c.id, name: c.name, have: 0, need: comboNeed(c, owned) }));
   const pips = (have: number, need: number) => Array.from({ length: need }, (_, k) => `<i class="${k < have ? 'on' : ''}"></i>`).join('');
   const syn = synergyProgress(picks);
   return `<div class="lbl">조합</div><ul class="synergy">${[...prog, ...rest].map((c) => {

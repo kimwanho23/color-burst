@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMBO, SYN,
+import { COMBO, COMBOS, RULES, SYN, WEIGHT, buildWeight, goldGain, settleFever, strikeBoss, type Circle,
   ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
-  resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type EventId, type Pick,
+  resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type ComboId, type EventId, type Pick,
 } from '../src/index.ts';
 
 const G = toGameRules(DEFAULT_RULES);
@@ -13,7 +13,7 @@ test('combosOf: 모두 가져야 완성, 여러 번 골라도 한 번, 진행도
   assert.deepEqual([...combosOf(picks('preheat', 'overtime'))], []);
   assert.deepEqual([...combosOf(picks('preheat', 'overtime', 'frenzy', 'frenzy'))], ['feverMaster']);
   // 많이 모은 순: 행운아 1/2가 피버 마스터 1/3보다 먼저
-  assert.deepEqual(comboProgress(picks('preheat', 'jackpot')).map((c) => [c.id, c.have, c.need]), [['lucky', 1, 2], ['feverMaster', 1, 3]]);
+  assert.deepEqual(comboProgress(picks('preheat', 'jackpot')).map((c) => [c.id, c.have, c.need]), [['lucky', 1, 2], ['feverMaster', 1, 3], ['gambit', 1, 3]]);
   // 완성한 조합이 맨 앞
   assert.equal(comboProgress(picks('jackpot', 'picky', 'preheat', 'overtime', 'frenzy')).map((c) => c.id)[0], 'feverMaster');
   assert.deepEqual(combosCompletedBy(picks('jackpot'), { id: 'rainbowHunt', tier: 1 }).map((c) => c.id), ['lucky']);
@@ -101,4 +101,144 @@ test('대평등은 3라운드가 끝난 뒤부터, 한 게임 한 번', () => {
   assert.equal(roll(3, []), true);
   assert.equal(roll(4, ['equality']), false);
   assert.equal(rollEvent([a, b], 0, () => 0.5, 1) === 'equality', false, '라운드 정보가 없으면 안 나옴');
+});
+
+test('연결: 3장 조합은 2장으로 완성, 2장 조합은 그대로', () => {
+  assert.ok(combosOf(picks('synergyLink', 'hammer', 'hunter')).has('bossHunter'));
+  assert.ok(!combosOf(picks('hammer', 'hunter')).has('bossHunter'));
+  assert.ok(!combosOf(picks('synergyLink', 'hammer')).has('bossHunter'));
+  assert.ok(!combosOf(picks('synergyLink', 'jackpot')).has('lucky'));
+  assert.deepEqual(comboProgress(picks('synergyLink', 'hammer')).find((c) => c.id === 'bossHunter'),
+    { id: 'bossHunter', name: '보스 헌터', text: COMBOS.find((c) => c.id === 'bossHunter')!.text, have: 1, need: 2 });
+});
+
+test('봇 가중치: 연결로 완성된 3장 조합의 남은 1장에는 조합 가중치 없음', () => {
+  assert.equal(buildWeight('crusher', picks('synergyLink', 'hammer', 'hunter')), WEIGHT.sameCat);
+  assert.equal(buildWeight('crusher', picks('hammer', 'hunter')), WEIGHT.sameCat * WEIGHT.comboPart);
+});
+
+test('새 3장 조합: 구성과 연결 2장 완성', () => {
+  const want: [ComboId, AbilityId[]][] = [
+    ['gambit', ['jackpot', 'luckStack', 'rapid']],
+    ['encore', ['overcharge', 'afterglow', 'ignite']],
+    ['marksman', ['precise', 'centerKing', 'headStart']],
+    ['raidParty', ['vanguard', 'crownMark', 'hunter']],
+    ['allHandsCombo', ['wideHand', 'missSave', 'autoMagnet']],
+    ['riposteCombo', ['laserProof', 'reflect', 'taunt']],
+  ];
+  for (const [id, needs] of want) {
+    assert.deepEqual(COMBOS.find((c) => c.id === id)?.needs, needs);
+    assert.ok(combosOf(picks(...needs)).has(id));
+    assert.ok(combosOf(picks('synergyLink', needs[0], needs[2])).has(id));
+  }
+  assert.deepEqual(want.map(([id]) => COMBOS.find((c) => c.id === id)?.name), ['타짜', '앙코르', '명사수', '토벌대', '만능 손', '역습']);
+});
+
+test('행운 축적: 황금·무지개 원으로도 1칸, 무지개를 잡고 잭팟도 터지면 1칸만', () => {
+  const p = pl(0, 'luckStack');
+  resolveClaim(p, 'rainbow', [p], 1000, G, { rand: () => 0.99 });
+  assert.equal(p.stacks.luckStack, 1);
+  goldGain(p, 2000, [p], G, 1, () => 0.99);
+  assert.equal(p.stacks.luckStack, 2);
+  const q = pl(0, 'jackpot', 'luckStack');
+  resolveClaim(q, 'rainbow', [q], 1000, G, { rand: () => 0 });
+  assert.equal(q.stacks.luckStack, 1);
+});
+
+test('타짜: 잭팟이 터지면 피버 게이지 +10, 다음 원 1개는 1초 안이면 속사 연속', () => {
+  const p = pl(0, 'jackpot', 'rapid', 'luckStack');
+  resolveClaim(p, 0, [p], 1000, G, { rand: () => 0 });
+  assert.ok(p.rapidLongNext);
+  assert.equal(p.fever, RULES.fever.own + RULES.combos.gambitFever);
+  resolveClaim(p, 0, [p], 1900, G, { rand: () => 0.99 });
+  assert.equal(p.rapidStreak, 2);
+  assert.ok(!p.rapidLongNext);
+  const q = pl(0, 'jackpot', 'rapid');
+  resolveClaim(q, 0, [q], 1000, G, { rand: () => 0 });
+  resolveClaim(q, 0, [q], 1900, G, { rand: () => 0.99 });
+  assert.equal(q.rapidStreak, 1, '타짜가 없으면 0.4초');
+});
+
+test('타짜: 잭팟 증강 없이 연결 + 행운 축적 + 속사, 황금 원 잭팟에서도 동작', () => {
+  const p = pl(0, 'synergyLink', 'luckStack', 'rapid');
+  p.stacks.luckStack = 5;
+  resolveClaim(p, 0, [p], 1000, G, { rand: () => 0 });
+  assert.ok(p.rapidLongNext);
+  const q = pl(0, 'jackpot', 'luckStack', 'rapid');
+  const fever = q.fever;
+  goldGain(q, 1000, [q], G, 1, () => 0);
+  assert.ok(q.rapidLongNext);
+  assert.equal(q.fever, fever + RULES.combos.gambitFever);
+});
+
+test('앙코르: 피버가 끝나면 게이지 +30 (연결 + 2장으로도)', () => {
+  for (const ids of [['overcharge', 'afterglow', 'ignite'], ['synergyLink', 'afterglow', 'ignite']] as AbilityId[][]) {
+    const p = pl(0, ...ids);
+    p.feverUntil = 1000; p.fever = 0;
+    assert.ok(settleFever(p, 1000));
+    assert.equal(p.fever, RULES.combos.encoreFever);
+  }
+  const q = pl(0, 'afterglow', 'ignite');
+  q.feverUntil = 1000; q.fever = 0;
+  settleFever(q, 1000);
+  assert.equal(q.fever, 0);
+});
+
+test('토벌대: 왕의 증표 기여도 계산에서 내 보스 피해 ×1.5', () => {
+  const run = (...ids: AbilityId[]) => {
+    const me = pl(0, ...ids), k = pl(1);
+    const c: Circle = { id: 1, kind: 'boss', boss: 'normal', angle: 0, speed: 0, r: 90, born: 0, hp: 1, maxHp: 20 };
+    strikeBoss(k, c, new Map([[me.id, 4], [k.id, 15]]), [me, k], 1000, G, () => 0.99);
+    return me.stacks.crownMark ?? 0;
+  };
+  assert.equal(run('crownMark'), 0, '20%는 기준 25% 미달');
+  assert.equal(run('vanguard', 'crownMark', 'hunter'), 1);
+});
+
+test('명사수: 직접 클릭 점수 +15%, 정밀 사격 판정이면 콤보 +1', () => {
+  const base = pl(0, 'centerKing', 'headStart');
+  const p = pl(0, 'synergyLink', 'centerKing', 'headStart');
+  const a = resolveClaim(base, 'rainbow', [base], 99_000, G, { rand: () => 0.99, zone: 1 });
+  const b = resolveClaim(p, 'rainbow', [p], 99_000, G, { rand: () => 0.99, zone: 1 });
+  assert.equal(b.gained, Math.round(a.gained * (1 + RULES.combos.marksmanPct / 100)));
+  const r = resolveClaim(p, 'rainbow', [p], 99_000, G, { rand: () => 0.99, zone: 1, via: 'range' });
+  assert.equal(r.gained, a.gained, '범위 획득은 직접 클릭이 아님');
+  const q = pl(0, 'precise', 'centerKing', 'headStart');
+  resolveClaim(q, 0, [q], 99_000, G, { rand: () => 0.99, zone: 1, precise: true });
+  assert.equal(q.combo, 2);
+});
+
+test('만능 손: 자기장으로 끌어온 원만 콤보·피버(잭팟 없음), 넓은 손·보정은 +1점', () => {
+  const p = pl(0, 'wideHand', 'missSave', 'autoMagnet', 'jackpot');
+  const r = resolveClaim(p, 0, [p], 1000, G, { via: 'magnet', magneticField: true, rand: () => 0 });
+  assert.equal(p.combo, 1);
+  assert.equal(p.fever, RULES.fever.own);
+  assert.equal(r.jackpot, 1);
+  const q = pl(0, 'wideHand', 'missSave', 'autoMagnet', 'magnet');
+  resolveClaim(q, 0, [q], 1000, G, { via: 'magnet' });
+  assert.equal(q.combo, 0, '자석 증강으로 끌어온 원은 그대로');
+  assert.equal(q.fever, 0);
+  const s = pl(0, 'wideHand', 'missSave');
+  const t = pl(0, 'synergyLink', 'wideHand', 'missSave');
+  const a = resolveClaim(s, 0, [s], 99_000, G, { via: 'range', rand: () => 0.99 });
+  const b = resolveClaim(t, 0, [t], 99_000, G, { via: 'range', rand: () => 0.99 });
+  assert.equal(b.gained, a.gained + RULES.combos.allHandsPts);
+});
+
+test('역습: 일반·피버 중 견제와 반사는 게이지 +15, 반격·폭죽·막힌 견제는 없음', () => {
+  const run = (setup: (a: ReturnType<typeof pl>, b: ReturnType<typeof pl>) => void, via?: 'blast', ids: AbilityId[] = ['laserProof', 'reflect', 'taunt']) => {
+    const a = pl(0, ...ids), b = pl(1);
+    a.reflectLeft = 0;
+    setup(a, b);
+    resolveClaim(b, 0, [a, b], 1000, G, { rand: () => 0.99, ...(via ? { via } : {}) });
+    return a.fever;
+  };
+  const F = RULES.combos.riposteFever;
+  assert.equal(run(() => {}), F, '일반 견제');
+  assert.equal(run(() => {}, undefined, ['synergyLink', 'reflect', 'taunt']), F, '연결 + 2장');
+  assert.equal(run((_a, b) => { b.feverUntil = 5000; }), F, '피버 중 견제');
+  assert.equal(run((a) => { a.reflectLeft = 1; }), RULES.fever.own + F, '반사');
+  assert.equal(run((a) => { a.markedUntil = 5000; }), 0, '반격');
+  assert.equal(run(() => {}, 'blast'), 0, '폭죽');
+  assert.equal(run((a) => { a.buffs.guard = 5000; }), 0, '보호막');
 });
