@@ -1661,7 +1661,7 @@ export function resolveClaim(
     // 노란 맛 레전드: 피버 게이지가 내 색만큼
     res.feverStarted = gauge(L.has('yellowTaste') ? RULES.fever.own : RULES.fever.yellow);
   } else if (kind === claimer.color || (typeof kind === 'number' && m.allHands) || (G.team && ownsKind(kind, claimer, players, true))) {
-    // 만능 손: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
+    // 탐욕: 남의 색 원도 내 색처럼 (견제 판정 없음). 편식가 레전드: 피버 게이지 2배
     res.type = 'own'; pts = own; bump();
     res.feverStarted = gauge(RULES.fever.own * (L.has('picky') ? LEGEND.pickyFeverMult : 1));
   } else {
