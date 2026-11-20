@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { COMBO, COMBOS, SYN, WEIGHT, buildWeight,
   ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
-  resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type EventId, type Pick,
+  resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type ComboId, type EventId, type Pick,
 } from '../src/index.ts';
 
 const G = toGameRules(DEFAULT_RULES);
@@ -13,7 +13,7 @@ test('combosOf: 모두 가져야 완성, 여러 번 골라도 한 번, 진행도
   assert.deepEqual([...combosOf(picks('preheat', 'overtime'))], []);
   assert.deepEqual([...combosOf(picks('preheat', 'overtime', 'frenzy', 'frenzy'))], ['feverMaster']);
   // 많이 모은 순: 행운아 1/2가 피버 마스터 1/3보다 먼저
-  assert.deepEqual(comboProgress(picks('preheat', 'jackpot')).map((c) => [c.id, c.have, c.need]), [['lucky', 1, 2], ['feverMaster', 1, 3]]);
+  assert.deepEqual(comboProgress(picks('preheat', 'jackpot')).map((c) => [c.id, c.have, c.need]), [['lucky', 1, 2], ['feverMaster', 1, 3], ['gambit', 1, 3]]);
   // 완성한 조합이 맨 앞
   assert.equal(comboProgress(picks('jackpot', 'picky', 'preheat', 'overtime', 'frenzy')).map((c) => c.id)[0], 'feverMaster');
   assert.deepEqual(combosCompletedBy(picks('jackpot'), { id: 'rainbowHunt', tier: 1 }).map((c) => c.id), ['lucky']);
@@ -115,4 +115,21 @@ test('연결: 3장 조합은 2장으로 완성, 2장 조합은 그대로', () =>
 test('봇 가중치: 연결로 완성된 3장 조합의 남은 1장에는 조합 가중치 없음', () => {
   assert.equal(buildWeight('crusher', picks('synergyLink', 'hammer', 'hunter')), WEIGHT.sameCat);
   assert.equal(buildWeight('crusher', picks('hammer', 'hunter')), WEIGHT.sameCat * WEIGHT.comboPart);
+});
+
+test('새 3장 조합: 구성과 연결 2장 완성', () => {
+  const want: [ComboId, AbilityId[]][] = [
+    ['gambit', ['jackpot', 'luckStack', 'rapid']],
+    ['encore', ['overcharge', 'afterglow', 'ignite']],
+    ['marksman', ['precise', 'centerKing', 'headStart']],
+    ['raidParty', ['vanguard', 'crownMark', 'hunter']],
+    ['allHandsCombo', ['wideHand', 'missSave', 'autoMagnet']],
+    ['riposteCombo', ['laserProof', 'reflect', 'taunt']],
+  ];
+  for (const [id, needs] of want) {
+    assert.deepEqual(COMBOS.find((c) => c.id === id)?.needs, needs);
+    assert.ok(combosOf(picks(...needs)).has(id));
+    assert.ok(combosOf(picks('synergyLink', needs[0], needs[2])).has(id));
+  }
+  assert.deepEqual(want.map(([id]) => COMBOS.find((c) => c.id === id)?.name), ['타짜', '앙코르', '명사수', '토벌대', '만능 손', '역습']);
 });

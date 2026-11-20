@@ -29,6 +29,10 @@ export const RULES = {
   comboBonusEvery: 10,
   comboBonus: 5,
   comboMachineMult: 1.5,
+  /** 3장 조합 효과 수치: 타짜 피버 게이지·속사 허용 시간, 앙코르 피버 게이지, 명사수 직접 클릭 점수 %, 토벌대 피버 게이지·왕의 증표 기여도 배율, 만능 손 범위 획득 점수, 역습 피버 게이지 */
+  combos: { gambitFever: 10, gambitRapidMs: 1_000, encoreFever: 30, marksmanPct: 15, raidFever: 25, raidCrownMult: 1.5, allHandsPts: 1, riposteFever: 15 },
+  /** 아이템 애호가: 라운드 시작 후 이 시간이 지나면 아이템 1개 발동 */
+  itemLoverDelayMs: 3_000,
   points: { own: 3, yellow: 2, rainbow: 5, stealCalm: 1, counter: 6 },
   fever: { own: 12, yellow: 6, rainbow: 25, stealCalm: -20, miss: -10 },
   yellowChance: 0.33,

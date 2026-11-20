@@ -240,7 +240,8 @@ export const LEGEND_TEXT: Partial<Record<AbilityId, string>> = {
   taunt: `피버 중인 상대를 견제하면 그 피버가 ${sec(L_.tauntMs)} 짧아짐`,
 };
 
-export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall' | 'bazaar' | 'counterStance' | 'shieldBash';
+export type ComboId = 'feverMaster' | 'comboMachine' | 'bossHunter' | 'stealKing' | 'lucky' | 'outskirts' | 'gourmet' | 'ironWall' | 'bazaar' | 'counterStance' | 'shieldBash'
+  | 'gambit' | 'encore' | 'marksman' | 'raidParty' | 'allHandsCombo' | 'riposteCombo';
 /** 증강 조합: 필요한 증강을 모두 가지면(등급 무관) 보너스. 같은 조합은 한 번 */
 export const COMBOS: readonly { id: ComboId; name: string; needs: readonly AbilityId[]; text: string }[] = [
   { id: 'feverMaster', name: '피버 마스터', needs: ['preheat', 'overtime', 'frenzy'], text: `피버 배율 +${COMBO.feverAdd}` },
@@ -254,6 +255,12 @@ export const COMBOS: readonly { id: ComboId; name: string; needs: readonly Abili
   { id: 'shieldBash', name: '보호막 강타', needs: ['autoGuard', 'shield'], text: `반격에 성공하면 보호막 발생기의 충전 1회를 써서 +${COMBO.shieldBashPoints}점. 추가 점수에는 피버 배율만 적용` },
   { id: 'counterStance', name: '반격 태세', needs: ['autoGuard', 'counterPro'], text: '보호막 발생기로 견제를 막으면 반격권 1회. 표적이 아닌 상대 색 원을 직접 누르면 반격권을 써서 반격' },
   { id: 'ironWall', name: '철옹성', needs: ['shield', 'insurance', 'rebound'], text: `콤보가 끊기지 않고 ${100 - COMBO.ironKeepPct}%만 줄어듦` },
+  { id: 'gambit', name: '타짜', needs: ['jackpot', 'luckStack', 'rapid'], get text() { return `잭팟이 터지면 피버 게이지 +${RULES.combos.gambitFever}, 다음 원 1개는 속사 허용 시간 ${RULES.combos.gambitRapidMs / 1000}초`; } },
+  { id: 'encore', name: '앙코르', needs: ['overcharge', 'afterglow', 'ignite'], get text() { return `피버가 끝날 때 피버 게이지 +${RULES.combos.encoreFever}`; } },
+  { id: 'marksman', name: '명사수', needs: ['precise', 'centerKing', 'headStart'], get text() { return `직접 클릭한 원 점수 +${RULES.combos.marksmanPct}%, 정밀 사격 판정이면 콤보 +1`; } },
+  { id: 'raidParty', name: '토벌대', needs: ['vanguard', 'crownMark', 'hunter'], get text() { return `보스가 나오면 피버 게이지 +${RULES.combos.raidFever}, 왕의 증표 기여도 계산에서 내 보스 피해 ×${RULES.combos.raidCrownMult}`; } },
+  { id: 'allHandsCombo', name: '만능 손', needs: ['wideHand', 'missSave', 'autoMagnet'], get text() { return `자기장으로 끌어온 원도 콤보·피버 게이지를 채움, 넓은 손·헛손질 보정으로 잡은 원 +${RULES.combos.allHandsPts}점`; } },
+  { id: 'riposteCombo', name: '역습', needs: ['laserProof', 'reflect', 'taunt'], get text() { return `견제당할 때마다 피버 게이지 +${RULES.combos.riposteFever} (반격·폭죽·막힌 견제 제외)`; } },
 ];
 
 /** 완성한 조합 */
