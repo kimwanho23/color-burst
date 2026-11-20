@@ -194,3 +194,33 @@ test('토벌대: 왕의 증표 기여도 계산에서 내 보스 피해 ×1.5', 
   assert.equal(run('crownMark'), 0, '20%는 기준 25% 미달');
   assert.equal(run('vanguard', 'crownMark', 'hunter'), 1);
 });
+
+test('명사수: 직접 클릭 점수 +15%, 정밀 사격 판정이면 콤보 +1', () => {
+  const base = pl(0, 'centerKing', 'headStart');
+  const p = pl(0, 'synergyLink', 'centerKing', 'headStart');
+  const a = resolveClaim(base, 'rainbow', [base], 99_000, G, { rand: () => 0.99, zone: 1 });
+  const b = resolveClaim(p, 'rainbow', [p], 99_000, G, { rand: () => 0.99, zone: 1 });
+  assert.equal(b.gained, Math.round(a.gained * (1 + RULES.combos.marksmanPct / 100)));
+  const r = resolveClaim(p, 'rainbow', [p], 99_000, G, { rand: () => 0.99, zone: 1, via: 'range' });
+  assert.equal(r.gained, a.gained, '범위 획득은 직접 클릭이 아님');
+  const q = pl(0, 'precise', 'centerKing', 'headStart');
+  resolveClaim(q, 0, [q], 99_000, G, { rand: () => 0.99, zone: 1, precise: true });
+  assert.equal(q.combo, 2);
+});
+
+test('만능 손: 자기장으로 끌어온 원만 콤보·피버(잭팟 없음), 넓은 손·보정은 +1점', () => {
+  const p = pl(0, 'wideHand', 'missSave', 'autoMagnet', 'jackpot');
+  const r = resolveClaim(p, 0, [p], 1000, G, { via: 'magnet', magneticField: true, rand: () => 0 });
+  assert.equal(p.combo, 1);
+  assert.equal(p.fever, RULES.fever.own);
+  assert.equal(r.jackpot, 1);
+  const q = pl(0, 'wideHand', 'missSave', 'autoMagnet', 'magnet');
+  resolveClaim(q, 0, [q], 1000, G, { via: 'magnet' });
+  assert.equal(q.combo, 0, '자석 증강으로 끌어온 원은 그대로');
+  assert.equal(q.fever, 0);
+  const s = pl(0, 'wideHand', 'missSave');
+  const t = pl(0, 'synergyLink', 'wideHand', 'missSave');
+  const a = resolveClaim(s, 0, [s], 99_000, G, { via: 'range', rand: () => 0.99 });
+  const b = resolveClaim(t, 0, [t], 99_000, G, { via: 'range', rand: () => 0.99 });
+  assert.equal(b.gained, a.gained + RULES.combos.allHandsPts);
+});

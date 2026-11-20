@@ -1635,6 +1635,8 @@ export function resolveClaim(
   const blast = via === 'blast';
   // 자석으로 끌어온 원: 점수만 (콤보·콤보 보너스·잭팟·피버 게이지 없음)
   const magnet = via === 'magnet';
+  // 만능 손 조합: 자기장으로 끌어온 원은 콤보·피버 게이지를 채움 (잭팟·자석 점수 출처는 그대로)
+  const noGain = magnet && !(opts.magneticField && combosFor(claimer).has('allHandsCombo'));
   const fever = isFever(claimer, now);
   const after = !fever && now < claimer.afterUntil;
   settleFever(claimer, now);
@@ -1650,8 +1652,8 @@ export function resolveClaim(
   const res: ClaimResult = { type: 'own', gained: 0, comboBonus: false, feverStarted: false, brokeComboOf: null, marked: false, plundered: 0, shielded: false, via, jackpot: 1, zone: 0 };
   let pts = 0;
   let steal = false;
-  const bump = () => { if (!magnet) claimer.combo++; };
-  const gauge = (amt: number, raw = false) => !magnet && addFever(claimer, amt, now, G, players, raw);
+  const bump = () => { if (!noGain) claimer.combo++; };
+  const gauge = (amt: number, raw = false) => !noGain && addFever(claimer, amt, now, G, players, raw);
 
   // 외길: 내 색 ×3, 노란색·무지개 0점
   const SY = synergiesFor(claimer);
@@ -1797,10 +1799,12 @@ export function resolveClaim(
   if (precise) {
     res.precise = true;
     if (L.has('precise')) claimer.combo += LEGEND.preciseComboAdd + (steal ? 1 : 0);
+    // 명사수 조합: 정밀 사격 판정이면 콤보 +1
+    if (K.has('marksman')) claimer.combo += 1;
   }
   let bonus = steal ? 0 : comboBonusOf(claimer, comboBefore, fever);
   // 단련: 콤보 주기마다 한 칸 (레전드면 콤보 보너스도)
-  if (!steal && !magnet) {
+  if (!steal && !noGain) {
     bonus += drillCheck(claimer, comboBefore, bonus);
     claimer.comboPaidTo = Math.max(claimer.comboPaidTo ?? 0, claimer.combo);
   }
@@ -1813,11 +1817,15 @@ export function resolveClaim(
   st.maxCombo = Math.max(st.maxCombo, claimer.combo);
   claimer.roundMaxCombo = Math.max(claimer.roundMaxCombo, claimer.combo);
   // 피버 시작 직후의 원은 배율 미적용(시작 시점 기준). 점수 구역 배율도 곱한다
+  // 만능 손 조합: 넓은 손·헛손질 보정으로 잡은 원 +점
+  if (!steal && (via === 'range' || via === 'save') && K.has('allHandsCombo')) pts += RULES.combos.allHandsPts;
+  // 명사수 조합: 직접 클릭한 원 점수 +%
+  const marksman = direct && !steal && K.has('marksman') ? 1 + RULES.combos.marksmanPct / 100 : 1;
   const rebound = now < claimer.reboundUntil ? 1 + m.rebound / 100 : 1;
   const viaLegend = (via === 'range' && L.has('wideHand')) ? LEGEND.wideHandMult : (via === 'save' && L.has('missSave')) ? LEGEND.missSaveMult : 1;
   const feverMult = fever ? feverMultOf(claimer, G) : 1;
   const mult = capMult((after ? afterMultOf(claimer) : feverMult) * scoreBoostOf(m) * itemMult(claimer, now, true, !blast && !magnet && pts > 0)
-    * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend * (precise ? 1 + m.precise : 1));
+    * zoneMult(res.zone, m) * extraMult(claimer, now, players) * rebound * viaLegend * marksman * (precise ? 1 + m.precise : 1));
   // 잭팟은 맨 마지막에 곱한다 (블라스트·자석은 없음). 속사 레전드면 이번 잭팟 확정
   if (!blast && !magnet) {
     const forced = rapidForced && pts > 0;
