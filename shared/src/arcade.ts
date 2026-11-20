@@ -270,7 +270,7 @@ export function combosOf(picks: readonly Pick[] | undefined): Set<ComboId> {
 }
 
 /** 연결: 필요 증강이 3장인 조합은 2장으로 완성 */
-const comboNeed = (c: { needs: readonly AbilityId[] }, have: ReadonlySet<AbilityId>) =>
+export const comboNeed = (c: { needs: readonly AbilityId[] }, have: ReadonlySet<AbilityId>) =>
   have.has('synergyLink') && c.needs.length === 3 ? 2 : c.needs.length;
 const comboHave = (c: { needs: readonly AbilityId[] }, have: ReadonlySet<AbilityId>) => c.needs.filter((n) => have.has(n)).length;
 

@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { ABILITIES, COMBOS, DEFAULT_RULES, UNIQUES, newPlayer, type Pick } from '../src/index.ts';
 import { abilityTab, comboTab, rulesTabHTML, uniqueTab } from '../../client/src/codex.ts';
-import { renderPick } from '../../client/src/arcadeUI.ts';
+import { comboTip, renderPick } from '../../client/src/arcadeUI.ts';
 
 test('도감 규칙 탭: 방 규칙과 상관없이 기본 규칙 숫자와 안내', () => {
   const h = rulesTabHTML();
@@ -54,4 +54,23 @@ test('증강 선택 화면은 독주 활성과 연결·지정 조합에 의한 �
   assert.match(options('synergyLink'), /선택하면 독주 꺼짐/);
   assert.match(options('autoGuard'), /선택하면 독주 꺼짐/);
   assert.doesNotMatch(options('spacing'), /선택하면 독주 꺼짐/);
+});
+
+test('연결: 2장으로 완성된 3장 조합은 화면에서도 완성으로 보이고, 연결 카드는 완성될 조합을 미리 보여 준다', (t) => {
+  installSvgDom(t);
+  const linked: Pick[] = [{ id: 'synergyLink', tier: 0 }, { id: 'hammer', tier: 0 }, { id: 'hunter', tier: 0 }];
+  const tip = comboTip('bossHunter', linked);
+  assert.match(tip, /<span>완성<\/span>/);
+  assert.doesNotMatch(tip, /2\/3/);
+  assert.match(tip, /연결/);
+  assert.match(comboTab({ picks: linked }), /<li class="cx-mine">[^]*?보스 헌터/);
+  const el = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null };
+  const me = newPlayer('a', 'A', 0);
+  me.picks = [{ id: 'hammer', tier: 0 }, { id: 'hunter', tier: 0 }];
+  renderPick(el as unknown as HTMLElement, {
+    me, players: [me], chosen: false, effects: [], deal: false, opening: false,
+    state: { phase: 'pick', round: 2, rounds: 5, waiting: [], pickEndsAt: 0, theme: null, event: null },
+    offer: { options: [{ id: 'synergyLink', tier: 0 }], rerollLeft: 0, pickEndsAt: 0, lastPlace: false, need: 1, comeback: false, deal: 1 },
+  }, { choose() {}, reroll() {} });
+  assert.match(el.innerHTML, /조합 완성: 보스 헌터/);
 });

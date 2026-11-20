@@ -61,8 +61,8 @@ export function comboTab(ctx: CodexCtx) {
     if (!p) return '';
     return p.have >= p.need ? '<em class="cx-done">완성</em>' : `<em class="cx-prog">${p.have}/${p.need}</em>`;
   };
-  return `<p class="hint">조합의 증강을 모두 가지면(등급 무관) 보너스가 붙어요. 가진 증강과 같은 분류·조합 조각은 선택지에 더 자주 나와요</p><ul class="cx-list">${COMBOS.map((c) => `
-    <li class="${prog.get(c.id)?.have === c.needs.length ? 'cx-mine' : ''}"><span class="cx-ic">${comboIcon(c.id, 22)}</span><div><b>${esc(c.name)}</b>${tag(c.id)}<p>${c.needs.map((n) => `${abilityIcon(n, 14)} ${esc(ABILITY[n].name)}`).join(' + ')}</p><p class="cx-legend">${esc(c.text)}</p></div></li>`).join('')}</ul>`;
+  return `<p class="hint">조합의 증강을 모두 가지면(등급 무관) 보너스가 붙어요. 연결이 있으면 3장 조합은 2장으로 완성돼요. 가진 증강과 같은 분류·조합 조각은 선택지에 더 자주 나와요</p><ul class="cx-list">${COMBOS.map((c) => `
+    <li class="${(prog.get(c.id)?.have ?? 0) >= (prog.get(c.id)?.need ?? Infinity) ? 'cx-mine' : ''}"><span class="cx-ic">${comboIcon(c.id, 22)}</span><div><b>${esc(c.name)}</b>${tag(c.id)}<p>${c.needs.map((n) => `${abilityIcon(n, 14)} ${esc(ABILITY[n].name)}`).join(' + ')}</p><p class="cx-legend">${esc(c.text)}</p></div></li>`).join('')}</ul>`;
 }
 
 function specialTab() {
