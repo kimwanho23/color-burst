@@ -19,6 +19,8 @@ export const RANDOM_EVENT = {
   /** 대평등: 이 라운드가 끝난 뒤부터, 한 게임 한 번. 평균 쪽으로 움직이는 비율 */
   equalityFrom: 3,
   equalityPct: 50,
+  /** 한번 더!: 이번 능력 선택에서 모두의 다시 뽑기 횟수 증가량 */
+  rerollBonus: 1,
 } as const;
 
 export const THEMES: Record<ThemeId, { name: string; desc: string }> = {
@@ -31,7 +33,7 @@ export const THEMES: Record<ThemeId, { name: string; desc: string }> = {
 };
 const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 
-export type EventId = 'robinHood' | 'tax' | 'lottery' | 'swap' | 'abilitySwap' | 'demote' | 'gift' | 'curseDelivery' | 'theme' | 'equality';
+export type EventId = 'robinHood' | 'tax' | 'lottery' | 'swap' | 'abilitySwap' | 'demote' | 'gift' | 'curseDelivery' | 'theme' | 'equality' | 'oneMore';
 
 export const EVENTS: Record<EventId, { name: string }> = {
   robinHood: { name: '로빈 후드' },
@@ -44,6 +46,7 @@ export const EVENTS: Record<EventId, { name: string }> = {
   curseDelivery: { name: '저주 배달' },
   theme: { name: '라운드 테마' },
   equality: { name: '대평등' },
+  oneMore: { name: '한번 더!' },
 };
 export const EVENT_IDS = Object.keys(EVENTS) as EventId[];
 
@@ -58,6 +61,8 @@ export interface EventResult {
   pot?: number;
   giftTo?: string;
   curseTo?: string;
+  /** 모든 플레이어의 이번 능력 선택 다시 뽑기 횟수에 더해 줄 값 */
+  rerollBonus?: number;
   swapped?: [string, string];
   demoted?: { playerId: string; id: AbilityId };
 }
@@ -170,6 +175,10 @@ export function applyEvent(id: EventId, players: PlayerState[], G: GameRules, ra
     case 'gift':
       res.giftTo = last!.id;
       res.text = `${last!.name}님은 다음 능력 선택에서 선택지가 하나 더!`;
+      break;
+    case 'oneMore':
+      res.rerollBonus = RANDOM_EVENT.rerollBonus;
+      res.text = '이번 능력 선택에서는 모두 다시 뽑기를 한 번 더 쓸 수 있어요!';
       break;
     case 'curseDelivery': {
       const p = pickOne(players.filter(canGetCurse), rand);

@@ -64,7 +64,7 @@ export const COOP_ITEM_ICON: Record<CoopItemId, IconNode> = {
 
 export const EVENT_ICON: Record<EventId, IconNode> = {
   robinHood: HandCoins, tax: Landmark, lottery: Ticket, swap: ArrowLeftRight, abilitySwap: Repeat,
-  demote: TrendingDown, gift: Gift, curseDelivery: Skull, theme: Palette, equality: Scale,
+  demote: TrendingDown, gift: Gift, curseDelivery: Skull, theme: Palette, equality: Scale, oneMore: RefreshCw,
 };
 
 export const UI = {

@@ -103,6 +103,25 @@ test('랜덤 이벤트가 일어나면 능력 선택 상태에 그 결과가 남
   assert.ok(ev!.text.length > 0);
 });
 
+test('한번 더! 이벤트: 이번 능력 선택에서 모두의 다시 뽑기가 2번이 된다', (t) => {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.setRules(a.id, { rules: { mode: 'arcade' } });
+  assert.equal(startReady(room, a.id), null);
+  room.players[0].score = 50;
+  // 이벤트 등장(0.05 < 10%) 뒤 가중치 룰렛은 맨 끝 이벤트(한번 더!)로 쏠리게
+  let n = 0;
+  t.mock.method(Math, 'random', () => (n++ === 0 ? 0.05 : 0.9999));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const r = room as unknown as { endRound(): void; arcadeState(): { event: { id: string } | null } | null; offers: Map<string, { rerolls: number }> };
+  r.endRound();
+  t.mock.timers.tick(RULES.roundEndMs);
+  assert.equal(r.arcadeState()?.event?.id, 'oneMore');
+  for (const o of r.offers.values()) assert.equal(o.rerolls, 2);
+});
+
 test('발사 보호 구역: 필드 클리어·장판도 가운데 원은 못 잡는다', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();

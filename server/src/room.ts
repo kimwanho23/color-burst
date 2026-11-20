@@ -1285,7 +1285,7 @@ export class Room {
       const allLegend = p.legendNext;
       p.legendNext = false;
       const extra: RollExtra = { gift: ev?.giftTo === p.id, curse: ev?.curseTo === p.id };
-      const o: Offer = { options: [], rerolls: ARCADE.rerollsPerPick, need: ARCADE.picksPerRound[Math.min(k, ARCADE.picksPerRound.length - 1)], chosen: false, firstDone: false, last, comeback: p.comeback, allLegend, extra, deal: 0 };
+      const o: Offer = { options: [], rerolls: ARCADE.rerollsPerPick + (ev?.rerollBonus ?? 0), need: ARCADE.picksPerRound[Math.min(k, ARCADE.picksPerRound.length - 1)], chosen: false, firstDone: false, last, comeback: p.comeback, allLegend, extra, deal: 0 };
       o.options = this.roll(p, o);
       this.offers.set(p.id, o);
     }

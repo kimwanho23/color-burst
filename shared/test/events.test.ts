@@ -61,6 +61,18 @@ test('선물·저주 배달은 대상만 정한다', () => {
   for (let i = 0; i < 20; i++) assert.notEqual(applyEvent('curseDelivery', ps, G, seq(i / 20)).curseTo, 'p1');
 });
 
+test('한번 더!: 다시 뽑기 횟수 +1을 결과로 돌려주고 모두 동점이어도 나온다', () => {
+  const ps = four(100, 50, 40, 20);
+  const r = applyEvent('oneMore', ps, G);
+  assert.equal(r.rerollBonus, 1);
+  assert.deepEqual(r.changes, []);
+  for (const scores of [[100, 50, 40, 20], [10, 10, 10, 10]]) {
+    const seen = new Set<EventId | null>();
+    for (let i = 0; i < 400; i++) seen.add(rollEvent(four(...scores), 0, seq(0, i / 400)));
+    assert.ok(seen.has('oneMore'));
+  }
+});
+
 test('저주 배달: 다음 선택이 전부 레전드인 사람(악마의 계약)은 대상이 아니다', () => {
   const ps = four(100, 50, 40, 20);
   ps[0].legendNext = true; ps[1].legendNext = true; ps[2].legendNext = true;
