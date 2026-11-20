@@ -1154,9 +1154,11 @@ export function settleFever(p: PlayerState, now: number) {
   p.feverBonus = 0;
   p.firstFlameReady = false;
   const carry = p.silenced ? 0 : p.feverCarry;
-  p.fever = Math.min(100, p.fever + carry);
+  // 앙코르 조합: 피버가 끝나면 게이지 (고정값)
+  const encore = !p.silenced && combosFor(p).has('encore') ? RULES.combos.encoreFever : 0;
+  p.fever = Math.min(100, p.fever + carry + encore);
   p.feverCarry = 0;
-  return addUniqueStack(p, 'ember') || carry > 0;
+  return addUniqueStack(p, 'ember') || carry + encore > 0;
 }
 
 /** 판 뒤집기: 라운드가 끝날 때 1등과의 점수 차의 일부를 내 점수에 더한다 (1등 점수는 그대로) */

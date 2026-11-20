@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMBO, COMBOS, RULES, SYN, WEIGHT, buildWeight, goldGain,
+import { COMBO, COMBOS, RULES, SYN, WEIGHT, buildWeight, goldGain, settleFever, strikeBoss, type Circle,
   ABILITY, DEFAULT_RULES, applyEvent, bossHitInfo, comboProgress, combosCompletedBy, combosOf, feverMultOf, magnetOf, newPlayer,
   resolveClaim, resolveMiss, rollEvent, rollOptions, startRound, toGameRules, type AbilityId, type ComboId, type EventId, type Pick,
 } from '../src/index.ts';
@@ -169,4 +169,28 @@ test('타짜: 잭팟 증강 없이 연결 + 행운 축적 + 속사, 황금 원 �
   goldGain(q, 1000, [q], G, 1, () => 0);
   assert.ok(q.rapidLongNext);
   assert.equal(q.fever, fever + RULES.combos.gambitFever);
+});
+
+test('앙코르: 피버가 끝나면 게이지 +30 (연결 + 2장으로도)', () => {
+  for (const ids of [['overcharge', 'afterglow', 'ignite'], ['synergyLink', 'afterglow', 'ignite']] as AbilityId[][]) {
+    const p = pl(0, ...ids);
+    p.feverUntil = 1000; p.fever = 0;
+    assert.ok(settleFever(p, 1000));
+    assert.equal(p.fever, RULES.combos.encoreFever);
+  }
+  const q = pl(0, 'afterglow', 'ignite');
+  q.feverUntil = 1000; q.fever = 0;
+  settleFever(q, 1000);
+  assert.equal(q.fever, 0);
+});
+
+test('토벌대: 왕의 증표 기여도 계산에서 내 보스 피해 ×1.5', () => {
+  const run = (...ids: AbilityId[]) => {
+    const me = pl(0, ...ids), k = pl(1);
+    const c: Circle = { id: 1, kind: 'boss', boss: 'normal', angle: 0, speed: 0, r: 90, born: 0, hp: 1, maxHp: 20 };
+    strikeBoss(k, c, new Map([[me.id, 4], [k.id, 15]]), [me, k], 1000, G, () => 0.99);
+    return me.stacks.crownMark ?? 0;
+  };
+  assert.equal(run('crownMark'), 0, '20%는 기준 25% 미달');
+  assert.equal(run('vanguard', 'crownMark', 'hunter'), 1);
 });

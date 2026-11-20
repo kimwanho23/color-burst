@@ -1518,6 +1518,15 @@ export class Room {
       this.circles.set(b.id, b);
       this.io.to(this.code).emit('circle:spawn', b);
     }
+    if (n <= 0) return;
+    // 토벌대 조합: 보스가 나오면 피버 게이지 (고정값)
+    let changed = false;
+    for (const p of this.players) {
+      if (p.outAt || !combosFor(p).has('raidParty')) continue;
+      if (addFever(p, RULES.combos.raidFever, now, this.G, this.players, true)) p.stats.fevers++;
+      changed = true;
+    }
+    if (changed) this.emitPlayers();
   }
 
   /** 게임 커서 위치 (필드 안으로 자름) */

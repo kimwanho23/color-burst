@@ -154,7 +154,9 @@ export function strikeBoss(
       const contributed = hits.get(q.id) ?? 0;
       if (q.outAt || contributed < 1) continue;
       const solo = isSolo(q.id);
-      if (q.id === p.id || contributed * 100 >= maxHp * GROWTH.crown.assistPct) {
+      // 토벌대 조합: 왕의 증표 기여도 계산에서 내 피해 ×1.5
+      const crownShare = contributed * (combosFor(q).has('raidParty') ? RULES.combos.raidCrownMult : 1);
+      if (q.id === p.id || crownShare * 100 >= maxHp * GROWTH.crown.assistPct) {
         const stacks = solo && hasLegend(q, 'crownMark') ? LEGEND.crownSoloStacks : 1;
         addStack(q, 'crownMark', stacks);
       }

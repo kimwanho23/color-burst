@@ -1652,3 +1652,12 @@ test('무의 시간: 진행 중인 증강 자석은 풀리고 아이템 자석�
   r.resolvePulls(now + 100);
   assert.equal(circles.has(1), false);
 });
+
+test('토벌대: 보스가 나오면 피버 게이지 +25', () => {
+  const { room, me } = playingRoom();
+  me.picks = [{ id: 'vanguard', tier: 0 }, { id: 'crownMark', tier: 0 }, { id: 'hunter', tier: 0 }];
+  me.fever = 0;
+  (room as unknown as { spawnBosses(now: number): void }).spawnBosses(1000);
+  assert.equal(me.fever, RULES.combos.raidFever);
+  room.destroy();
+});
