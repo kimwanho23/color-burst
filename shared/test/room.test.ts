@@ -122,6 +122,30 @@ test('한번 더! 이벤트: 이번 능력 선택에서 모두의 다시 뽑기�
   for (const o of r.offers.values()) assert.equal(o.rerolls, 2);
 });
 
+test('주사위: 라운드 끝(능력 선택 전)에 굴려 다음 라운드 시작에 적용하고, 마지막 라운드가 끝날 때는 굴리지 않는다', (t) => {
+  const room = new Room(fakeIo(), 'TEST', () => {});
+  t.after(() => room.destroy());
+  const a = room.join('s1', 'k1', 'A') as { id: string };
+  room.join('s2', 'k2', 'B');
+  room.setRules(a.id, { rules: { mode: 'arcade', randomEvents: false } });
+  assert.equal(startReady(room, a.id), null);
+  const me = room.players.find((p) => p.id === a.id)!;
+  me.picks = [{ id: 'dice', tier: 0 }];
+  t.mock.method(Math, 'random', () => 0.99); // 눈 6
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  sent.length = 0;
+  const r = room as unknown as { endRound(): void; round: number };
+  r.endRound();
+  t.mock.timers.tick(RULES.roundEndMs);
+  assert.equal(me.diceFace, 6);
+  assert.ok(sent.includes('arcade:effects'));
+  // 마지막 라운드가 끝날 때: 굴리지 않는다
+  me.diceFace = 0;
+  r.round = 5;
+  (room as unknown as { applyRoundCurses(final?: boolean): void }).applyRoundCurses(true);
+  assert.equal(me.diceFace, 0);
+});
+
 test('발사 보호 구역: 필드 클리어·장판도 가운데 원은 못 잡는다', (t) => {
   const { room, me, circles } = playingRoom();
   const now = Date.now();

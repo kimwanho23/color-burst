@@ -1,7 +1,7 @@
 import type { CoopHitBy } from './protocol.ts';
 import type { CoopFx, CoopItemId } from './coopItems.ts';
 import type { CoopSpecialId } from './coopSpecial.ts';
-import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, GROWTH, LEGEND, SPECIAL, SYN, SOLO_SYNERGY, UNIQUE, UNIQUE_STACK_MAX, activePicks, modsOf, evolvedCap, evolvedOf, synergiesFor, combosFor, soloSynergyActive, hasLegend, legendsFor, bossDamage, comboPeriod, jackpotMult, modsFor, type AutoId, type Mods, type Pick, type RoundEffect, type StackId, type UniqueStackId } from './arcade.ts';
+import { ABILITY, ARCADE, AUG, AUTO_IDS, COMBO, CURSE, DICE, diceFaceText, GROWTH, LEGEND, SPECIAL, SYN, SOLO_SYNERGY, UNIQUE, UNIQUE_STACK_MAX, activePicks, modsOf, evolvedCap, evolvedOf, synergiesFor, combosFor, soloSynergyActive, hasLegend, legendsFor, bossDamage, comboPeriod, jackpotMult, modsFor, type AutoId, type Mods, type Pick, type RoundEffect, type StackId, type UniqueStackId } from './arcade.ts';
 
 /**
  * 게임 규칙. 프레임워크와 무관한 순수 TypeScript.
@@ -812,6 +812,12 @@ export interface PlayerState {
   bombDefused: boolean;
   bombDeadline: number;
   prevRoundGain: number;
+  /** 주사위: 굴려서 나온 눈(다음 라운드 시작 때 적용하고 0으로), 이번 라운드의 눈 효과 */
+  diceFace: number;
+  diceScorePct: number;
+  diceBossHit: number;
+  diceItems: number;
+  diceItemAt: number;
   /** 도박사: 이번 라운드에 건 점수 (라운드 시작 때 기록, 정산 때 지움) */
   gambleStake: number;
   /** 악마의 계약: 다음 라운드 끝에 점수 절반 */
@@ -912,7 +918,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number, sou
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'frostAt', 'itemLoverAt', 'bombDeadline'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'frostAt', 'itemLoverAt', 'bombDeadline', 'diceItemAt'] as const) if (p[k] > since) p[k] += delta;
   // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
   if (p.roundBegin + headStartMsOf({ ...p, silenced: false }) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.autoBuffs ?? {}) as BuffId[]) if (p.autoBuffs[k]! > since) p.autoBuffs[k]! += delta;
@@ -1018,7 +1024,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     id, name, color, bot, connected: true, score: 0, combo: 0, comboPaidTo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, silenced: false, silencedUntil: 0, silenceCastAt: 0, mirror: null, harvestCount: 0, chestCount: 0, shieldLeft: 0, generatorGuard: false, generatorScore: false, counterReady: false, magneticFieldClicks: 0,
     firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
-    roundStart: 0, roundMaxCombo: 0, bombDefused: false, bombDeadline: 0, prevRoundGain: 0, gambleStake: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
+    roundStart: 0, roundMaxCombo: 0, bombDefused: false, bombDeadline: 0, prevRoundGain: 0, diceFace: 0, diceScorePct: 0, diceBossHit: 0, diceItems: 0, diceItemAt: 0, gambleStake: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, rapidLongNext: false, itemLoverAt: 0,
     pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
@@ -1027,7 +1033,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
 
 /** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.bombDefused = false; p.bombDeadline = 0; p.prevRoundGain = 0; p.gambleStake = 0; p.legendNext = false; p.comeback = false; p.rankReach = 0;
+  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.bombDefused = false; p.bombDeadline = 0; p.prevRoundGain = 0; p.gambleStake = 0; p.diceFace = p.diceScorePct = p.diceBossHit = p.diceItems = p.diceItemAt = 0; p.legendNext = false; p.comeback = false; p.rankReach = 0;
   p.pausesLeft = RULES.pause.perGame;
   p.stacks = {}; p.autoAt = {}; p.harvestCount = 0; p.chestCount = 0;
   p.silenced = false; p.silencedUntil = 0; p.silenceCastAt = 0; p.mirror = null;
@@ -1070,9 +1076,24 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.bombDeadline = m.timeBomb ? startAt + (p.roundEnd - startAt) * CURSE.timeBomb.deadlineFrac : 0;
   // 표적 자처: 라운드 내내 표적
   if (m.selfTarget) p.markedUntil = endAt || startAt + G.roundMs;
+  // 주사위: 지난 라운드 끝에 굴린 눈의 효과를 이번 라운드에 적용한다
+  const dv = m.dice;
+  let diceFever = 0;
+  p.diceScorePct = p.diceBossHit = p.diceItems = p.diceItemAt = 0;
+  if (dv > 0 && p.diceFace > 0) {
+    const f = p.diceFace;
+    if (f === 1 || (f === 5 && !G.items)) p.diceScorePct = DICE.score1 * dv; // 아이템이 꺼진 방은 5도 1과 같은 효과
+    else if (f === 2) diceFever = Math.min(100, DICE.fever2 * dv);
+    else if (f === 3) p.diceBossHit = DICE.boss3 * dv;
+    else if (f === 4) p.shieldLeft += DICE.shield4 * dv;
+    else if (f === 5) { p.diceItems = Math.ceil(dv / DICE.items5); p.diceItemAt = startAt + RULES.itemLoverDelayMs; }
+    else p.diceScorePct = DICE.score6 * dv;
+  }
+  p.diceFace = 0;
   // 예열 100 또는 집중 포화: 라운드를 피버로 시작
-  if (m.preheat >= 100 || m.focusFire) startFever(p, startAt, G, m);
-  else p.fever = m.preheat;
+  const gauge = Math.max(m.preheat, diceFever);
+  if (gauge >= 100 || m.focusFire) startFever(p, startAt, G, m);
+  else p.fever = gauge;
   // 자동 시전: 가진 것만, 라운드 시작부터 한 간격 뒤에 첫 발동
   p.autoAt = {};
   for (const id of AUTO_IDS) if (m[id] > 0) p.autoAt[id] = startAt + autoEveryMs(p, id);
@@ -1117,7 +1138,7 @@ export function extraMult(p: PlayerState, now: number, players: PlayerState[]) {
   // 출발 신호: 라운드 처음 N초 ×1.3 (레전드 ×1.5, 최소 10초)
   const hs = headStartMsOf(p);
   const start = hs > 0 && now < p.roundBegin + hs ? (hasLegend(p, 'headStart') ? LEGEND.headStartMult : AUG.headStartMult) : 1;
-  return comebackMult(p, players) * flame * start * growthScoreMult(p);
+  return comebackMult(p, players) * flame * start * growthScoreMult(p) * (1 + p.diceScorePct / 100);
 }
 
 export function growthScoreMult(p: PlayerState) {
@@ -1248,6 +1269,13 @@ export function applyRankReach(players: PlayerState[], G: GameRules) {
 export function vampireDrain(loserScore: number): number {
   const v = CURSE.vampire;
   return Math.min(v.drainMax, Math.max(v.drainMin, Math.round((loserScore * v.drainPct) / 100)));
+}
+
+/** 라운드가 끝날 때 주사위 증강을 굴린다. 나온 눈의 효과는 다음 라운드 시작에 적용된다 (마지막 라운드에는 부르지 않는다) */
+export function endRoundDice(p: PlayerState, rand = Math.random): RoundEffect[] {
+  if (modsFor(p).dice <= 0) { p.diceFace = 0; return []; }
+  p.diceFace = 1 + Math.min(5, Math.floor(rand() * 6));
+  return [{ playerId: p.id, id: 'dice', delta: p.diceFace, text: diceFaceText(p.diceFace, modsFor(p).dice) }];
 }
 
 /** 라운드가 끝날 때 저주 효과 적용 (시한폭탄 → 악마의 계약 → 도박사 순) */
@@ -1619,7 +1647,7 @@ export function bossHitInfo(p: PlayerState, rand = Math.random) {
   if (hunter) dmg += COMBO.bossDmgAdd;
   // 보스 헌터 조합: 타격 점수 ×1.5, 막타 점수 ×2
   return {
-    damage: dmg * feast, hit: (RULES.boss.hit + m.hammer) * (hunter ? COMBO.bossHitMult : 1) * (synergiesFor(p).has('보스') ? SYN.bossHit : 1),
+    damage: dmg * feast, hit: (RULES.boss.hit + m.hammer + p.diceBossHit) * (hunter ? COMBO.bossHitMult : 1) * (synergiesFor(p).has('보스') ? SYN.bossHit : 1),
     kill: (RULES.boss.kill + m.hunter) * feast * (hunter ? COMBO.bossKillMult : 1), boost: scoreBoostOf(m),
   };
 }

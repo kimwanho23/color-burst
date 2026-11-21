@@ -137,6 +137,9 @@ export function buildSummary(picks: readonly Pick[], newest?: Pick) {
 export function effectItems(effects: readonly RoundEffect[], players: readonly PlayerState[], meId: string | undefined) {
   return effects.map((e) => {
     const who = players.find((p) => p.id === e.playerId);
+    if (e.id === 'dice') {
+      return `<li class="plus">${abilityIcon('dice', 15)}<span>${esc(who?.id === meId ? '나' : who?.name ?? '')} · 주사위 · ${esc(e.text ?? '')}</span><b>눈 ${e.delta}</b></li>`;
+    }
     const [ic, name] = e.id === 'tax' ? [icon(UI.tax, 15), '세금 수령'] : [abilityIcon(e.id, 15), ABILITY[e.id].name];
     return `<li class="${e.delta >= 0 ? 'plus' : 'minus'}">${ic}<span>${esc(who?.id === meId ? '나' : who?.name ?? '')} · ${name}</span><b>${e.delta >= 0 ? '+' : ''}${e.delta}</b></li>`;
   }).join('');

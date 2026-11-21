@@ -75,6 +75,22 @@ export const SPECIAL = {
   chainChance: 0.15, chainR: 120, feastMult: 2, flameMs: 15_000, flameMult: 2, hunterDur: 2, chaserAdd: 1,
 } as const;
 
+/** 주사위 증강: 눈마다 다음 라운드 동안의 효과. 수치는 등급 배율(증강 값, 노말 ×1 ~ 레전드 ×5)에 곱한다 */
+export const DICE = {
+  score1: 3, fever2: 20, boss3: 1, shield4: 1, items5: 2, score6: 8,
+} as const;
+/** 눈 하나의 효과 문장 (v: 증강 수치 합계) */
+export function diceFaceText(face: number, v: number): string {
+  switch (face) {
+    case 1: return `모든 점수 +${DICE.score1 * v}%`;
+    case 2: return `피버 게이지 ${Math.min(100, DICE.fever2 * v)}%로 시작`;
+    case 3: return `보스 타격 점수 +${DICE.boss3 * v}`;
+    case 4: return `견제 보호막 ${DICE.shield4 * v}회`;
+    case 5: return `시작 후 아이템 ${Math.ceil(v / DICE.items5)}개 발동`;
+    default: return `모든 점수 +${DICE.score6 * v}%`;
+  }
+}
+
 /** 저주 카드 수치 */
 export const CURSE = {
   glassCannon: { boostPct: 50, missPenalty: 5 },
@@ -107,7 +123,7 @@ export type AbilityId =
   | 'insurance' | 'shield'
   | 'thickSkin' | 'plunder' | 'counterPro'
   | 'precise' | 'treasure' | 'itemLover' | 'firstFlame' | 'finisher' | 'spacing' | 'riposte' | 'regularCustomer' | UniqueId
-  | 'jackpot' | 'wideHand' | 'magnet' | 'autoMagnet' | 'reflect' | 'edge'
+  | 'dice' | 'jackpot' | 'wideHand' | 'magnet' | 'autoMagnet' | 'reflect' | 'edge'
   | 'missSave' | 'rebound' | 'rapid' | 'laserProof' | 'centerKing' | 'ignite' | 'vanguard' | 'taunt'
   | StackId | AutoId
   | CurseId | SpecialId;
@@ -162,6 +178,7 @@ export const ABILITIES: readonly AbilityDef[] = [
   { id: 'rainbowHunt', name: '무지개 사냥', cat: '점수', values: [3, 6, 9, 18], desc: (v) => `무지개 +${v}점` },
   { id: 'comboArtist', name: '콤보 장인', cat: '점수', values: [1, 2, 3, 6], cap: 7, desc: (v) => `콤보 보너스가 ${comboPeriod(v)}콤보마다` },
   { id: 'headStart', name: '출발 신호', cat: '점수', values: [5, 8, 10, 15], cap: 20, desc: (v) => `라운드 처음 ${v}초 동안 점수 ×${AUG.headStartMult}` },
+  { id: 'dice', name: '주사위', cat: '보조', values: [1, 2, 3, 5], cap: 15, desc: (v) => `라운드가 끝날 때 주사위를 굴려 다음 라운드 동안 효과 (1 점수 +${DICE.score1 * v}% · 2 피버 시작 ${Math.min(100, DICE.fever2 * v)}% · 3 보스 타격 +${DICE.boss3 * v} · 4 보호막 ${DICE.shield4 * v}회 · 5 아이템 ${Math.ceil(v / DICE.items5)}개 · 6 점수 +${DICE.score6 * v}%)` },
   { id: 'jackpot', name: '잭팟', cat: '점수', values: [5, 10, 15, 30], cap: 35, desc: (v) => `원을 잡을 때 ${v}% 확률로 잭팟 (×1.5~×3)` },
   { id: 'rapid', name: '속사', cat: '점수', values: [1, 2, 3, 6], cap: 12, desc: (v) => `${AUG.rapidMs / 1000}초 안에 연달아 잡으면 두 번째부터 +${v}점` },
 
@@ -637,4 +654,5 @@ export function rollOptions(pickIndex: number, lastPlace: boolean, rand = Math.r
 
 /** 라운드가 끝날 때 적용되는 저주·특별 카드 결과 */
 /** 'tax': 랜덤 이벤트 세금을 받은 사람 */
-export interface RoundEffect { playerId: string; id: CurseId | 'flip' | 'tax'; delta: number }
+/** 'dice': 주사위 증강을 굴린 결과 (delta가 나온 눈, text는 그 눈의 효과 문장) */
+export interface RoundEffect { playerId: string; id: CurseId | 'flip' | 'tax' | 'dice'; delta: number; text?: string }

@@ -3,7 +3,7 @@ import { BEATS, enterStep as enterTutorialStep, freeDone, freeKinds as tutorialK
 import { randomUUID } from 'node:crypto';
 import {
   ARCADE, ASSIST_ABILITIES, AUTO_IDS, GROWTH, autoEveryMs, AUG, COMBO, LEGEND, SPECIAL, addFever, combosFor, goldGain, clearCombo, preventComboBreak, releaseSilence, onFeverStarted, pickMirror, hasLegendPick, rollItemTier, treasureEvery, hazardStun, halveFever, type EventId, applyRankReach, hasLegend, settleFever, sweepComeback, endRoundSpecials, hyenaGains, isSpecial, judgeComeback, COLORS, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, rollOptions,
-  applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, isCurse, bossTimes, startRound, bossState, circlePos, isFever, isMarked, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
+  applyPick, addSrc, awardTitles, strikeBoss, endRoundCurses, endRoundDice, isCurse, bossTimes, startRound, bossState, circlePos, isFever, isMarked, makeBoss, sanitizeRules, toGameRules, isHit, isOut, makeCircle, newPlayer, ranking, resetForRound, resolveClaim, resolveMiss, shiftTimes, spawnInterval,
   applyItem, itemDurationMult, holdCircles, isGuarded, itemMult, ownsKind, teamRanking, TUTORIAL_RULES, type TutorialStep, type TutorialBeatInfo, isLowest, pickOut, survivalCuts, survivalRanking, survivalRoundMs, MODE_KEYS, type CircleKind, rollBossCount, rollBossType, magnetOf, modsFor, reachOf, rollItem,
   RANDOM_EVENT, applyEvent, payTax, rollEvent, rollTheme, hitWithin, type EventResult, type ThemeId,
   FIELD, zoneOf, goldTimes, makeGold, blockedAt, inRingDanger, patternActive, rollPattern, rollPatternAt, shiftPattern, spikeHit, type MapPattern, holdLasers, isStunned, nextLaserIn, pickMagnetTargets, rollVolley, volleyHits, type LaserVolley, type Point, type Pull,
@@ -1346,10 +1346,11 @@ export class Room {
   }
 
   /** 라운드 종료 저주 효과를 적용하고 모두에게 알린다 */
-  private applyRoundCurses() {
+  private applyRoundCurses(final = false) {
     if (!this.G.arcade) return;
     const live = this.players.filter((p) => !p.outAt);
-    const effects = [...live.flatMap((p) => endRoundCurses(p)), ...endRoundSpecials(live)];
+    // 주사위는 다음 라운드에 쓰이므로 마지막 라운드가 끝날 때는 굴리지 않는다
+    const effects = [...live.flatMap((p) => endRoundCurses(p)), ...endRoundSpecials(live), ...(final ? [] : live.flatMap((p) => endRoundDice(p)))];
     // 세금: 이번 라운드에 가장 많이 번 사람이 받는다 (동점이면 나눔)
     if (this.taxPot > 0) {
       effects.push(...payTax(live, this.taxPot));
@@ -1746,6 +1747,13 @@ export class Room {
         p.itemLoverAt = 0;
         const { x, y } = this.cursors.get(p.id) ?? { x: FIELD.w / 2, y: FIELD.h / 2 };
         this.activateItem(p, rollItemTier(), x, y, now, null);
+        changed = true;
+      }
+      // 주사위 5: 라운드 시작 후 한 번, 눈 효과 개수만큼 아이템 발동
+      if (p.diceItemAt && now >= p.diceItemAt) {
+        const { x, y } = this.cursors.get(p.id) ?? { x: FIELD.w / 2, y: FIELD.h / 2 };
+        for (let i = 0; i < p.diceItems; i++) this.activateItem(p, rollItemTier(), x, y, now, null);
+        p.diceItemAt = 0; p.diceItems = 0;
         changed = true;
       }
       for (const id of AUTO_IDS) {
@@ -2197,7 +2205,7 @@ export class Room {
     this.clearPattern();
     this.stop();
     this.clearPickTimers();
-    this.applyRoundCurses();
+    this.applyRoundCurses(true);
     this.offers.clear();
     this.roundPhase = 'play';
     for (const p of this.players) (this.history[p.id] ??= []).push(p.score);
