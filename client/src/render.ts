@@ -1529,3 +1529,13 @@ export function shapeSVG(color: Exclude<CircleKind, 'item' | 'gold' | 'threat' |
   }[shape];
   return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${h - 1}" fill="${fill}"/>${inner}</svg>`;
 }
+
+/** 특수 원 견본 (점수표·도감용 작은 SVG). 글자 없이 도형만: 폭탄=십자 팔, 얼음=눈송이 결, 분열=갈라진 파편 */
+export function specialSVG(kind: SpecialKind, size = 22) {
+  const s = size, h = s / 2, r = h - 1;
+  const base = (fill: string, inner: string) => `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true"><circle cx="${h}" cy="${h}" r="${r}" fill="${fill}"/>${inner}</svg>`;
+  const w = 'fill="none" stroke="#fff" stroke-opacity=".9" stroke-linecap="round"';
+  if (kind === 'bomb') return base('#3a2f3f', `<path d="M${h} ${s * .2}V${s * .8}M${s * .2} ${h}H${s * .8}" ${w} stroke-width="${s * .12}"/><circle cx="${h}" cy="${h}" r="${s * .1}" fill="#ffb347"/>`);
+  if (kind === 'ice') return base('#3c7ea8', `<path d="M${h} ${s * .2}V${s * .8}M${s * .2} ${h}H${s * .8}M${s * .3} ${s * .3}L${s * .7} ${s * .7}M${s * .7} ${s * .3}L${s * .3} ${s * .7}" ${w} stroke-width="${s * .07}"/>`);
+  return base('#7a5ca8', `<path d="M${s * .5} ${s * .5}L${s * .22} ${s * .3}M${s * .5} ${s * .5}L${s * .78} ${s * .3}M${s * .5} ${s * .5}L${s * .3} ${s * .8}M${s * .5} ${s * .5}L${s * .7} ${s * .8}" ${w} stroke-width="${s * .09}"/>`);
+}

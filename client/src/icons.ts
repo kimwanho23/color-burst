@@ -4,7 +4,7 @@ import {
   UtensilsCrossed, Citrus, Rainbow, Link2, Flag, Thermometer, Hourglass, BatteryCharging, Flame, Sunset,
   Hammer, Crosshair, Pickaxe, Umbrella, Wind, Shield, EyeOff, HandCoins, Swords,
   GlassWater, Dices, Dice6, Axe, MoveUp, Droplet, Bomb, Target, Skull,
-  Sparkles, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
+  Sparkles, Waves, Crown, Pause, Settings, RefreshCw, Gamepad2, Layers, Gauge, PartyPopper, Zap, Coffee,
   Wifi, Bot, TrendingUp, TrendingDown, Trophy, Coins, Hand, Magnet, LifeBuoy,
   Lock, ShieldCheck, CircleOff, ChevronsUp, Paintbrush, CloudRain, CircleDot, Timer, Undo2,
   Landmark, Ticket, ArrowLeftRight, Repeat, Gift, Palette, Snail, Tornado, Maximize2, CircleDollarSign,
@@ -74,7 +74,7 @@ export const UI = {
   basic: Gauge, party: PartyPopper, hardcore: Zap, chill: Coffee, chaos: Tornado, ping: Wifi, bot: Bot,
   up: TrendingUp, down: TrendingDown, trophy: Trophy, fever: Flame, event: Dices, tax: Landmark,
   codex: BookOpen, leave: LogOut, close: X, special: Gem, combo: Link, guide: CircleHelp,
-  obstacle: Construction, precision: Crosshair, custom: SlidersHorizontal,
+  obstacle: Construction, precision: Crosshair, custom: SlidersHorizontal, sparkle: Sparkles, waves: Waves,
   prev: ChevronLeft, next: ChevronRight, timer: Timer, solo: User, team: Users, survival: HeartPulse, coop: HandHelping, expert: Skull, heart: Heart,
 } as const;
 

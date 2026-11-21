@@ -1,7 +1,9 @@
 /** 대기실의 방 규칙 화면: 프리셋 버튼 + 고급 설정 (점수표는 도감 '규칙' 탭) */
-import { ARCADE, BOMB_DESC, ICE_DESC, SPLIT_DESC, COOP_LEVELS, MODE_KEYS, PRESETS, RULES, RULE_CHOICES, matchPreset, type CoopLevel, type PresetId, type RoomRules } from '@color-burst/shared';
-import { shapeSVG } from './render.ts';
+import { ARCADE, COOP_LEVELS, MODE_KEYS, PRESETS, RULES, RULE_CHOICES, matchPreset, type CoopLevel, type PresetId, type RoomRules } from '@color-burst/shared';
+import type { IconNode } from 'lucide';
 import { UI, icon } from './icons.ts';
+import { baselineOf, rulePanel } from './lobbyUI.ts';
+import { RULE_ICON, rulePanelBody, rulePanelHead } from './rulePanelUI.ts';
 
 type NumKey = keyof typeof RULE_CHOICES;
 type BoolKey = 'stealPenalty' | 'comeback' | 'boss' | 'missPenalty' | 'items' | 'specialCircles' | 'waves' | 'laser' | 'sabotage';
@@ -27,19 +29,42 @@ const ARCADE_NUM_FIELDS: { key: NumKey; label: string; fmt: (v: number) => strin
   { key: 'themePct', label: '라운드 테마', fmt: pct3 },
   { key: 'eventPct', label: '랜덤 이벤트', fmt: pct3 },
 ];
-const BOOL_FIELDS: { key: BoolKey; label: string }[] = [
-  { key: 'boss', label: '보스 원 등장' },
-  { key: 'missPenalty', label: '빈 곳 클릭 페널티' },
-  { key: 'stealPenalty', label: '평상시 견제 페널티' },
-  { key: 'comeback', label: '꼴찌 보정 (피버 빨리 참)' },
-  { key: 'items', label: '아이템 원' },
-  { key: 'specialCircles', label: '특수 원' },
-  { key: 'waves', label: '발사 패턴 (웨이브)' },
-  { key: 'laser', label: '레이저 (맞으면 스턴)' },
-  { key: 'sabotage', label: '방해 아이템 (감도·반대·시야·저격)' },
+/** 세부 설정 묶음: 대기실 규칙 패널과 같은 아이콘 어휘. num은 선택지가 4개 이하면 세그먼트 버튼, 5개 이상이면 선택 상자 */
+type GroupField =
+  | { t: 'num'; key: NumKey; arcadeOnly?: true; hideInArcade?: true; when?: (r: RoomRules) => boolean }
+  | { t: 'bool'; key: BoolKey; label: string; icon: IconNode; when?: (r: RoomRules) => boolean };
+const GROUPS: { id: string; label: string; icon: IconNode; fields: GroupField[] }[] = [
+  { id: 'flow', label: '판 진행', icon: RULE_ICON.timer, fields: [
+    { t: 'num', key: 'roundSec', hideInArcade: true }, { t: 'num', key: 'speed' }, { t: 'num', key: 'density' }, { t: 'num', key: 'circleScale' },
+  ] },
+  { id: 'fever', label: '피버', icon: RULE_ICON.fever, fields: [
+    { t: 'num', key: 'feverMult' }, { t: 'num', key: 'feverSec' }, { t: 'num', key: 'feverGain' },
+  ] },
+  { id: 'penalty', label: '견제·감점', icon: RULE_ICON.mark, fields: [
+    { t: 'bool', key: 'stealPenalty', label: '견제 페널티', icon: RULE_ICON.mark },
+    { t: 'num', key: 'markSec', when: (r) => r.stealPenalty },
+    { t: 'bool', key: 'missPenalty', label: '빈 곳 감점', icon: RULE_ICON.miss },
+    { t: 'bool', key: 'comeback', label: '꼴찌 보정', icon: RULE_ICON.up },
+  ] },
+  { id: 'appear', label: '나오는 요소', icon: RULE_ICON.boss, fields: [
+    { t: 'bool', key: 'boss', label: '보스', icon: RULE_ICON.boss },
+    { t: 'bool', key: 'items', label: '아이템', icon: RULE_ICON.item },
+    { t: 'bool', key: 'specialCircles', label: '특수 원', icon: RULE_ICON.special },
+    { t: 'bool', key: 'waves', label: '웨이브', icon: UI.waves },
+    { t: 'num', key: 'rainbowPct' },
+  ] },
+  { id: 'hazard', label: '위험 요소', icon: RULE_ICON.laser, fields: [
+    { t: 'bool', key: 'laser', label: '레이저', icon: RULE_ICON.laser },
+    { t: 'num', key: 'laserWidth', when: (r) => r.laser }, { t: 'num', key: 'laserFreq', when: (r) => r.laser },
+    { t: 'num', key: 'mapPct' },
+    { t: 'bool', key: 'sabotage', label: '방해 아이템', icon: UI.chaos },
+  ] },
+  { id: 'arcade', label: '아케이드', icon: UI.arcade, fields: [
+    { t: 'num', key: 'themePct', arcadeOnly: true }, { t: 'num', key: 'eventPct', arcadeOnly: true },
+  ] },
 ];
-/** 협력전에서 쓰지 않는 설정 (고급 설정에서 숨김) */
-const COOP_OFF = new Set<string>(['roundSec', 'markSec', 'mapPct', 'laserWidth', 'laserFreq', 'boss', 'stealPenalty', 'comeback', 'laser', 'sabotage', 'specialCircles']);
+const ALL_NUM = [...NUM_FIELDS, ...ARCADE_NUM_FIELDS];
+
 const COOP_LEVEL_LABEL: Record<CoopLevel, [string, string, keyof typeof UI]> = {
   easy: ['이지', '레이저가 얇고 공격이 느려요', 'chill'],
   normal: ['노말', '보통 세기의 공격', 'basic'],
@@ -97,6 +122,30 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
       <select id="rule-arcadeRoundSec" data-k="arcadeRoundSec" ${dis}>
         ${RULE_CHOICES.arcadeRoundSec.map((v) => `<option value="${v}" ${rules.arcadeRoundSec === v ? 'selected' : ''}>${v}초</option>`).join('')}
       </select></label>` : ''}`;
+  // 세부 설정 묶음: 아이콘 제목 + 세그먼트 버튼(선택지 4개 이하) / 선택 상자(5개 이상) / 아이콘 토글 타일. 프리셋과 다른 값에는 노란 점
+  const base = baselineOf(rules);
+  const numField = (key: NumKey) => {
+    const f = ALL_NUM.find((x) => x.key === key)!;
+    const choices = RULE_CHOICES[key] as readonly number[];
+    const chg = rules[key] !== base[key];
+    const control = choices.length <= 4
+      ? `<div class="seg segs" role="group" aria-label="${f.label}">${choices.map((v) =>
+        `<button type="button" data-k="${key}" data-v="${v}" aria-pressed="${rules[key] === v}" ${dis}>${f.fmt(v)}</button>`).join('')}</div>`
+      : `<select id="rule-${key}" data-k="${key}" aria-label="${f.label}" ${dis}>${choices.map((v) =>
+        `<option value="${v}" ${rules[key] === v ? 'selected' : ''}>${f.fmt(v)}</option>`).join('')}</select>`;
+    return `<div class="adv-field${chg ? ' rchg' : ''}"><span class="af-label">${f.label}</span>${control}</div>`;
+  };
+  const boolField = (key: BoolKey, label: string, ic: IconNode) => {
+    const on = !!rules[key];
+    return `<button type="button" class="rtog${on ? '' : ' off'}${rules[key] !== base[key] ? ' rchg' : ''}" data-b="${key}" aria-pressed="${on}" ${dis}>${icon(ic, 20)}<span>${label}</span></button>`;
+  };
+  const groupsHTML = GROUPS.map((g) => {
+    const items = g.fields.filter((fl) => {
+      if (fl.t === 'num' && ((fl.arcadeOnly && !arcade) || (fl.hideInArcade && arcade))) return false;
+      return !fl.when || fl.when(rules);
+    }).map((fl) => (fl.t === 'num' ? numField(fl.key) : boolField(fl.key, fl.label, fl.icon))).join('');
+    return items ? `<section class="adv-group"><h4>${icon(g.icon, 18)}<span>${g.label}</span></h4><div class="adv-items">${items}</div></section>` : '';
+  }).join('');
   const rest = `
     <div class="lbl">방 규칙${by}</div>
     <div class="presets">
@@ -105,23 +154,14 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
       <button type="button" class="preset custom" aria-pressed="${!current}" title="고급 설정에서 직접 정한 규칙" ${dis}>${icon(UI.custom, 20, 'pi')}<b>커스텀</b></button>
     </div>
     <details class="adv">
-      <summary>고급 설정</summary>
-      <div class="adv-grid">
-        ${[...NUM_FIELDS.filter((f) => !(arcade && f.key === 'roundSec') && !(coop && COOP_OFF.has(f.key))), ...(arcade ? ARCADE_NUM_FIELDS : [])].map((f) => `
-          <label class="adv-row" for="rule-${f.key}"><span>${f.label}</span>
-            <select id="rule-${f.key}" data-k="${f.key}" ${dis}>
-              ${RULE_CHOICES[f.key].map((v) => `<option value="${v}" ${rules[f.key] === v ? 'selected' : ''}>${f.fmt(v)}</option>`).join('')}
-            </select>
-          </label>`).join('')}
-        ${BOOL_FIELDS.filter((f) => !(coop && COOP_OFF.has(f.key))).map((f) => `
-          <label class="adv-row check" for="rule-${f.key}"><span>${f.label}</span>
-            <input type="checkbox" id="rule-${f.key}" data-b="${f.key}" ${rules[f.key] ? 'checked' : ''} ${dis}>
-          </label>`).join('')}
-      </div>
+      <summary>세부 설정</summary>
+      ${groupsHTML}
     </details>`;
 
   // 협력전은 난이도만 고른다 (방 규칙 프리셋·고급 설정·라운드 시간은 그리지 않음)
-  el.innerHTML = coop ? head : head + rest;
+  const panel = rulePanel(rules);
+  const preview = `<div class="rp-preview" aria-label="지금 규칙 미리보기"><div class="rp-mode">${rulePanelHead(rules, panel)}</div>${rulePanelBody(panel)}</div>`;
+  el.innerHTML = preview + (coop ? head : head + rest);
   if (!coop) el.querySelector<HTMLDetailsElement>('details.adv')!.open = advOpen; // 다시 그려도 열려 있던 상태 유지
   // 게임 모드: 협력전은 클래식 위에서 도는 별도 모드 (서버가 아케이드·팀전·서바이벌을 끈다)
   el.querySelectorAll<HTMLButtonElement>('.mode[data-m]').forEach((b) => {
@@ -143,27 +183,6 @@ export function renderRules(el: HTMLElement, rules: RoomRules, editable: boolean
     if (saved && current) on.change(saved);
   };
   el.querySelectorAll<HTMLSelectElement>('select[data-k]').forEach((s) => { s.onchange = () => on.change({ [s.dataset.k!]: Number(s.value) }); });
-  el.querySelectorAll<HTMLInputElement>('input[data-b]').forEach((c) => { c.onchange = () => on.change({ [c.dataset.b!]: c.checked }); });
-}
-
-export function scoreTable(r: RoomRules) {
-  const m = r.feverMult, P = RULES.points;
-  const steal = r.stealPenalty
-    ? `+${P.stealCalm}, 내 콤보 끊김${r.markSec ? `, ${r.markSec}초 표적` : ''}`
-    : `+${P.stealCalm}, 페널티 없음`;
-  return `<table>
-    <tr><th>대상</th><th>평상시</th><th>피버 중 (×${m}, ${r.feverSec}초)</th></tr>
-    <tr><td>${shapeSVG(0, 16)} 내 색</td><td>+${P.own}</td><td>+${P.own * m}</td></tr>
-    <tr><td>${shapeSVG('y', 16)} 노란색</td><td>+${P.yellow}</td><td>내 색 취급 +${P.own * m}</td></tr>
-    ${r.rainbowPct ? `<tr><td>${shapeSVG('rainbow', 16)} 무지개</td><td>+${P.rainbow}</td><td>+${P.rainbow * m}</td></tr>` : ''}
-    <tr><td>남의 색 (견제)</td><td>${steal}</td><td>+${P.stealCalm * m}, 페널티 없음</td></tr>
-    ${r.stealPenalty && r.markSec ? `<tr><td>표적의 색 (반격)</td><td>+${P.counter}</td><td>+${P.counter * m}</td></tr>` : ''}
-    ${r.boss ? `<tr><td>${shapeSVG('boss', 16)} 보스 원</td><td><ul class="tlist">
-      <li>때릴 때마다 <b>+${RULES.boss.hit}</b></li><li>막타 <b>+${RULES.boss.kill}</b></li><li>가장 많이 때림 <b>+${RULES.boss.mvp}</b></li>
-      <li>독식 <b>+${RULES.boss.solo.points}</b><small>체력 ${RULES.boss.solo.pct}% 이상 깎으면 · 막타까지 치면 막타 ×${RULES.boss.solo.killMult}</small></li></ul></td>
-      <td><ul class="tlist"><li><b>×${m}</b></li><li><small>콤보·피버 게이지도 참</small></li></ul></td></tr>` : ''}
-    <tr><td>빈 공간</td>${r.missPenalty ? '<td>콤보 끊김, 피버 감소</td><td>콤보 끊김</td>' : '<td>페널티 없음</td><td>페널티 없음</td>'}</tr>
-    ${r.items ? '<tr><td>? 아이템 원</td><td colspan="2">잡으면 무작위 아이템이 바로 발동 (점수 없음)</td></tr>' : ''}
-    ${r.specialCircles && !r.coop ? `<tr><td>💣 폭탄 원</td><td colspan="2">${BOMB_DESC}</td></tr><tr><td>🧊 얼음 원</td><td colspan="2">${ICE_DESC}</td></tr><tr><td>🪨 분열 원</td><td colspan="2">${SPLIT_DESC}</td></tr>` : ''}
-  </table>`;
+  el.querySelectorAll<HTMLButtonElement>('button[data-k][data-v]').forEach((b) => { b.onclick = () => on.change({ [b.dataset.k!]: Number(b.dataset.v) }); });
+  el.querySelectorAll<HTMLButtonElement>('button[data-b]').forEach((b) => { b.onclick = () => on.change({ [b.dataset.b!]: b.getAttribute('aria-pressed') !== 'true' }); });
 }

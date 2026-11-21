@@ -2,7 +2,7 @@
  * 대기실 그리기에 쓰는 순수 함수 (DOM 없음): 자리 4칸, 규칙 요약, 방 링크.
  * main.ts가 이 결과로 대기실을 그린다
  */
-import { ARCADE, MAX_PLAYERS, PRESETS, RULES, matchPreset, type CoopLevel, type PlayerState, type RoomRules } from '@color-burst/shared';
+import { ARCADE, DEFAULT_RULES, MAX_PLAYERS, PRESETS, RULES, matchPreset, type CoopLevel, type PlayerState, type RoomRules } from '@color-burst/shared';
 
 export type Slot =
   | { kind: 'human'; p: PlayerState; me: boolean; isHost: boolean }
@@ -46,28 +46,77 @@ export function rulesSummary(r: RoomRules): { title: string; detail: string } {
   return { title, detail: [time, `피버 ×${r.feverMult} ${r.feverSec}초`, ...on].join(' · ') };
 }
 
-export type RuleChipIcon = 'coop' | 'timer' | 'fever' | 'speed' | 'mark' | 'miss' | 'boss' | 'item' | 'laser' | 'map' | 'rainbow' | 'up';
-export interface RuleChip { icon: RuleChipIcon; text: string; off?: boolean }
+/** 규칙 아이콘 어휘: 대기실 규칙 패널과 게임 설정 창이 같은 이름을 쓴다 */
+export type RuleIconId = 'coop' | 'level' | 'heart' | 'timer' | 'fever' | 'speed' | 'mark' | 'miss' | 'boss' | 'item' | 'special' | 'laser' | 'map' | 'rainbow' | 'up';
+export type RuleTileId = 'boss' | 'item' | 'special' | 'laser' | 'map' | 'rainbow' | 'mark' | 'miss' | 'comeback';
 
-/** 대기실 규칙 칩: 판 시간·피버·속도·견제·빈 곳·요소 켜짐/꺼짐 (꺼진 것은 off로 흐리게). 협력전은 쓰지 않는 것을 뺀다 */
-export function rulesChips(r: RoomRules): RuleChip[] {
-  const time = r.mode === 'arcade' ? `${ARCADE.rounds}라운드 × ${r.arcadeRoundSec}초`
-    : r.coop ? `${RULES.coop.timeSec}초` : r.survival ? `${RULES.survival.everyMs / 1000}초마다 꼴찌 탈락` : `${r.roundSec}초`;
-  // 협력전은 난이도와 제한 시간만
-  if (r.coop) return [{ icon: 'coop', text: `협력전 · ${COOP_NAME[r.coopLevel]}` }, { icon: 'timer', text: time }, { icon: 'coop', text: `체력 ${RULES.coop.hpMax}` }];
-  const chips: RuleChip[] = [{ icon: 'timer', text: time }];
-  chips.push({ icon: 'fever', text: `피버 ×${r.feverMult} · ${r.feverSec}초` });
-  chips.push({ icon: 'speed', text: `속도 ×${r.speed} · 원 개수 ×${r.density}` });
-  chips.push({ icon: 'mark', text: r.stealPenalty ? `견제 페널티 · 표적 ${r.markSec}초` : '견제 페널티 없음' });
-  chips.push({ icon: 'miss', text: '빈 곳 감점', off: !r.missPenalty });
-  chips.push({ icon: 'boss', text: '보스', off: !r.boss });
-  chips.push({ icon: 'item', text: '아이템', off: !r.items });
-  const freq = (r.laserFreq ?? 1) < 1 ? '드물게' : (r.laserFreq ?? 1) > 1 ? '자주' : '보통';
-  chips.push(r.laser ? { icon: 'laser', text: `레이저 · ${r.chaos ? `카오스 · ${freq}` : freq}` } : { icon: 'laser', text: '레이저', off: true });
-  chips.push(r.mapPct > 0 ? { icon: 'map', text: `맵 패턴 ${r.mapPct}%` } : { icon: 'map', text: '맵 패턴', off: true });
-  chips.push(r.rainbowPct > 0 ? { icon: 'rainbow', text: `무지개 ${r.rainbowPct}%` } : { icon: 'rainbow', text: '무지개', off: true });
-  chips.push({ icon: 'up', text: '꼴찌 보정', off: !r.comeback });
-  return chips;
+/** 핵심 숫자 한 칸: 큰 글자 + 작은 설명. changed: 현재 프리셋(없으면 기본 규칙)과 값이 다름 */
+export interface RuleStat { icon: RuleIconId; big: string; small: string; changed?: boolean }
+/** 켜짐/꺼짐 타일: badge는 부가값(맵 패턴 35% 등) */
+export interface RuleTile { id: RuleTileId; icon: RuleIconId; label: string; on: boolean; badge?: string; changed?: boolean }
+export interface RulePanel {
+  title: string;
+  /** 프리셋 이름, 어느 프리셋도 아니면 '커스텀', 협력전은 빈 문자열 */
+  preset: string;
+  stats: RuleStat[];
+  groups: { label: string; tiles: RuleTile[] }[];
+}
+
+/** 값이 다른지 비교할 기준: 지금 규칙이 맞는 프리셋, 없으면 기본 규칙 */
+export const baselineOf = (r: RoomRules): RoomRules => {
+  const id = matchPreset(r);
+  return id ? PRESETS[id].rules : DEFAULT_RULES;
+};
+
+const freqText = (r: RoomRules) => ((r.laserFreq ?? 1) < 1 ? '드물게' : (r.laserFreq ?? 1) > 1 ? '자주' : '보통');
+
+/**
+ * 대기실 규칙 패널 데이터: 모드 → 핵심 숫자 3칸 → 켜진 요소 타일 두 묶음.
+ * 협력전은 난이도·제한 시간·체력 세 칸만 있고 타일이 없다. 화면은 이 데이터를 그리기만 한다 (설정 창 미리보기도 같은 함수)
+ */
+export function rulePanel(r: RoomRules): RulePanel {
+  const title = rulesSummary(r).title;
+  if (r.coop) {
+    return {
+      title, preset: '',
+      stats: [
+        { icon: 'level', big: COOP_NAME[r.coopLevel], small: '난이도' },
+        { icon: 'timer', big: `${RULES.coop.timeSec}초`, small: '제한 시간' },
+        { icon: 'heart', big: `${RULES.coop.hpMax}`, small: '체력' },
+      ],
+      groups: [],
+    };
+  }
+  const b = baselineOf(r);
+  const presetId = matchPreset(r);
+  const time = r.mode === 'arcade'
+    ? { big: `${ARCADE.rounds}라운드`, small: `라운드마다 ${r.arcadeRoundSec}초`, changed: r.arcadeRoundSec !== b.arcadeRoundSec }
+    : r.survival
+      ? { big: `${RULES.survival.everyMs / 1000}초`, small: '마다 꼴찌 탈락', changed: false }
+      : { big: `${r.roundSec}초`, small: '한 판', changed: r.roundSec !== b.roundSec };
+  const stats: RuleStat[] = [
+    { icon: 'timer', ...time },
+    { icon: 'fever', big: `×${r.feverMult}`, small: `${r.feverSec}초 지속`, changed: r.feverMult !== b.feverMult || r.feverSec !== b.feverSec || r.feverGain !== b.feverGain },
+    { icon: 'speed', big: `×${r.speed}`, small: `원 개수 ×${r.density}`, changed: r.speed !== b.speed || r.density !== b.density || r.circleScale !== b.circleScale },
+  ];
+  const appears: RuleTile[] = [
+    { id: 'boss', icon: 'boss', label: '보스', on: r.boss, changed: r.boss !== b.boss },
+    { id: 'item', icon: 'item', label: '아이템', on: r.items, changed: r.items !== b.items },
+    { id: 'special', icon: 'special', label: '특수 원', on: r.specialCircles, changed: r.specialCircles !== b.specialCircles },
+    { id: 'laser', icon: 'laser', label: '레이저', on: r.laser, badge: r.laser ? (r.chaos ? `카오스 · ${freqText(r)}` : freqText(r)) : undefined,
+      changed: r.laser !== b.laser || r.laserFreq !== b.laserFreq || r.laserWidth !== b.laserWidth || r.chaos !== b.chaos },
+    { id: 'map', icon: 'map', label: '맵 패턴', on: r.mapPct > 0, badge: r.mapPct > 0 ? `${r.mapPct}%` : undefined, changed: r.mapPct !== b.mapPct },
+    { id: 'rainbow', icon: 'rainbow', label: '무지개', on: r.rainbowPct > 0, badge: r.rainbowPct > 0 ? `${r.rainbowPct}%` : undefined, changed: r.rainbowPct !== b.rainbowPct },
+  ];
+  const penalty: RuleTile[] = [
+    { id: 'mark', icon: 'mark', label: '견제 페널티', on: r.stealPenalty, badge: r.stealPenalty && r.markSec ? `표적 ${r.markSec}초` : undefined, changed: r.stealPenalty !== b.stealPenalty || r.markSec !== b.markSec },
+    { id: 'miss', icon: 'miss', label: '빈 곳 감점', on: r.missPenalty, changed: r.missPenalty !== b.missPenalty },
+    { id: 'comeback', icon: 'up', label: '꼴찌 보정', on: r.comeback, changed: r.comeback !== b.comeback },
+  ];
+  return {
+    title, preset: presetId ? PRESETS[presetId].name : '커스텀', stats,
+    groups: [{ label: '판에 나오는 것', tiles: appears }, { label: '감점 규칙', tiles: penalty }],
+  };
 }
 
 /** 친구에게 보낼 방 링크 (열면 그 방으로) */

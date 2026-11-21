@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_RULES, RULES, RULE_CHOICES, nextLaserIn, sanitizeRules, toGameRules } from '../src/index.ts';
-import { rulesChips } from '../../client/src/lobbyUI.ts';
+import { rulePanel } from '../../client/src/lobbyUI.ts';
 
 test('레이저 빈도: 기본 보통, 고를 수 있는 값은 드물게·보통·자주, 이상한 값은 무시', () => {
   assert.equal(DEFAULT_RULES.laserFreq, 1);
@@ -26,9 +26,10 @@ test('레이저 빈도: 카오스에도 적용, 겹쳐 나오는 0.6초는 그�
   assert.equal(nextLaserIn(() => 0, true, 2), RULES.chaos.laserQuickMs);
 });
 
-test('레이저 빈도: 대기실 규칙 칩에 빈도 표시 (카오스도)', () => {
-  const texts = (r: typeof DEFAULT_RULES) => rulesChips(r).map((c) => c.text);
-  assert.ok(texts(DEFAULT_RULES).includes('레이저 · 보통'));
-  assert.ok(texts({ ...DEFAULT_RULES, laserFreq: 2 }).includes('레이저 · 자주'));
-  assert.ok(texts({ ...DEFAULT_RULES, chaos: true, laserFreq: 0.5 }).includes('레이저 · 카오스 · 드물게'));
+test('레이저 빈도: 대기실 규칙 패널의 레이저 타일 배지에 빈도 표시 (카오스도)', () => {
+  const badge = (r: typeof DEFAULT_RULES) => rulePanel(r).groups.flatMap((g) => g.tiles).find((x) => x.id === 'laser')!.badge;
+  assert.equal(badge(DEFAULT_RULES), '보통');
+  assert.equal(badge({ ...DEFAULT_RULES, laserFreq: 2 }), '자주');
+  assert.equal(badge({ ...DEFAULT_RULES, chaos: true, laserFreq: 0.5 }), '카오스 · 드물게');
+  assert.equal(badge({ ...DEFAULT_RULES, laser: false }), undefined);
 });

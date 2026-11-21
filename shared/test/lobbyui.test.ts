@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ARCADE, DEFAULT_RULES, RULES, newPlayer, type PlayerState } from '../src/index.ts';
-import { lobbySlots, roomLink, rulesChips, rulesSummary } from '../../client/src/lobbyUI.ts';
+import { ARCADE, DEFAULT_RULES, PRESETS, RULES, newPlayer, type PlayerState } from '../src/index.ts';
+import { lobbySlots, roomLink, rulePanel, rulesSummary } from '../../client/src/lobbyUI.ts';
 
 /** 사람 A(나, 방장) · 봇 */
 function people() {
@@ -67,25 +67,56 @@ test('rulesSummary: 협력전은 꺼지는 보스·레이저·맵 패턴을 적�
   assert.ok(!surv.startsWith('60초'), surv);
 });
 
-test('협력전 엑스퍼트: 칩·요약은 난이도와 시간만', () => {
+test('협력전 엑스퍼트: 패널은 난이도·제한 시간·체력 세 칸만, 타일 없음', () => {
   const r = { ...DEFAULT_RULES, coop: true, coopLevel: 'expert' as const };
-  const texts = rulesChips(r).map((c) => c.text);
-  assert.ok(texts.includes('협력전 · 엑스퍼트'), texts.join('/'));
-  assert.ok(texts.includes(`${RULES.coop.timeSec}초`));
-  assert.ok(texts.includes(`체력 ${RULES.coop.hpMax}`), texts.join('/'));
-  for (const w of ['레이저', '맵 패턴', '보스']) assert.ok(!texts.some((x) => x.includes(w)), w);
-  assert.equal(rulesSummary(r).title, '협력전 · 엑스퍼트');
+  const p = rulePanel(r);
+  assert.deepEqual(p.stats.map((x) => [x.big, x.small]), [['엑스퍼트', '난이도'], [`${RULES.coop.timeSec}초`, '제한 시간'], [`${RULES.coop.hpMax}`, '체력']]);
+  assert.deepEqual(p.groups, []);
+  assert.equal(p.title, '협력전 · 엑스퍼트');
+  assert.equal(p.preset, '');
 });
 
-test('rulesChips: 시간·피버·속도·견제·요소 켜짐/꺼짐을 빠짐없이', () => {
-  const t = (r: Parameters<typeof rulesChips>[0]) => rulesChips(r).map((c) => `${c.off ? '-' : ''}${c.text}`);
-  const d = t(DEFAULT_RULES);
-  for (const s of ['60초', '피버 ×3 · 7초', '속도 ×1 · 원 개수 ×1', '견제 페널티 · 표적 4초', '빈 곳 감점', '보스', '아이템', '레이저 · 보통', '맵 패턴 35%', '무지개 3%', '-꼴찌 보정']) assert.ok(d.includes(s), `${s} in ${d.join('/')}`);
-  const off = t({ ...DEFAULT_RULES, boss: false, items: false, stealPenalty: false, mapPct: 0 });
-  for (const s of ['-보스', '-아이템', '견제 페널티 없음', '-맵 패턴']) assert.ok(off.includes(s), `${s} in ${off.join('/')}`);
-  const coop = t({ ...DEFAULT_RULES, coop: true });
-  assert.ok(coop.includes(`${RULES.coop.timeSec}초`));
-  for (const s of ['보스', '레이저', '피버 ×3 · 7초']) assert.ok(!coop.some((x) => x.replace('-', '') === s), s);
-  assert.ok(t({ ...DEFAULT_RULES, survival: true }).includes('30초마다 꼴찌 탈락'));
-  assert.ok(t({ ...DEFAULT_RULES, mode: 'arcade' }).includes(`${ARCADE.rounds}라운드 × 30초`));
+test('rulePanel: 기본 규칙은 큰 숫자 3칸 + 켜진 요소 타일, 모두 기본값이라 변경 표시가 없다', () => {
+  const p = rulePanel(DEFAULT_RULES);
+  assert.equal(p.title, '개인전 · 클래식 · 기본');
+  assert.equal(p.preset, '기본');
+  assert.deepEqual(p.stats.map((x) => [x.big, x.small]), [['60초', '한 판'], ['×3', '7초 지속'], ['×1', '원 개수 ×1']]);
+  assert.ok(p.stats.every((x) => !x.changed));
+  const tiles = p.groups.flatMap((g) => g.tiles);
+  assert.deepEqual(p.groups.map((g) => g.label), ['판에 나오는 것', '감점 규칙']);
+  assert.deepEqual(tiles.map((x) => x.id), ['boss', 'item', 'special', 'laser', 'map', 'rainbow', 'mark', 'miss', 'comeback']);
+  assert.ok(tiles.every((x) => !x.changed));
+  const byId = Object.fromEntries(tiles.map((x) => [x.id, x]));
+  assert.equal(byId.boss.on, true);
+  assert.equal(byId.map.badge, `${DEFAULT_RULES.mapPct}%`);
+  assert.equal(byId.mark.badge, `표적 ${DEFAULT_RULES.markSec}초`);
+  assert.equal(byId.comeback.on, DEFAULT_RULES.comeback);
+});
+
+test('rulePanel: 꺼진 요소는 on=false로 알리고 부가값(배지)이 없다, 값이 바뀐 칸만 changed', () => {
+  const r = { ...DEFAULT_RULES, boss: false, items: false, stealPenalty: false, mapPct: 0, feverSec: 10 };
+  const p = rulePanel(r);
+  const byId = Object.fromEntries(p.groups.flatMap((g) => g.tiles).map((x) => [x.id, x]));
+  for (const id of ['boss', 'item', 'map']) assert.equal(byId[id].on, false, id);
+  assert.equal(byId.map.badge, undefined);
+  assert.equal(byId.mark.on, false);
+  assert.equal(byId.mark.badge, undefined);
+  assert.equal(p.preset, '커스텀');
+  assert.equal(p.stats[1].changed, true, '피버 시간이 기본과 다름');
+  assert.equal(p.stats[0].changed, false);
+  assert.equal(byId.boss.changed, true);
+  assert.equal(byId.laser.changed, false);
+});
+
+test('rulePanel: 프리셋을 고르면 그 프리셋 값이 기준이라 변경 표시가 없다', () => {
+  const p = rulePanel({ ...DEFAULT_RULES, ...PRESETS.hardcore.rules });
+  assert.equal(p.preset, '하드코어');
+  assert.ok(p.stats.every((x) => !x.changed));
+  assert.ok(p.groups.flatMap((g) => g.tiles).every((x) => !x.changed));
+});
+
+test('rulePanel: 시간 칸은 아케이드 라운드·서바이벌 탈락 간격으로 바뀐다', () => {
+  assert.deepEqual(rulePanel({ ...DEFAULT_RULES, mode: 'arcade' }).stats[0], { icon: 'timer', big: `${ARCADE.rounds}라운드`, small: '라운드마다 30초', changed: false });
+  assert.deepEqual(rulePanel({ ...DEFAULT_RULES, survival: true }).stats[0], { icon: 'timer', big: '30초', small: '마다 꼴찌 탈락', changed: false });
+  assert.equal(rulePanel({ ...DEFAULT_RULES, mode: 'arcade', arcadeRoundSec: 60 }).stats[0].changed, true);
 });

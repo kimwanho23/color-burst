@@ -1,7 +1,7 @@
 /** 도감: 증강(등급별 수치)·조합·저주·특별·아이템·보스·규칙(점수표)을 한 화면에서 본다 (위쪽 바·처음 화면·대기실에서 연다) */
-import { ABILITIES, ABILITY, BOMB_DESC, ICE_DESC, SPLIT_DESC, COMBOS, treasureEvery, CURSES, EVOLVE, SYNERGY, SOLO_SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, UNIQUES, DEFAULT_RULES, comboProgress, type AbilityCategory, type AbilityId, type Pick } from '@color-burst/shared';
+import { ABILITIES, ABILITY, BOMB_DESC, ICE_DESC, SPLIT_DESC, COMBOS, treasureEvery, CURSES, EVOLVE, SYNERGY, SOLO_SYNERGY, ITEMS, ITEM_IDS, ITEM_TIERS, LEGEND_TEXT, RULES, SPECIALS, TIERS, UNIQUES, DEFAULT_RULES, comboProgress, type AbilityCategory, type AbilityDef, type AbilityId, type Pick } from '@color-burst/shared';
 import { UI, abilityIcon, categoryIcon, comboIcon, icon, itemIcon } from './icons.ts';
-import { scoreTable } from './rulesUI.ts';
+import { scoreSheetHTML } from './scoreSheet.ts';
 
 /** 도감을 여는 곳의 상태: 내 증강(조합 진행도) */
 export interface CodexCtx { picks?: readonly Pick[] }
@@ -9,7 +9,9 @@ export interface CodexCtx { picks?: readonly Pick[] }
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 type Tab = 'ability' | 'unique' | 'combo' | 'curse' | 'special' | 'item' | 'boss' | 'rules';
-const TABS: [Tab, string][] = [['ability', '증강'], ['unique', '유니크'], ['combo', '조합'], ['curse', '저주'], ['special', '특별'], ['item', '아이템'], ['boss', '보스'], ['rules', '규칙']];
+const TAB_NAME: Record<Tab, string> = { ability: '증강', unique: '유니크', combo: '조합', curse: '저주', special: '특별', item: '아이템', boss: '보스', rules: '점수표' };
+/** 탭 3묶음: 카드 · 세계 · 규칙 (탭 순서와 내용은 그대로) */
+const TAB_GROUPS: [string, Tab[]][] = [['카드', ['ability', 'unique', 'combo', 'curse', 'special']], ['세계', ['item', 'boss']], ['규칙', ['rules']]];
 
 /** 보스 종류 설명 (README '보스 종류'와 같은 내용) */
 const BOSSES: [string, string][] = [
@@ -31,16 +33,37 @@ function capText(id: AbilityId, cap: number) {
   return `중첩 상한 ${id === 'precise' ? `×${1 + cap}` : cap}`;
 }
 
+/** 등급별 문장에서 달라지는 숫자만 뽑아 칩 값으로 쓴다 (노말~레전드 4개). 못 뽑으면 빈 문자열 */
+export function tierValues(a: AbilityDef): string[] {
+  const nums = (s: string) => s.match(/[+\-−×]?\d+(?:\.\d+)?%?/g) ?? [];
+  const lists = a.values.map((v) => nums(a.desc(v)));
+  const n = Math.min(...lists.map((l) => l.length));
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) if (new Set(lists.map((l) => l[i])).size > 1) idx.push(i);
+  return lists.map((l) => idx.map((i) => l[i]).join(' · '));
+}
+
 export function abilityTab() {
   const cats = [...new Set(ABILITIES.map((a) => a.cat))] as AbilityCategory[];
   const syn = (Object.keys(SYNERGY) as (keyof typeof SYNERGY)[]).map((c) => `<li><b>${c} ${SYNERGY[c].need}종</b> · ${esc(SYNERGY[c].text)}</li>`).join('');
-  const rules = `<p class="hint">독주 카드 한 종류를 보유하면 직접 잡은 내 색·노란색·무지개 원의 점수 +${SOLO_SYNERGY.scorePct}%. 연결을 고르거나 다른 시너지·조합을 완성하면 독주가 꺼져요.</p>
+  const rules = `<p class="hint">독주 카드 한 종류를 보유하면 직접 잡은 내 색·노란색·무지개 원의 점수 +${SOLO_SYNERGY.scorePct}%. 연결을 고르거나 다른 시너지·조합을 완성하면 독주가 꺼져요. 독주 카드는 같은 분류의 시너지 종류 수에도 세요.</p>
     <p class="hint">같은 증강을 ${EVOLVE.count}번 고르면 <b>진화</b>: 레전드 효과를 얻고 중첩 상한이 ${EVOLVE.capMult}배가 돼요. 성장 증강은 조건을 채울 때마다 한 칸씩 쌓여 게임 끝까지 남아요.</p>
     <h3>시너지 (같은 분류의 서로 다른 증강)</h3><ul class="cx-syn">${syn}</ul>`;
-  return rules + cats.map((cat) => `<h3>${categoryIcon(cat, 16)} ${cat}</h3><ul class="cx-list">${ABILITIES.filter((a) => a.cat === cat).map((a) => `
+  const card = (a: AbilityDef) => {
+    const vals = tierValues(a);
+    const chips = a.values.map((_, t) => `<span class="cxt t${t}" title="${TIERS[t].name}">${TIERS[t].name}${vals[t] ? ` <b>${esc(vals[t])}</b>` : ''}</span>`).join('');
+    const legend = LEGEND_TEXT[a.id] ? `<p class="cx-legend">레전드 효과: ${esc(LEGEND_TEXT[a.id]!)}</p>` : '';
+    return `
     <li><span class="cx-ic">${abilityIcon(a.id, 22)}</span><div><b>${esc(a.name)}</b>${a.solo ? '<em class="cx-cap">독주</em>' : ''}${a.cap !== undefined ? `<em class="cx-cap">${capText(a.id, a.cap)}</em>` : ''}
-      <ol class="cx-tiers">${a.values.map((v, t) => `<li class="t${t}"><span>${TIERS[t].name}</span>${esc(a.desc(v))}</li>`).join('')}</ol>
-      ${LEGEND_TEXT[a.id] ? `<p class="cx-legend">레전드 효과: ${esc(LEGEND_TEXT[a.id]!)}</p>` : ''}</div></li>`).join('')}</ul>`).join('');
+      <p class="cx-main">${esc(a.desc(a.values[0]))}</p>
+      <div class="cx-chips">${chips}</div>
+      <details class="cx-more"><summary>등급별 효과${legend ? '와 레전드 효과' : ''}</summary>
+        <ol class="cx-tiers">${a.values.map((v, t) => `<li class="t${t}"><span>${TIERS[t].name}</span>${esc(a.desc(v))}</li>`).join('')}</ol>${legend}</details></div></li>`;
+  };
+  return `<details class="cx-help"><summary>도움말</summary>${rules}</details>` + cats.map((cat) => {
+    const list = ABILITIES.filter((a) => a.cat === cat);
+    return `<details class="cx-cat" open><summary>${categoryIcon(cat, 16)} ${cat} <em>${list.length}</em></summary><ul class="cx-list">${list.map(card).join('')}</ul></details>`;
+  }).join('');
 }
 
 export function uniqueTab() {
@@ -82,7 +105,7 @@ export function bossTabHTML() {
 
 /** 규칙 탭: 늘 기본 규칙 기준 점수표 (방마다 다른 점수는 대기실의 [이 방 점수표]) */
 export function rulesTabHTML() {
-  return `<p class="hint">기본 규칙 기준이에요. 방 규칙과 증강에 따라 달라질 수 있어요. 이 방의 점수는 대기실에서 볼 수 있어요. 점수 구역(중앙 ×1 · 사이 ×2 · 가장자리 ×3)·잭팟 등은 이 위에 곱해져요</p>${scoreTable(DEFAULT_RULES)}`;
+  return `<p class="hint">기본 규칙 기준이에요. 방 규칙과 증강에 따라 달라질 수 있어요. 이 방의 점수는 대기실에서 볼 수 있어요. 점수 구역(중앙 ×1 · 사이 ×2 · 가장자리 ×3)·잭팟 등은 이 위에 곱해져요</p>${scoreSheetHTML(DEFAULT_RULES)}`;
 }
 
 const BODY: Record<Tab, (ctx: CodexCtx) => string> = { ability: abilityTab, unique: uniqueTab, combo: comboTab, curse: curseTab, special: specialTab, item: itemTab, boss: bossTabHTML, rules: rulesTabHTML };
@@ -101,7 +124,7 @@ export function openCodex(host: HTMLElement, ctx: CodexCtx) {
   el.innerHTML = `<div class="card wide cx-card" role="dialog" aria-label="도감">
     <div class="cx-head"><b>도감</b><button class="iconbtn x" type="button" data-close aria-label="닫기">${icon(UI.close, 18)}</button></div>
     <p class="hint cx-note">같은 증강을 또 고르면 수치가 더해져요 (중첩). 일부는 상한이 있어요</p>
-    <div class="seg cx-tabs">${TABS.map(([id, name], i) => `<button type="button" data-tab="${id}" aria-pressed="${i === 0}">${name}</button>`).join('')}</div>
+    <div class="cx-tabrows">${TAB_GROUPS.map(([g, ids]) => `<div class="cx-tabrow"><span class="cx-tabgroup">${g}</span><div class="seg cx-tabs">${ids.map((id) => `<button type="button" data-tab="${id}" aria-pressed="false">${TAB_NAME[id]}</button>`).join('')}</div></div>`).join('')}</div>
     <div class="cx-body"></div>
   </div>`;
   host.appendChild(el);

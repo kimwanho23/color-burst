@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { ABILITIES, COMBOS, DEFAULT_RULES, UNIQUES, newPlayer, type Pick } from '../src/index.ts';
-import { abilityTab, comboTab, rulesTabHTML, uniqueTab } from '../../client/src/codex.ts';
+import { abilityTab, comboTab, rulesTabHTML, tierValues, uniqueTab } from '../../client/src/codex.ts';
 import { comboTip, renderPick } from '../../client/src/arcadeUI.ts';
 
 test('도감 규칙 탭: 방 규칙과 상관없이 기본 규칙 숫자와 안내', () => {
@@ -73,4 +73,16 @@ test('연결: 2장으로 완성된 3장 조합은 화면에서도 완성으로 �
     offer: { options: [{ id: 'synergyLink', tier: 0 }], rerollLeft: 0, pickEndsAt: 0, lastPlace: false, need: 1, comeback: false, deal: 1 },
   }, { choose() {}, reroll() {} });
   assert.match(el.innerHTML, /조합 완성: 보스 헌터/);
+});
+
+test('도감 등급 칩: 등급마다 달라지는 숫자만 뽑고, 증강 카드에 칩 4개와 접힌 등급별 문장이 있다', (t) => {
+  installSvgDom(t);
+  const picky = ABILITIES.find((a) => a.id === 'picky')!;
+  assert.deepEqual(tierValues(picky), ['+1', '+2', '+3', '+6']);
+  const jackpot = ABILITIES.find((a) => a.id === 'jackpot')!;
+  assert.deepEqual(tierValues(jackpot).map((v) => v.split(' · ')[0]), ['5%', '10%', '15%', '30%']);
+  const h = abilityTab();
+  assert.equal((h.match(/class="cxt t0"/g) ?? []).length, ABILITIES.length, '증강마다 노말 칩 하나');
+  assert.equal((h.match(/class="cx-more"/g) ?? []).length, ABILITIES.length);
+  for (const a of ABILITIES) for (const v of a.values) assert.ok(h.includes(a.desc(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')), `${a.id} ${v}`);
 });

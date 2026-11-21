@@ -85,8 +85,10 @@ export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean,
   el.innerHTML = `<header class="gs-head">
       <b class="gs-title">게임 방법</b>
       <div class="seg gs-tabs">${TABS.map(([id, name]) => `<button type="button" data-tab="${id}">${name}</button>`).join('')}</div>
+      <button class="btn ghost small gs-tocbtn" type="button" data-toc aria-expanded="false">목차</button>
       <button class="iconbtn x" type="button" data-close aria-label="닫기">${icon(UI.close, 20)}</button>
     </header>
+    <div class="gs-toc" hidden role="region" aria-label="목차"></div>
     <article class="gs-slide" aria-live="polite"></article>
     <footer class="gs-foot">
       <button class="btn ghost gs-prev" type="button" data-prev>${icon(UI.prev, 20)}<span>이전</span></button>
@@ -100,6 +102,8 @@ export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean,
   const prev = el.querySelector<HTMLButtonElement>('[data-prev]')!;
   const next = el.querySelector<HTMLButtonElement>('[data-next]')!;
   const practice = el.querySelector<HTMLButtonElement>('[data-practice]')!;
+  const toc = el.querySelector<HTMLElement>('.gs-toc')!;
+  const tocBtn = el.querySelector<HTMLButtonElement>('[data-toc]')!;
   const canPractice = !!onPractice && !inRoom;
 
   const show = (i: number, dir = 0) => {
@@ -111,12 +115,21 @@ export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean,
     el.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === sl.tab)));
     const same = all.map((x, j) => [x, j] as const).filter(([x]) => x.tab === sl.tab);
     dots.innerHTML = same.map(([x, j]) =>
-      `<button type="button" data-go="${j}" aria-label="${x.title}" aria-current="${j === at}"></button>`).join('');
+      `<button type="button" data-go="${j}" aria-label="${x.title}" aria-current="${j === at}"></button>`).join('')
+      + `<span class="gs-count" aria-hidden="true">${same.findIndex(([, j]) => j === at) + 1} / ${same.length}</span>`;
     prev.disabled = at === 0;
     const last = at === all.length - 1;
     const toMore = sl.tab === 'basic' && all[at + 1]?.tab === 'more';
     practice.hidden = !(canPractice && (last || toMore));
     next.innerHTML = last ? '<span>다 봤어요</span>' : `<span>${toMore ? '심화로' : '다음'}</span>${icon(UI.next, 20)}`;
+  };
+  /** 목차: 슬라이드 그림을 줄인 썸네일 격자. 눌러서 그 장으로 간다 (꺼진 요소는 흐리게) */
+  const tocHTML = () => TABS.map(([id, name]) => `<h3>${name}</h3><div class="gs-thumbs">${all.map((x, j) => [x, j] as const).filter(([x]) => x.tab === id).map(([x, j]) =>
+    `<button type="button" class="gs-thumb${x.off ? ' off' : ''}${j === at ? ' on' : ''}" data-go="${j}" aria-label="${x.title}${x.off ? ` (${OFF_NOTE})` : ''}">${x.art}<span>${x.title}</span></button>`).join('')}</div>`).join('');
+  const toggleToc = (open: boolean) => {
+    toc.hidden = !open; slide.hidden = open;
+    tocBtn.setAttribute('aria-expanded', String(open));
+    if (open) toc.innerHTML = tocHTML();
   };
   const go = (d: number) => { if (d > 0 && at === all.length - 1) { close(); return; } if (at + d >= 0 && at + d < all.length) show(at + d, d); };
 
@@ -130,19 +143,20 @@ export function openGuide(_host: HTMLElement, rules: RoomRules, inRoom: boolean,
     const k = { Escape: 0, ArrowLeft: -1, ArrowRight: 1 }[e.key];
     if (k === undefined) return;
     e.stopPropagation(); e.preventDefault();
-    if (k === 0) close(); else go(k);
+    if (k === 0) { if (!toc.hidden) toggleToc(false); else close(); } else if (toc.hidden) go(k);
   };
   window.addEventListener('keydown', onKey, true);
   el.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
     if (t.closest('[data-close]')) { close(); return; }
+    if (t.closest('[data-toc]')) { toggleToc(toc.hidden); return; }
     if (t.closest('[data-practice]')) { close(); onPractice?.(); return; }
     if (t.closest('[data-prev]')) { go(-1); return; }
     if (t.closest('[data-next]')) { go(1); return; }
     const goTo = t.closest<HTMLElement>('[data-go]')?.dataset.go;
-    if (goTo !== undefined) { show(Number(goTo), Number(goTo) - at); return; }
+    if (goTo !== undefined) { if (!toc.hidden) toggleToc(false); show(Number(goTo), Number(goTo) - at); return; }
     const tab = t.closest<HTMLElement>('[data-tab]')?.dataset.tab as GuideTab | undefined;
-    if (tab) { const j = all.findIndex((x) => x.tab === tab); show(j, j - at); }
+    if (tab) { const j = all.findIndex((x) => x.tab === tab); if (!toc.hidden) toggleToc(false); show(j, j - at); }
   });
   // 터치: 좌우로 밀어 넘기기
   let sx = 0, sy = 0;

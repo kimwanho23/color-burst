@@ -9,8 +9,10 @@ import { closeConfirm, confirmDialog } from './confirm.ts';
 import { closeGuide, openGuide } from './guide.ts';
 import { currentBeat, hideTutorial, hintBeat, holdAccepts, showBeat, showTutorialDone, showTutorialStep, tutorialKey } from './tutorial.ts';
 import { BOSS_HITSTOP_MS, BOSS_SHAKE, COOP_DEFEAT, FEVER_BURST, Renderer, shapeSVG, type ScoreTier } from './render.ts';
-import { renderRules, scoreTable } from './rulesUI.ts';
-import { lobbySlots, roomLink, rulesChips, rulesSummary, type Slot } from './lobbyUI.ts';
+import { renderRules } from './rulesUI.ts';
+import { scoreSheetHTML } from './scoreSheet.ts';
+import { lobbySlots, roomLink, rulePanel, type Slot } from './lobbyUI.ts';
+import { rulePanelBody, rulePanelHead } from './rulePanelUI.ts';
 import { renderResult } from './results.ts';
 import { coopResultHtml, counterFlashAt, counterHudLive, hpBarHtml, myHpHtml, renderCoopHud } from './coopUI.ts';
 import { coopRulesHtml, renderBarrierHud, renderSpecialHud, specialPickerHtml } from './coopUI.ts';
@@ -390,7 +392,7 @@ socket.on('room:state', (s) => {
 
 /** 점수표 보기 창: 이 방 규칙으로 계산한 점수 (열려 있으면 규칙이 바뀔 때마다 다시 채운다) */
 function renderScoreBox() {
-  if (!$('scoreModal').hidden && room) $('scoreBox').innerHTML = scoreTable(room.rules);
+  if (!$('scoreModal').hidden && room) $('scoreBox').innerHTML = scoreSheetHTML(room.rules);
 }
 $('scoreBtn').onclick = () => { $('scoreModal').hidden = false; renderScoreBox(); };
 $('scoreClose').innerHTML = icon(UI.close, 18);
@@ -398,7 +400,6 @@ const closeScoreModal = () => { $('scoreModal').hidden = true; };
 $('scoreClose').onclick = closeScoreModal;
 $('scoreModal').addEventListener('click', (e) => { if (e.target === $('scoreModal')) closeScoreModal(); });
 $('scoreBtn').innerHTML = `${icon(UI.score, 16)}<span>점수표 보기</span>`;
-const RULE_ICON = { coop: UI.coop, timer: UI.timer, fever: UI.fever, speed: UI.speed, mark: UI.mark, miss: UI.miss, boss: UI.boss, item: UI.item, laser: UI.laser, map: UI.map, rainbow: UI.rainbow, up: UI.up } as const;
 
 $('coopRuleList').innerHTML = coopRulesHtml();
 
@@ -429,10 +430,9 @@ function renderLobby() {
 
   renderSlots(host);
 
-  const sum = rulesSummary(room.rules);
-  $('rulesTitle').textContent = sum.title;
-  $('rulesChips').innerHTML = rulesChips(room.rules)
-    .map((c) => `<span class="rchip${c.off ? ' off' : ''}">${icon(RULE_ICON[c.icon], 15)}${c.text}</span>`).join('');
+  const panel = rulePanel(room.rules);
+  $('rulesTitle').innerHTML = rulePanelHead(room.rules, panel);
+  $('rulesChips').innerHTML = rulePanelBody(panel);
   $('rulesBtn').innerHTML = `${icon(UI.settings, 16)}<span>게임 설정</span>`;
   renderRulesBox();
   renderScoreBox();

@@ -795,9 +795,6 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 
 /* 대기실에서는 위쪽 점수판·아래 피버 줄 숨김 */
 .lobby-on #scores, .lobby-on .bottom { visibility: hidden; }
-/* 점수표(도감·대기실): 첫 칸(대상)은 한 줄, 점수 칸은 줄바꿈 — 좁은 창에서 첫 칸이 글자 하나씩 세로로 꺾이던 문제 */
-.cx-body td:first-child, .cx-body th:first-child { white-space: nowrap; }
-.cx-body td:nth-child(2), .cx-body td:nth-child(3), .cx-body th:nth-child(2), .cx-body th:nth-child(3) { white-space: normal; }
 /* 도감 창: 대기실 위에 열려도 뒤가 비치지 않게 단단한 바탕 */
 .codex .cx-card { padding: 18px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg); }
 
@@ -806,11 +803,36 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .lr-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .lr-head > b { font: 400 20px var(--display); }
 .lr-head .row { flex-wrap: wrap; }
-.rchips { display: flex; flex-wrap: wrap; gap: 6px; }
-.rchip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: 600 13px var(--body); }
-.rchip svg { color: var(--yellow); }
-.rchip.off { color: var(--muted); text-decoration: line-through; opacity: .6; }
-.rchip.off svg { color: var(--muted); }
+/* 규칙 패널 (대기실·설정 창 미리보기): 모드 → 핵심 숫자 3칸 → 켜진 요소 아이콘 타일 */
+.rp-mode { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rp-mode svg { color: var(--yellow); flex: none; }
+.rp-mode b { font: 400 22px var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-preset { font: 700 12px var(--body); font-style: normal; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); white-space: nowrap; }
+.rp-body { display: flex; flex-direction: column; gap: 12px; }
+.rp-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.rstat { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); min-width: 0; }
+.rstat svg { color: var(--yellow); }
+.rstat b { font: 400 28px/1.1 var(--display); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rstat span { color: var(--muted); font-size: 12px; }
+.rp-group { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; }
+.rp-label { color: var(--muted); font: 600 12px var(--body); min-width: 76px; padding-top: 10px; }
+.rp-tiles { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; }
+.rtile { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 3px; width: 70px; padding: 9px 4px 7px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: 600 11px var(--body); text-align: center; }
+.rtile svg { color: var(--yellow); }
+.rtile em { font-style: normal; color: var(--muted); font-size: 10.5px; line-height: 1.1; }
+.rtile.off { opacity: .55; }
+.rtile.off svg { color: var(--muted); }
+/* 꺼짐: 색뿐 아니라 대각선 슬래시로도 알린다 */
+.rtile.off::after { content: ''; position: absolute; left: 50%; top: 18px; width: 30px; height: 2px; margin-left: -15px; background: var(--muted); transform: rotate(-45deg); }
+.rchg::before { content: ''; position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); }
+@media (max-width: 640px) {
+  .rp-stats { gap: 6px; }
+  .rstat { padding: 10px; }
+  .rstat b { font-size: 22px; }
+  .rp-group { flex-direction: column; }
+  .rp-label { padding-top: 0; }
+  .rtile { width: 62px; }
+}
 .lobby-card > #startBtn, .lobby-card > #readyBtn { width: 100%; }
 /* 게임 설정 창은 고른 모드에 따라 내용이 바뀌어도 크기가 흔들리지 않게 높이를 고정 */
 .rules-card { height: min(680px, calc(100% - 16px)); }
@@ -819,15 +841,10 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 .rules-card { overflow: hidden; }
 .rules-card > .cx-head { flex: none; }
 .rules-card > .rulesbox, .rules-card > .scoretable { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding-right: 4px; }
-.scoretable td:first-child, .scoretable th:first-child { white-space: nowrap; }
-.scoretable td:nth-child(2), .scoretable td:nth-child(3), .scoretable th:nth-child(2), .scoretable th:nth-child(3) { white-space: normal; }
 /* 팀전처럼 내용이 길어져 스크롤바가 생겨도 대기실 폭이 줄어들지 않게 자리를 미리 잡아 둔다 */
 #lobby { scrollbar-gutter: stable both-edges; }
 
 /* 점수표 보스 줄: 항목마다 한 줄, 조건은 작은 글씨 */
-.tlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
-.tlist li { white-space: nowrap; }
-.tlist small { display: block; white-space: normal; font-size: 11px; color: var(--muted); text-align: right; }
 /* 도감 창은 탭마다 크기가 흔들리지 않게 높이 고정, 내용만 스크롤 */
 .codex .cx-card { height: min(760px, calc(100% - 16px)); }
 .codex .cx-body { flex: 1; min-height: 0; max-height: none; }
@@ -902,3 +919,98 @@ body[data-tut-point="gauge"] .bottom .meter { outline: 3px solid var(--gain); ou
 }
 .silence-banner { bottom: auto; top: 14%; color: #eee; border-color: #9296a5; background: #171922eb; }
 .silence-chip { display: inline-flex; color: #c8cbd6; }
+
+/* 게임 설정 창: 미리보기와 세부 설정 묶음 */
+.rp-preview { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); }
+.adv > summary { padding: 6px 0; }
+.adv-group { margin-top: 14px; }
+.adv-group h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font: 400 16px var(--display); }
+.adv-group h4 svg { color: var(--yellow); }
+.adv-items { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 14px; }
+.adv-field { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.adv-field .af-label { color: var(--muted); font: 600 12px var(--body); }
+.adv-field select { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: 600 13px var(--body); }
+.seg.segs { flex-wrap: wrap; border-radius: 12px; }
+.seg.segs button { padding: 6px 10px; }
+.seg.segs button:disabled { cursor: default; }
+.rtog { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 4px; width: 78px; padding: 10px 4px 8px; border-radius: 12px; border: 2px solid var(--line); background: var(--panel); color: var(--fg); font: 600 12px var(--body); cursor: pointer; }
+.rtog svg { color: var(--yellow); }
+.rtog[aria-pressed="true"] { border-color: var(--yellow); background: #2a2f62; }
+.rtog.off svg { color: var(--muted); }
+.rtog.off { color: var(--muted); }
+.rtog.off::after { content: ''; position: absolute; left: 50%; top: 20px; width: 30px; height: 2px; margin-left: -15px; background: var(--muted); transform: rotate(-45deg); }
+.rtog:disabled { cursor: default; }
+@media (max-width: 640px) { .adv-items { gap: 10px; } .rtog { width: 70px; } }
+
+/* 점수표: 점수 카드 행 (견본 + 이름 | 평상시 | 피버 중) */
+.ss { display: flex; flex-direction: column; gap: 6px; }
+.ss-head, .ss-row { display: grid; grid-template-columns: minmax(130px, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 4px 12px; }
+.ss-head { color: var(--muted); font: 600 12px var(--body); padding: 0 12px; }
+.ss-sec { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.ss-sec h4 { margin: 0; color: var(--muted); font: 600 12px var(--body); }
+.ss-row { padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
+.ss-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ss-who b { font-weight: 700; }
+.ss-who svg, .ss-q, .ss-empty { flex: none; }
+.ss-num { font: 400 22px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.ss-num.fever { color: var(--fever); }
+.ss-chips { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.ss-chips em { font: 700 12px var(--body); font-style: normal; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); }
+.ss-note { grid-column: 1 / -1; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.ss-q { width: 28px; height: 28px; border-radius: 50%; background: #5a4cb5; display: inline-flex; align-items: center; justify-content: center; font: 400 16px var(--display); color: #fff; }
+.ss-empty { width: 28px; height: 28px; border-radius: 50%; border: 2px dashed var(--muted); }
+.ss-marked { display: inline-flex; border-radius: 50%; box-shadow: 0 0 0 2px var(--red); }
+@media (max-width: 640px) {
+  .ss-head, .ss-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ss-head span:first-child { display: none; }
+  .ss-who { grid-column: 1 / -1; }
+  .ss-chips { grid-column: 1 / -1; }
+}
+
+/* 도감: 탭 3묶음, 카드 격자, 등급 칩, 접기 */
+.cx-tabrows { display: flex; flex-direction: column; gap: 6px; }
+.cx-tabrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cx-tabgroup { width: 34px; color: var(--muted); font: 600 12px var(--body); }
+.cx-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cx-list > li > div { min-width: 0; flex: 1; }
+.cx-cat, .cx-help { margin: 10px 0 0; }
+.cx-cat > summary, .cx-help > summary { cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px 0; font: 400 18px var(--display); list-style: none; }
+.cx-help > summary { font: 600 13px var(--body); color: var(--muted); }
+.cx-cat > summary::-webkit-details-marker, .cx-help > summary::-webkit-details-marker { display: none; }
+.cx-cat > summary svg { color: var(--yellow); }
+.cx-cat > summary em { font: 700 12px var(--body); font-style: normal; color: var(--muted); }
+.cx-cat > summary::after { content: '▾'; margin-left: auto; color: var(--muted); font-size: 12px; }
+.cx-cat:not([open]) > summary::after { content: '▸'; }
+.cx-list p.cx-main { color: var(--fg); font-size: 13.5px; margin-top: 4px; }
+.cx-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.cxt { font: 700 11.5px var(--body); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); }
+.cxt b { color: var(--fg); font-weight: 800; }
+.cxt.t1 { border-color: var(--t1); color: var(--t1); } .cxt.t2 { border-color: #b26cff; color: #b26cff; }
+.cxt.t3 { border-color: var(--yellow); color: var(--yellow); }
+.cx-more { margin-top: 6px; }
+.cx-more > summary { cursor: pointer; color: var(--muted); font: 600 12px var(--body); list-style: none; }
+.cx-more > summary::-webkit-details-marker { display: none; }
+.cx-more > summary::before { content: '▸ '; }
+.cx-more[open] > summary::before { content: '▾ '; }
+.cx-list > li:has(.cx-ic.unique), .cx-list > li { align-items: flex-start; }
+@media (max-width: 640px) { .cx-list { grid-template-columns: minmax(0, 1fr); } .cx-tabgroup { width: 100%; } }
+
+/* 게임 방법: 목차(썸네일 격자)와 진행 숫자 */
+.gs-tocbtn { margin-left: auto; margin-right: 8px; }
+.gs-toc { flex: 1; min-height: 0; overflow: auto; padding: 4px 4px 12px; }
+.gs-toc h3 { margin: 14px 0 8px; font: 400 18px var(--display); }
+.gs-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.gs-thumb { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; border: 2px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; text-align: left; }
+.gs-thumb svg { width: 100%; height: auto; display: block; border-radius: 8px; }
+.gs-thumb span { font: 700 13px var(--body); }
+.gs-thumb.on { border-color: var(--yellow); }
+.gs-thumb.off { opacity: .5; }
+.gs-count { margin-left: 10px; color: var(--muted); font: 600 12px var(--body); font-variant-numeric: tabular-nums; }
+
+/* 설정 창 미리보기는 컴팩트하게 위에 고정: 모드·핵심 숫자만 (켜짐/꺼짐 타일은 아래 토글이 같은 모양으로 보여 준다) */
+.rp-preview { position: sticky; top: 0; z-index: 2; background: var(--panel); gap: 8px; padding: 10px 12px; }
+.rp-preview .rp-group { display: none; }
+.rp-preview .rstat { flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 8px 12px; }
+.rp-preview .rstat svg { align-self: center; }
+.rp-preview .rstat b { font-size: 22px; }
+.ss-num.txt { font: 600 13px/1.35 var(--body); color: var(--fg); } .ss-num.fever.txt { color: var(--fever); }
