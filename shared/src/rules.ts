@@ -1234,6 +1234,12 @@ export function applyRankReach(players: PlayerState[], G: GameRules) {
   }
 }
 
+/** 흡혈귀가 빼앗는 양: 점수를 잃는 쪽 총점의 비율 (최소·최대 있음) */
+export function vampireDrain(loserScore: number): number {
+  const v = CURSE.vampire;
+  return Math.min(v.drainMax, Math.max(v.drainMin, Math.round((loserScore * v.drainPct) / 100)));
+}
+
 /** 라운드가 끝날 때 저주 효과 적용 (시한폭탄 → 악마의 계약 → 도박사 순) */
 export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[] {
   const m = modsFor(p);
@@ -1801,7 +1807,8 @@ export function resolveClaim(
         const base = m.plunder > 0 && roundPts > 0 ? Math.min(AUG.plunderMax, Math.max(1, Math.round(roundPts * m.plunder / 100))) : 0;
         const plunder = base * (L.has('plunder') && top ? LEGEND.plunderTopMult : 1);
         // 보호막·철벽은 강탈과 견제한 사람의 흡혈을 막는다 (견제당한 사람 자신의 흡혈 저주 대가는 그대로)
-        const take = (guarded ? 0 : plunder + (m.vampire ? CURSE.vampire.drain : 0)) + (modsFor(owner).vampire ? CURSE.vampire.drain : 0);
+        const drain = vampireDrain(owner.score);
+        const take = (guarded ? 0 : plunder + (m.vampire ? drain : 0)) + (modsFor(owner).vampire ? drain : 0);
         res.plundered = Math.min(take, owner.score);
         owner.score -= res.plundered;
         addLost(owner, res.plundered);

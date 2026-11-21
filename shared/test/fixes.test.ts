@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Room } from '../../server/src/room.ts';
 import {
   CURSE, DEFAULT_RULES, LEGEND, LEGEND_TEXT, SPECIAL, bossHitInfo, crossedCombo, extraMult, feverMultOf, hyenaGains, newPlayer,
-  resetForRound, resolveClaim, resolveMiss, settleFever, shiftTimes, startFever, startRound, toGameRules, modsOf,
+  resetForRound, resolveClaim, resolveMiss, settleFever, shiftTimes, startFever, startRound, toGameRules, modsOf, vampireDrain,
   type AbilityId, type GameRules, type Pick,
 } from '../src/index.ts';
 
@@ -103,8 +103,21 @@ test('철벽: 견제한 사람의 흡혈을 막고, 자기 흡혈 저주 대가�
   assert.equal(r.plundered, 0);
   assert.equal(fort.score, 10);
   const a = pl('a', 0), self = pl('s', 1, N('fortress'), N('vampire'));
-  self.score = 10;
-  assert.equal(resolveClaim(a, 1, [a, self], 100, G).plundered, CURSE.vampire.drain);
+  self.score = 3000;
+  assert.equal(resolveClaim(a, 1, [a, self], 100, G).plundered, 60);
+});
+
+test('흡혈귀: 빼앗는 양은 잃는 쪽 총점의 2%, 최소 10점·최대 150점', () => {
+  assert.equal(vampireDrain(3000), 60);
+  assert.equal(vampireDrain(100), CURSE.vampire.drainMin);
+  assert.equal(vampireDrain(0), CURSE.vampire.drainMin);
+  assert.equal(vampireDrain(50000), CURSE.vampire.drainMax);
+  // 견제한 사람이 흡혈귀면 견제당한 사람 총점 기준으로 더 빼앗는다
+  const vamp = pl('v', 0, N('vampire')), tgt = pl('t', 1);
+  tgt.score = 5000;
+  const r = resolveClaim(vamp, 1, [vamp, tgt], 100, G);
+  assert.equal(r.plundered, 100);
+  assert.equal(tgt.score, 4900);
 });
 
 test('카드 풀: 레이저·방해 아이템·맵 패턴이 모두 꺼지면 방해 내성 없음, 아이템이 꺼지면 아이템 증강 없음', () => {

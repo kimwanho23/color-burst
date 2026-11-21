@@ -81,7 +81,8 @@ export const CURSE = {
   gambler: { winPct: 30, losePct: 15, chance: 0.5 },
   berserker: { multAdd: 3, gainDiv: 1.5 },
   oneWay: { ownMult: 3 },
-  vampire: { drain: 3 },
+  /** 빼앗는 양: 점수를 잃는 쪽 총점의 drainPct% (최소 drainMin, 최대 drainMax) */
+  vampire: { drainPct: 2, drainMin: 10, drainMax: 150 },
   timeBomb: { bonus: 40, comboGoal: 10, penalty: 60 },
   selfTarget: { boostPct: 30 },
   devilPact: { keepPct: 50 },
@@ -321,7 +322,7 @@ export const CURSES: readonly AbilityDef[] = ([
   ['gambler', '도박사', `라운드가 끝날 때 ${C.gambler.chance * 100}% 확률로 그 라운드 점수 +${C.gambler.winPct}%`, `아니면 −${C.gambler.losePct}%`],
   ['berserker', '광전사', `피버 배율 +${C.berserker.multAdd}`, `피버 게이지가 ${C.berserker.gainDiv}배 느리게 참`],
   ['oneWay', '외길', `내 색 점수 ×${C.oneWay.ownMult}`, '노란색·무지개 0점'],
-  ['vampire', '흡혈귀', `견제할 때마다 상대 점수 ${C.vampire.drain}점을 빼앗음`, `견제당하면 내 점수도 ${C.vampire.drain}점 빼앗김`],
+  ['vampire', '흡혈귀', `견제할 때마다 상대 총점의 ${C.vampire.drainPct}%(${C.vampire.drainMin}~${C.vampire.drainMax}점)를 빼앗음`, '견제당하면 내 총점의 같은 비율을 빼앗김'],
   ['timeBomb', '시한폭탄', `라운드 시작할 때 +${C.timeBomb.bonus}점`, `그 라운드에 ${C.timeBomb.comboGoal}콤보를 못 넘기면 −${C.timeBomb.penalty}점`],
   ['selfTarget', '표적 자처', `모든 점수 +${C.selfTarget.boostPct}%`, '라운드 내내 표적 (누구나 반격 가능)'],
   ['devilPact', '악마의 계약', '다음 능력 선택이 전부 레전드', `다음 라운드 점수 ${C.devilPact.keepPct}%만 인정`],
