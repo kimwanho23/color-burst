@@ -71,6 +71,8 @@ export function strikeBoss(
   // 선봉 레전드: 등장 3초 안 피해 2배
   const early = hasLegend(p, 'vanguard') && now - c.born <= AUG.vanguardMs ? LEGEND.vanguardMult : 1;
   const hp = c.hp ?? 1;
+  // 최대 체력이 없는 원은 첫 타격 때 체력을 최대로 본다 (makeBoss는 항상 넣어 주므로 일반 보스는 해당 없음)
+  const maxHp = (c.maxHp ??= hp);
   const dmg = Math.min(info.damage * early, hp);
   const first = !hits.has(p.id);
   hits.set(p.id, (hits.get(p.id) ?? 0) + dmg);
@@ -100,7 +102,7 @@ export function strikeBoss(
   const hitScore = Math.round((info.hit * vanguard + bonus) * mult * out.jackpot);
   out.gained = hitScore;
   addSrc(p, 'boss', hitScore, { fever, jackpot: out.jackpot });
-  if (m.finisher && c.boss !== 'raid' && hp * 100 <= (c.maxHp ?? hp) * SOLO_SYNERGY.finisherHpPct) {
+  if (m.finisher && c.boss !== 'raid' && hp * 100 <= maxHp * SOLO_SYNERGY.finisherHpPct) {
     const paid = finisherUses.get(c) ?? new Set<string>();
     if (!paid.has(p.id)) {
       paid.add(p.id);
@@ -115,7 +117,6 @@ export function strikeBoss(
     out.killed = true;
     p.stats.bossKills++;
     const S = B.solo;
-    const maxHp = c.maxHp ?? hp;
     const isSolo = (id: string) => (hits.get(id) ?? 0) * 100 >= maxHp * S.pct;
     out.solo = isSolo(p.id);
     out.killJackpot = rollJackpot(p, m, rand);

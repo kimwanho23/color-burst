@@ -164,7 +164,8 @@ export function blockedAt(p: MapPattern | null | undefined, pt: Point, t: number
 /** 막힌 점이면 가장 가까운 바깥 점으로 (벽은 가까운 변 밖, 막대는 선분에서 수직 방향 밖). 아니면 그대로 */
 export function pushOut(p: MapPattern | null | undefined, pt: Point, t: number): Point {
   let q = pt;
-  for (let i = 0; i < 4 && blockedAt(p, q, t); i++) {
+  // 판 구석은 밀어낸 점이 판 밖으로 잘려 다시 막대 안이 되므로, 몇 번 더 밀어야 빠져나온다
+  for (let i = 0; i < 10 && blockedAt(p, q, t); i++) {
     if (p!.id === 'walls') {
       const r = p!.walls!.find((w) => inRect(w, q))!;
       const opts = [

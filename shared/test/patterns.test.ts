@@ -74,6 +74,17 @@ test('blockedAt·pushOut: 벽 안 점은 가장 가까운 변 밖으로, 막대�
   assert.ok(q.y > 455 && Math.abs(q.x - 1000) < 1e-6);
 });
 
+test('회전 막대: 판 구석에 있는 커서도 막대 밖으로 밀려난다 (밀어낸 점이 판 밖으로 잘려도)', () => {
+  // 대각선으로 놓인 막대가 판 구석 위를 지난다
+  const bar: MapPattern = { id: 'bar', warnAt: -1500, at: 0, until: 9000, bar: { cx: FIELD.w / 2, cy: FIELD.h / 2, a0: Math.PI / 4 } };
+  for (const c of [{ x: FIELD.w, y: FIELD.h }, { x: FIELD.w - 3, y: FIELD.h - 5 }]) {
+    assert.equal(blockedAt(bar, c, 0), true);
+    const q = pushOut(bar, c, 0);
+    assert.equal(blockedAt(bar, q, 0), false);
+    assert.ok(q.x >= 0 && q.x <= FIELD.w && q.y >= 0 && q.y <= FIELD.h);
+  }
+});
+
 test('ringE: 1.5에서 6초 동안 0.7까지 줄고 유지, 가장자리 점은 위험', () => {
   const p: MapPattern = { id: 'ring', warnAt: -1500, at: 0, until: 10_000 };
   assert.equal(ringE(p, 0), 1.5);
