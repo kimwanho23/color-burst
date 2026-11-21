@@ -77,7 +77,7 @@ export const SPECIAL = {
 
 /** 주사위 증강: 눈마다 다음 라운드 동안의 효과. 수치는 등급 배율(증강 값, 노말 ×1 ~ 레전드 ×5)에 곱한다 */
 export const DICE = {
-  score1: 3, fever2: 20, boss3: 1, shield4: 1, items5: 2, score6: 8,
+  score1: 8, fever2: 30, boss3: 2, shield4: 1, items5: 2, score6: 20,
 } as const;
 /** 눈 하나의 효과 문장 (v: 증강 수치 합계) */
 export function diceFaceText(face: number, v: number): string {
@@ -95,13 +95,13 @@ export function diceFaceText(face: number, v: number): string {
 export const CURSE = {
   glassCannon: { boostPct: 50, missPenalty: 5 },
   /** 배팅: 라운드 시작에 총점의 stakePct%(최대 stakeMax)를 걸고, 라운드 득점이 지난 라운드의 goalPct% 이상이면 건 점수의 winMult배를 돌려받는다 (순이익 stake×(winMult−1)). 못 넘기면 건 점수를 잃는다 */
-  gambler: { stakePct: 30, stakeMax: 1500, winMult: 2, goalPct: 130 },
+  gambler: { stakePct: 30, stakeMax: 1500, winMult: 2, goalPct: 110 },
   berserker: { multAdd: 3, gainDiv: 1.5 },
   oneWay: { ownMult: 3 },
   /** 빼앗는 양: 점수를 잃는 쪽 총점의 drainPct% (최소 drainMin, 최대 drainMax) */
   vampire: { drainPct: 2, drainMin: 10, drainMax: 150 },
   /** 해체형: 라운드 시간의 deadlineFrac 안에 피버·보스 타격으로 해체하면 지난 라운드 득점의 bonusPct%, 못 하면 이번 라운드 득점의 penaltyPct% 잃음 */
-  timeBomb: { bonusPct: 25, penaltyPct: 35, deadlineFrac: 0.5 },
+  timeBomb: { bonusPct: 25, penaltyPct: 35, deadlineFrac: 1 / 3 },
   selfTarget: { boostPct: 30 },
   devilPact: { keepPct: 50 },
 } as const;

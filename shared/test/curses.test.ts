@@ -15,7 +15,7 @@ const END = 30_000;
 /** 라운드를 0~END에 시작한다. 시한폭탄은 라운드 시간의 절반(15초)이 시한 */
 const begin = (p: ReturnType<typeof player>) => startRound(p, 0, G, END);
 
-test('시한폭탄: 점화 때는 아무것도 받지 않고, 시한은 라운드 시간의 절반', () => {
+test('시한폭탄: 점화 때는 아무것도 받지 않고, 시한은 라운드 시간의 1/3', () => {
   const p = player(pick('timeBomb'));
   p.score = 1000;
   begin(p);
@@ -102,26 +102,26 @@ test('도박사: 라운드 시작에 총점의 30%를 걸 금액으로만 기록
   assert.equal(none.gambleStake, 0);
 });
 
-test('도박사: 지난 라운드의 130% 이상 벌면 건 점수의 2배를 돌려받는다 (순이익 +건 점수)', () => {
+test('도박사: 지난 라운드의 110% 이상 벌면 건 점수의 2배를 돌려받는다 (순이익 +건 점수)', () => {
   const p = player(pick('gambler'));
   p.score = 3000;
   p.prevRoundGain = 1000;
   begin(p);
-  p.score += 1300; // 정확히 130%
+  p.score += 1100; // 정확히 110%
   const eff = endRoundCurses(p);
   assert.deepEqual(eff.map((e) => [e.id, e.delta]), [['gambler', 900]]); // 건 점수 = 시작 총점 3000의 30% = 900, 2배를 돌려받아 순이익 +900
   assert.equal(p.gambleStake, 0);
-  assert.equal(p.prevRoundGain, 1300);
+  assert.equal(p.prevRoundGain, 1100);
 });
 
-test('도박사: 130%에 못 미치면 건 점수를 잃고, 득점이 0이면 목표가 0이어도 실패', () => {
+test('도박사: 110%에 못 미치면 건 점수를 잃고, 득점이 0이면 목표가 0이어도 실패', () => {
   const p = player(pick('gambler'));
   p.score = 3000;
   p.prevRoundGain = 1000;
   begin(p);
-  p.score += 1299;
+  p.score += 1099;
   assert.deepEqual(endRoundCurses(p).map((e) => [e.id, e.delta]), [['gambler', -900]]);
-  assert.equal(p.score, 3000 + 1299 - 900);
+  assert.equal(p.score, 3000 + 1099 - 900);
   const z = player(pick('gambler'));
   z.score = 3000;
   z.prevRoundGain = 0;

@@ -31,32 +31,32 @@ test('endRoundDice: 눈은 1~6, 효과 문장과 함께 결과로 돌려준다. 
   assert.equal(none.diceFace, 0);
 });
 
-test('눈 1·6: 다음 라운드 모든 점수 +3% / +8% (등급 배율을 곱함), 눈은 한 번 쓰면 사라진다', () => {
+test('눈 1·6: 다음 라운드 모든 점수 +8% / +20% (등급 배율을 곱함), 눈은 한 번 쓰면 사라진다', () => {
   const a = player(pick('dice')), b = player(pick('dice', 3));
   roll(a, 1);
   assert.equal(a.diceScorePct, DICE.score1);
   assert.equal(a.diceFace, 0);
-  assert.ok(Math.abs(extraMult(a, 1000, [a]) - 1.03) < 1e-9);
+  assert.ok(Math.abs(extraMult(a, 1000, [a]) - (1 + DICE.score1 / 100)) < 1e-9);
   roll(b, 6);
   assert.equal(b.diceScorePct, DICE.score6 * 5);
-  assert.ok(Math.abs(extraMult(b, 1000, [b]) - 1.4) < 1e-9);
+  assert.ok(Math.abs(extraMult(b, 1000, [b]) - (1 + (DICE.score6 * 5) / 100)) < 1e-9);
   roll(a, 0);
   assert.equal(a.diceScorePct, 0, '다음 라운드는 눈이 없으면 효과도 없음');
 });
 
-test('눈 2: 라운드를 피버 게이지 20%로 시작, 100% 이상이면 피버로 시작 (예열과 큰 쪽)', () => {
+test('눈 2: 라운드를 피버 게이지 30%로 시작, 100% 이상이면 피버로 시작 (예열과 큰 쪽)', () => {
   const p = player(pick('dice'));
   roll(p, 2);
-  assert.equal(p.fever, 20);
-  const big = player(pick('dice', 3)); // ×5 → 100%
+  assert.equal(p.fever, DICE.fever2);
+  const big = player(pick('dice', 3)); // ×5 → 150%, 상한 100%
   roll(big, 2);
   assert.equal(isFever(big, 1), true);
-  const both = player(pick('dice'), pick('preheat', 1)); // 예열 40% > 주사위 20%
+  const both = player(pick('dice'), pick('preheat', 1)); // 예열 40% > 주사위 30%
   roll(both, 2);
   assert.equal(both.fever, 40);
 });
 
-test('눈 3: 보스 타격 점수 +1, 눈 4: 견제 보호막 +1회 (방패 증강과 합쳐짐)', () => {
+test('눈 3: 보스 타격 점수 +2, 눈 4: 견제 보호막 +1회 (방패 증강과 합쳐짐)', () => {
   const p = player(pick('dice'));
   const base = bossHitInfo(p, () => 0.99).hit;
   roll(p, 3);
