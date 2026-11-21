@@ -812,6 +812,8 @@ export interface PlayerState {
   bombDefused: boolean;
   bombDeadline: number;
   prevRoundGain: number;
+  /** 도박사: 이번 라운드에 건 점수 (라운드 시작 때 기록, 정산 때 지움) */
+  gambleStake: number;
   /** 악마의 계약: 다음 라운드 끝에 점수 절반 */
   pactPending: boolean;
   /** 악마의 계약: 다음 능력 선택이 전부 레전드 */
@@ -1016,7 +1018,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     id, name, color, bot, connected: true, score: 0, combo: 0, comboPaidTo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, silenced: false, silencedUntil: 0, silenceCastAt: 0, mirror: null, harvestCount: 0, chestCount: 0, shieldLeft: 0, generatorGuard: false, generatorScore: false, counterReady: false, magneticFieldClicks: 0,
     firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
-    roundStart: 0, roundMaxCombo: 0, bombDefused: false, bombDeadline: 0, prevRoundGain: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
+    roundStart: 0, roundMaxCombo: 0, bombDefused: false, bombDeadline: 0, prevRoundGain: 0, gambleStake: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, rapidLongNext: false, itemLoverAt: 0,
     pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
@@ -1025,7 +1027,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
 
 /** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.bombDefused = false; p.bombDeadline = 0; p.prevRoundGain = 0; p.legendNext = false; p.comeback = false; p.rankReach = 0;
+  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.bombDefused = false; p.bombDeadline = 0; p.prevRoundGain = 0; p.gambleStake = 0; p.legendNext = false; p.comeback = false; p.rankReach = 0;
   p.pausesLeft = RULES.pause.perGame;
   p.stacks = {}; p.autoAt = {}; p.harvestCount = 0; p.chestCount = 0;
   p.silenced = false; p.silencedUntil = 0; p.silenceCastAt = 0; p.mirror = null;
@@ -1062,6 +1064,8 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.roundBegin = startAt; p.firstFever = true; p.feverBonus = 0; p.feverCarry = 0;
   p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false; p.rapidLongNext = false;
   // 시한폭탄: 점화. 받는 것은 없고, 시한 안에 피버·보스 타격으로 해체해야 한다
+  // 도박사: 점수에서 미리 빼지 않고 금액만 기록한다 (라운드 중 순위가 흔들리지 않게)
+  p.gambleStake = m.gambler ? Math.min(CURSE.gambler.stakeMax, Math.round((p.score * CURSE.gambler.stakePct) / 100)) : 0;
   p.bombDefused = false;
   p.bombDeadline = m.timeBomb ? startAt + (p.roundEnd - startAt) * CURSE.timeBomb.deadlineFrac : 0;
   // 표적 자처: 라운드 내내 표적
@@ -1247,7 +1251,7 @@ export function vampireDrain(loserScore: number): number {
 }
 
 /** 라운드가 끝날 때 저주 효과 적용 (시한폭탄 → 악마의 계약 → 도박사 순) */
-export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[] {
+export function endRoundCurses(p: PlayerState): RoundEffect[] {
   const m = modsFor(p);
   const out: RoundEffect[] = [];
   const add = (id: RoundEffect['id'], delta: number) => {
@@ -1256,6 +1260,7 @@ export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[
     out.push({ playerId: p.id, id, delta: d });
   };
   const roundGain = Math.max(0, p.score - p.roundStart);
+  const prevGain = p.prevRoundGain;
   if (m.timeBomb) {
     // 해체했으면 지난 라운드 득점의 일부를 받고, 못 했으면 이번 라운드 득점의 일부를 잃는다 (정산은 능력 선택 전)
     if (p.bombDefused) add('timeBomb', (p.prevRoundGain * CURSE.timeBomb.bonusPct) / 100);
@@ -1268,9 +1273,11 @@ export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[
     p.pactPending = false;
     p.legendNext = true;
   }
-  if (m.gambler) {
-    const round = Math.max(0, p.score - p.roundStart);
-    add('gambler', rand() < CURSE.gambler.chance ? (round * CURSE.gambler.winPct) / 100 : (-round * CURSE.gambler.losePct) / 100);
+  if (p.gambleStake > 0) {
+    // 정산은 능력 선택 전: 꼴찌·역전 판정이 정산된 점수 기준. 득점이 0이면 목표가 0이어도 실패
+    const win = roundGain > 0 && roundGain * 100 >= prevGain * CURSE.gambler.goalPct;
+    add('gambler', win ? p.gambleStake * (CURSE.gambler.winMult - 1) : -p.gambleStake);
+    p.gambleStake = 0;
   }
   return out;
 }

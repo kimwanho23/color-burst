@@ -78,7 +78,8 @@ export const SPECIAL = {
 /** 저주 카드 수치 */
 export const CURSE = {
   glassCannon: { boostPct: 50, missPenalty: 5 },
-  gambler: { winPct: 30, losePct: 15, chance: 0.5 },
+  /** 배팅: 라운드 시작에 총점의 stakePct%(최대 stakeMax)를 걸고, 라운드 득점이 지난 라운드의 goalPct% 이상이면 건 점수의 winMult배를 돌려받는다 (순이익 stake×(winMult−1)). 못 넘기면 건 점수를 잃는다 */
+  gambler: { stakePct: 30, stakeMax: 1500, winMult: 2, goalPct: 130 },
   berserker: { multAdd: 3, gainDiv: 1.5 },
   oneWay: { ownMult: 3 },
   /** 빼앗는 양: 점수를 잃는 쪽 총점의 drainPct% (최소 drainMin, 최대 drainMax) */
@@ -320,7 +321,7 @@ const C = CURSE;
 /** 저주 카드: 큰 보상 + 확실한 대가. 등급이 없고 수치는 고정(값 1 = 보유) */
 export const CURSES: readonly AbilityDef[] = ([
   ['glassCannon', '유리 대포', `모든 점수 +${C.glassCannon.boostPct}%`, `빈 곳 클릭하면 −${C.glassCannon.missPenalty}점`],
-  ['gambler', '도박사', `라운드가 끝날 때 ${C.gambler.chance * 100}% 확률로 그 라운드 점수 +${C.gambler.winPct}%`, `아니면 −${C.gambler.losePct}%`],
+  ['gambler', '도박사', `라운드 시작에 총점의 ${C.gambler.stakePct}%(최대 ${C.gambler.stakeMax}점)를 걺. 라운드 득점이 지난 라운드의 ${C.gambler.goalPct}% 이상이면 건 점수의 ${C.gambler.winMult}배를 돌려받음`, '넘지 못하면 건 점수를 잃음'],
   ['berserker', '광전사', `피버 배율 +${C.berserker.multAdd}`, `피버 게이지가 ${C.berserker.gainDiv}배 느리게 참`],
   ['oneWay', '외길', `내 색 점수 ×${C.oneWay.ownMult}`, '노란색·무지개 0점'],
   ['vampire', '흡혈귀', `견제할 때마다 상대 총점의 ${C.vampire.drainPct}%(${C.vampire.drainMin}~${C.vampire.drainMax}점)를 빼앗음`, '견제당하면 내 총점의 같은 비율을 빼앗김'],

@@ -32,7 +32,7 @@ test('시한폭탄: 시한 안에 피버를 발동하면 해체되어 지난 라
   addFever(p, 100, 10_000, G, [p], true);
   assert.equal(p.bombDefused, true);
   p.score += 400; // 이번 라운드 득점
-  const eff = endRoundCurses(p, raw.rand);
+  const eff = endRoundCurses(p);
   assert.deepEqual(eff.map((e) => [e.id, e.delta]), [['timeBomb', 200]]);
   assert.equal(p.score, 1000 + 400 + 200);
   assert.equal(p.prevRoundGain, 400, '다음 라운드의 지난 라운드 득점');
@@ -46,7 +46,7 @@ test('시한폭탄: 시한이 지난 뒤의 피버는 해체가 아니고, 폭�
   addFever(p, 100, 20_000, G, [p], true);
   assert.equal(p.bombDefused, false);
   p.score += 1000;
-  const eff = endRoundCurses(p, raw.rand);
+  const eff = endRoundCurses(p);
   assert.deepEqual(eff.map((e) => [e.id, e.delta]), [['timeBomb', -350]]);
   assert.equal(p.score, 2000 - 350);
 });
@@ -79,7 +79,64 @@ test('시한폭탄이 없으면 해체·폭발과 상관없다. 그래도 지난
   p.score = 500;
   begin(p);
   p.score += 300;
-  assert.deepEqual(endRoundCurses(p, raw.rand), []);
+  assert.deepEqual(endRoundCurses(p), []);
   assert.equal(p.bombDeadline, 0);
   assert.equal(p.prevRoundGain, 300);
+});
+
+test('도박사: 라운드 시작에 총점의 30%를 걸 금액으로만 기록하고 점수에서 빼지 않는다 (상한 1,500점)', () => {
+  const p = player(pick('gambler'));
+  p.score = 3000;
+  begin(p);
+  assert.equal(p.score, 3000);
+  assert.equal(p.gambleStake, 900);
+  p.score = 8000;
+  begin(p);
+  assert.equal(p.gambleStake, CURSE.gambler.stakeMax);
+  p.score = 5000;
+  begin(p);
+  assert.equal(p.gambleStake, 1500);
+  const none = player();
+  none.score = 3000;
+  begin(none);
+  assert.equal(none.gambleStake, 0);
+});
+
+test('도박사: 지난 라운드의 130% 이상 벌면 건 점수의 2배를 돌려받는다 (순이익 +건 점수)', () => {
+  const p = player(pick('gambler'));
+  p.score = 3000;
+  p.prevRoundGain = 1000;
+  begin(p);
+  p.score += 1300; // 정확히 130%
+  const eff = endRoundCurses(p);
+  assert.deepEqual(eff.map((e) => [e.id, e.delta]), [['gambler', 900]]); // 건 점수 = 시작 총점 3000의 30% = 900, 2배를 돌려받아 순이익 +900
+  assert.equal(p.gambleStake, 0);
+  assert.equal(p.prevRoundGain, 1300);
+});
+
+test('도박사: 130%에 못 미치면 건 점수를 잃고, 득점이 0이면 목표가 0이어도 실패', () => {
+  const p = player(pick('gambler'));
+  p.score = 3000;
+  p.prevRoundGain = 1000;
+  begin(p);
+  p.score += 1299;
+  assert.deepEqual(endRoundCurses(p).map((e) => [e.id, e.delta]), [['gambler', -900]]);
+  assert.equal(p.score, 3000 + 1299 - 900);
+  const z = player(pick('gambler'));
+  z.score = 3000;
+  z.prevRoundGain = 0;
+  begin(z);
+  assert.deepEqual(endRoundCurses(z).map((e) => [e.id, e.delta]), [['gambler', -900]]);
+});
+
+test('도박사: 정산은 시한폭탄 뒤, 점수가 모자라면 가진 점수까지만 잃는다', () => {
+  const p = player(pick('gambler'), pick('timeBomb'));
+  p.score = 1000;
+  p.prevRoundGain = 500;
+  begin(p);
+  p.score = 100; // 이번 라운드 득점 없음, 총점이 건 점수(300)보다 작아짐
+  const eff = endRoundCurses(p);
+  assert.deepEqual(eff.map((e) => e.id), ['timeBomb', 'gambler'], '시한폭탄 정산이 먼저');
+  assert.equal(eff[1].delta, -100, '모자라서 가진 점수까지만');
+  assert.equal(p.score, 0);
 });
