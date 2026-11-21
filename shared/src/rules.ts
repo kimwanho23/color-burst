@@ -806,8 +806,12 @@ export interface PlayerState {
   regularCustomerReady: boolean;
   /** 라운드 시작 때 점수 (도박사·악마의 계약 계산용) */
   roundStart: number;
-  /** 이번 라운드 최대 콤보 (시한폭탄) */
+  /** 이번 라운드 최대 콤보 */
   roundMaxCombo: number;
+  /** 시한폭탄: 이번 라운드에 해체했는지, 해체 시한(서버 시각), 지난 라운드에 얻은 점수 */
+  bombDefused: boolean;
+  bombDeadline: number;
+  prevRoundGain: number;
   /** 악마의 계약: 다음 라운드 끝에 점수 절반 */
   pactPending: boolean;
   /** 악마의 계약: 다음 능력 선택이 전부 레전드 */
@@ -906,7 +910,7 @@ export function addBuff(p: PlayerState, id: BuffId, ms: number, now: number, sou
 
 /** 일시정지가 풀렸을 때: since 이후에 끝나는 시각을 delta만큼 뒤로 */
 export function shiftTimes(p: PlayerState, since: number, delta: number) {
-  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'frostAt', 'itemLoverAt'] as const) if (p[k] > since) p[k] += delta;
+  for (const k of ['feverUntil', 'markedUntil', 'afterUntil', 'silencedUntil', 'silenceCastAt', 'stunUntil', 'roundEnd', 'reboundUntil', 'lastClaimAt', 'immuneUntil', 'riposteUntil', 'frostAt', 'itemLoverAt', 'bombDeadline'] as const) if (p[k] > since) p[k] += delta;
   // 라운드 시작 시각: 출발 신호 창이 아직 안 끝났으면 멈춘 만큼 늦춘다
   if (p.roundBegin + headStartMsOf({ ...p, silenced: false }) > since) p.roundBegin += delta;
   for (const k of Object.keys(p.autoBuffs ?? {}) as BuffId[]) if (p.autoBuffs[k]! > since) p.autoBuffs[k]! += delta;
@@ -1012,7 +1016,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
     id, name, color, bot, connected: true, score: 0, combo: 0, comboPaidTo: 0, fever: 0, feverUntil: 0, markedUntil: 0, stats: emptyStats(),
     picks: [], afterUntil: 0, silenced: false, silencedUntil: 0, silenceCastAt: 0, mirror: null, harvestCount: 0, chestCount: 0, shieldLeft: 0, generatorGuard: false, generatorScore: false, counterReady: false, magneticFieldClicks: 0,
     firstFlameReady: false, previousOwnZone: null, riposteUntil: 0, regularCustomerReady: false,
-    roundStart: 0, roundMaxCombo: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
+    roundStart: 0, roundMaxCombo: 0, bombDefused: false, bombDeadline: 0, prevRoundGain: 0, pactPending: false, legendNext: false, buffs: {}, autoBuffs: {}, goldLeft: 0, rageHits: 0, reflectLeft: 0, stunUntil: 0, debuffs: {}, frostAt: 0, blind: null,
     comeback: false, rankReach: 0, roundEnd: 0, roundBegin: 0, firstFever: true, feverBonus: 0, feverCarry: 0,
     reboundUntil: 0, reboundLost: 0, reboundUsed: false, lastClaimAt: 0, rapidStreak: 0, rapidJackpot: false, rapidLongNext: false, itemLoverAt: 0,
     pausesLeft: RULES.pause.perGame, ready: false, team: 0, outAt: 0, outRank: 0, hp: 0, immuneUntil: 0, stacks: {}, autoAt: {},
@@ -1021,7 +1025,7 @@ export function newPlayer(id: string, name: string, color: ColorIndex, bot = fal
 
 /** 새 게임 시작: 점수, 기록, 능력 모두 초기화 */
 export function resetForRound(p: PlayerState) {
-  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.legendNext = false; p.comeback = false; p.rankReach = 0;
+  p.score = 0; p.stats = emptyStats(); p.picks = []; p.pactPending = false; p.bombDefused = false; p.bombDeadline = 0; p.prevRoundGain = 0; p.legendNext = false; p.comeback = false; p.rankReach = 0;
   p.pausesLeft = RULES.pause.perGame;
   p.stacks = {}; p.autoAt = {}; p.harvestCount = 0; p.chestCount = 0;
   p.silenced = false; p.silencedUntil = 0; p.silenceCastAt = 0; p.mirror = null;
@@ -1057,7 +1061,9 @@ export function startRound(p: PlayerState, startAt: number, G: GameRules, endAt 
   p.roundEnd = endAt || startAt + G.roundMs;
   p.roundBegin = startAt; p.firstFever = true; p.feverBonus = 0; p.feverCarry = 0;
   p.reboundUntil = 0; p.reboundLost = 0; p.reboundUsed = false; p.lastClaimAt = 0; p.rapidStreak = 0; p.rapidJackpot = false; p.rapidLongNext = false;
-  if (m.timeBomb) p.score += CURSE.timeBomb.bonus;
+  // 시한폭탄: 점화. 받는 것은 없고, 시한 안에 피버·보스 타격으로 해체해야 한다
+  p.bombDefused = false;
+  p.bombDeadline = m.timeBomb ? startAt + (p.roundEnd - startAt) * CURSE.timeBomb.deadlineFrac : 0;
   // 표적 자처: 라운드 내내 표적
   if (m.selfTarget) p.markedUntil = endAt || startAt + G.roundMs;
   // 예열 100 또는 집중 포화: 라운드를 피버로 시작
@@ -1249,7 +1255,13 @@ export function endRoundCurses(p: PlayerState, rand = Math.random): RoundEffect[
     p.score += d;
     out.push({ playerId: p.id, id, delta: d });
   };
-  if (m.timeBomb && p.roundMaxCombo < CURSE.timeBomb.comboGoal) add('timeBomb', -CURSE.timeBomb.penalty);
+  const roundGain = Math.max(0, p.score - p.roundStart);
+  if (m.timeBomb) {
+    // 해체했으면 지난 라운드 득점의 일부를 받고, 못 했으면 이번 라운드 득점의 일부를 잃는다 (정산은 능력 선택 전)
+    if (p.bombDefused) add('timeBomb', (p.prevRoundGain * CURSE.timeBomb.bonusPct) / 100);
+    else add('timeBomb', -(roundGain * CURSE.timeBomb.penaltyPct) / 100);
+  }
+  p.prevRoundGain = roundGain;
   if (p.pactPending) {
     // 계약을 맺은 다음 라운드가 끝났을 때 (계약은 라운드 사이에 고르므로 이 시점이 곧 다음 라운드 끝)
     add('devilPact', -Math.max(0, p.score - p.roundStart) * (1 - CURSE.devilPact.keepPct / 100));
@@ -1274,6 +1286,12 @@ export function startFever(p: PlayerState, now: number, G: GameRules, m: Mods) {
   p.feverCarry = L.has('overcharge') ? LEGEND.overchargeKeep : 0;
   p.feverUntil = now + G.feverMs + m.overtime * 1000 + uniqueStacks(p, 'ember') * UNIQUE.ember.ms;
   p.afterUntil = m.afterglow ? p.feverUntil + m.afterglow * 1000 : 0;
+  defuseBomb(p, now);
+}
+
+/** 시한폭탄: 시한 안에 피버를 발동하거나 보스를 때리면 해체 */
+export function defuseBomb(p: PlayerState, now: number) {
+  if (p.bombDeadline > 0 && now <= p.bombDeadline) p.bombDefused = true;
 }
 
 /** 견제한 사람의 표적 시간: 철면피만큼 줄고(99 이상이면 표적 안 됨), 견제왕 조합이면 1초 더 줄어든다 */

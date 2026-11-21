@@ -5,7 +5,7 @@
 import { AUG, COMBO, GROWTH, LEGEND, SOLO_SYNERGY, UNIQUE, combosFor, hasLegend, modsFor } from './arcade.ts';
 import {
   RULES, addFever, addLost, addSrc, afterMultOf, scoreBoostOf, bossHitInfo, bossState, capMult, circlePos, comboBonusOf, extraMult, feverMultOf, isFever, itemMult,
-  addStack, addUniqueStack, growthScoreMult, uniqueStacks, drillCheck, ragePenalty, rollJackpot, jackpotHit, settleFever, type Circle, type GameRules, type PlayerState,
+  addStack, addUniqueStack, defuseBomb, growthScoreMult, uniqueStacks, drillCheck, ragePenalty, rollJackpot, jackpotHit, settleFever, type Circle, type GameRules, type PlayerState,
 } from './rules.ts';
 
 export interface BossStrike {
@@ -77,6 +77,7 @@ export function strikeBoss(
   c.hp = hp - dmg;
   out.damage = dmg;
   p.stats.bossHits++;
+  defuseBomb(p, now);
 
   // 콤보·피버 게이지 (피버가 이번에 시작돼도 이번 타격 배율은 시작 전 기준)
   const fever = isFever(p, now), after = !fever && now < p.afterUntil;

@@ -198,11 +198,12 @@ test('서바이벌(아케이드): 라운드 끝 정산(뒤집기 등)을 먼저 
   assert.ok(c.outAt > 0);
 });
 
-test('서바이벌: 탈락자는 라운드 시작 보너스(시한폭탄)를 받지 않음', () => {
+test('서바이벌: 탈락자는 시한폭탄이 점화되지 않음', () => {
   const { room, me } = survivalRoom('arcade');
   me.outAt = 1; me.score = 5; me.picks = [{ id: 'timeBomb', tier: 0 }];
   (room as unknown as { beginRound(): void }).beginRound();
   assert.equal(me.score, 5);
+  assert.equal(me.bombDeadline, 0);
   room.destroy();
 });
 
